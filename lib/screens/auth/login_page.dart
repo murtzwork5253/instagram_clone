@@ -40,31 +40,6 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     _passwordFocusNode.addListener(_onPasswordFocusChange);
-    _initDeepLinks();
-
-    // Check if we have a session from a previous Twitter authentication
-    _checkSession();
-  }
-
-  // Check for existing session
-  Future<void> _checkSession() async {
-    try {
-      final session = AuthService.client().auth.currentSession;
-      if (session != null) {
-        final user = session.user;
-        final provider = user.appMetadata['provider'] as String?;
-        if (provider == 'twitter' && mounted) {
-          // Perform session validation
-          final response = await AuthService.client().auth.refreshSession();
-          if (response.session != null) {
-            _showSuccessMessage("Continuing Twitter session");
-            _handleTwitterSession(user);
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Error checking existing session: $e');
-    }
   }
 
   Future<void> _initDeepLinks() async {

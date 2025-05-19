@@ -16,20 +16,14 @@ class _HomePageState extends State<HomeDashboard> {
   int _currentIndex = 0;
   final TextEditingController _searchController = TextEditingController();
 
+  // In initState, initialize searchResults with all items
   void initState() {
     super.initState();
+    searchResults = List.from(allItems); // Start with all items
     _searchController.addListener(() {
       _selectChanged(_searchController.text);
     });
   }
-
-  late final List<Function()> _pages = [
-    _buildHomeScreen,
-    _buildSearchScreen,
-    _buildCreateScreen,
-    _buildReelScreen,
-    _buildProfileScreen,
-  ];
 
   List<String> recentSearches = [
     'Flutter',
@@ -53,13 +47,31 @@ class _HomePageState extends State<HomeDashboard> {
   List<String> searchResults = [];
 
   void _selectChanged(String query) {
+    print("Searching for: $query");
     setState(() {
       searchResults = allItems
           .where((item) => item.toLowerCase().contains(query.toLowerCase()))
           .toList();
+      print("Updated results: $searchResults (${searchResults.length} items)");
     });
   }
 
+  @override
+  void dispose() {
+    _searchController.removeListener(() {
+      _selectChanged(_searchController.text);
+    });
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  late final List<Function()> _pages = [
+    _buildHomeScreen,
+    _buildSearchScreen,
+    _buildCreateScreen,
+    _buildReelScreen,
+    _buildProfileScreen,
+  ];
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
     serverClientId:
@@ -152,6 +164,8 @@ class _HomePageState extends State<HomeDashboard> {
       'location': 'Herzogenaurach, Germany',
       'image': 'https://picsum.photos/300',
       'likes': '12,345',
+      'comments': '456',
+      'share': '20',
       'caption': 'Impossible is Nothing 💫\n#adidas #sport',
       'profileImage': 'https://picsum.photos/200',
       'time': '2 hours ago'
@@ -161,16 +175,20 @@ class _HomePageState extends State<HomeDashboard> {
       'location': 'Beaverton, Oregon',
       'image': 'https://picsum.photos/301',
       'likes': '23,456',
+      'comments': '789',
+      'share': '17',
       'caption': 'Just Do It. 🏃‍♂️💨\n#nike #athlete',
       'profileImage': 'https://picsum.photos/201',
       'time': '5 hours ago'
     },
     {
-      'username': 'nike',
-      'location': 'Beaverton, Oregon',
+      'username': 'puma',
+      'location': 'Calgary, Ontario',
       'image': 'https://picsum.photos/301',
       'likes': '12,456',
-      'caption': 'Just Do It. 🏃‍♂️💨\n#nike #athlete',
+      'comments': '99',
+      'share': '12',
+      'caption': 'Just Do It. 🏃‍♂️💨\n#puma #athlete',
       'profileImage': 'https://picsum.photos/201',
       'time': '9 hours ago'
     },
@@ -315,10 +333,11 @@ class _HomePageState extends State<HomeDashboard> {
         SliverToBoxAdapter(
           child: _buildStories(),
         ),
-        // SliverList(
-        //     delegate: SliverChildBuilderDelegate(
-        //   (context, index) => _buildPost(_posts[index]),
-        // )),
+        SliverList(
+            delegate: SliverChildBuilderDelegate(
+          (context, index) => _buildPost(_posts[index]),
+          childCount: _posts.length,
+        )),
         SliverToBoxAdapter(
           child: SizedBox(height: 10),
         ),
@@ -350,7 +369,7 @@ class _HomePageState extends State<HomeDashboard> {
   Widget _buildStoryItem(Map<String, dynamic> story) {
     return Container(
       width: 80,
-      margin: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      margin: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       child: Column(
         children: [
           Container(
@@ -363,7 +382,7 @@ class _HomePageState extends State<HomeDashboard> {
                 shape: BoxShape.circle,
               ),
               child: CircleAvatar(
-                radius: 38,
+                radius: 40,
                 backgroundColor: Colors.black,
                 child: CircleAvatar(
                   radius: 36,
@@ -395,72 +414,115 @@ class _HomePageState extends State<HomeDashboard> {
     );
   }
 
-  // Widget _buildPost(Map<String, dynamic> post) {
-  //   return Column(
-  //     crossAxisAlignment: CrossAxisAlignment.start,
-  //     children: [
-  //       ListTile(
-  //         leading: CircleAvatar(
-  //           backgroundImage: NetworkImage(post['profileImage']),
-  //         ),
-  //         title: Text(post['username'],
-  //             style:
-  //                 TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-  //         subtitle:
-  //             Text(post['location'], style: TextStyle(color: Colors.white)),
-  //         trailing: Icon(Icons.more_vert, color: Colors.white),
-  //       ),
-  //       Image.network(post['image'],
-  //           width: double.infinity,
-  //           height: MediaQuery.of(context).size.width,
-  //           fit: BoxFit.cover),
-  //       Padding(
-  //         padding: EdgeInsets.all(12),
-  //         child: Column(
-  //           crossAxisAlignment: CrossAxisAlignment.start,
-  //           children: [
-  //             Row(
-  //               children: [
-  //                 Icon(Icons.favorite_border, color: Colors.white),
-  //                 SizedBox(width: 12),
-  //                 Icon(Icons.mode_comment_outlined, color: Colors.white),
-  //                 SizedBox(width: 12),
-  //                 Icon(Icons.send_outlined, color: Colors.white),
-  //                 Spacer(),
-  //                 Icon(Icons.bookmark_border, color: Colors.white),
-  //               ],
-  //             ),
-  //             SizedBox(height: 8),
-  //             Text('${post['likes']} likes',
-  //                 style: TextStyle(
-  //                     color: Colors.white, fontWeight: FontWeight.bold)),
-  //             SizedBox(height: 4),
-  //             RichText(
-  //               text: TextSpan(
-  //                 children: [
-  //                   TextSpan(
-  //                     text: '${post['username']} ',
-  //                     style: TextStyle(
-  //                       color: Colors.white,
-  //                       fontWeight: FontWeight.bold,
-  //                     ),
-  //                   ),
-  //                   TextSpan(
-  //                     text: post['caption'],
-  //                     style: TextStyle(color: Colors.white),
-  //                   ),
-  //                 ],
-  //               ),
-  //             ),
-  //             SizedBox(height: 4),
-  //             Text(post['time'],
-  //                 style: TextStyle(color: Colors.grey, fontSize: 12)),
-  //           ],
-  //         ),
-  //       ),
-  //     ],
-  //   );
-  // }
+  Widget _buildPost(Map<String, dynamic> post) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ListTile(
+        leading: CircleAvatar(
+          backgroundImage: NetworkImage(post['profileImage']),
+        ),
+        title: Text(post['username'],
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        subtitle: Text(post['location'], style: TextStyle(color: Colors.white)),
+        trailing: Icon(Icons.more_vert, color: Colors.white),
+      ),
+      Image.network(
+        post['image'],
+        width: double.infinity,
+        height: MediaQuery.of(context).size.width,
+        fit: BoxFit.cover,
+      ),
+      Padding(
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  OIcons.AntDesign.heart_outline,
+                  color: Colors.white,
+                  size: 27,
+                ),
+                SizedBox(
+                  width: 3,
+                ),
+                Text(
+                  "${post['likes']}",
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+                SizedBox(
+                  width: 10,
+                ),
+                Icon(
+                  OIcons.EvaIcons.message_circle_outline,
+                  color: Colors.white,
+                  size: 27,
+                ),
+                SizedBox(
+                  width: 3,
+                ),
+                Text(
+                  "${post['comments']}",
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+                SizedBox(
+                  width: 10,
+                ),
+                Image.asset(
+                  "assets/icon/share.png",
+                  width: 28,
+                  color: Colors.white,
+                  height: 28,
+                  fit: BoxFit.cover,
+                ),
+                SizedBox(
+                  width: 3,
+                ),
+                Text(
+                  "${post['share']}",
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700, color: Colors.white),
+                )
+              ],
+            ),
+            SizedBox(
+              height: 10,
+            ),
+            Row(
+              children: [
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '${post['username']} ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextSpan(
+                        text: post['caption'],
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(
+              height: 5,
+            ),
+            Text(
+              post['time'],
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    ]);
+  }
 
   Widget _buildSearchScreen() {
     // Static list of image URLs (replace with your own or use AssetImage)
