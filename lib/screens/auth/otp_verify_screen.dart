@@ -1,4 +1,4 @@
-import 'package:Instagram/screens/auth/auth_service.dart';
+import 'package:Instagram/screens/auth/service/auth_service.dart';
 import 'package:Instagram/screens/auth/login_page.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +20,7 @@ class OtpVerificationScreen extends StatefulWidget {
 
 class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   final List<TextEditingController> _otpControllers =
-  List.generate(6, (index) => TextEditingController());
+      List.generate(6, (index) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (index) => FocusNode());
   bool _isLoading = false;
   bool _isResending = false;
@@ -60,10 +60,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
     try {
       final response = await AuthService.client().auth.verifyOTP(
-        phone: widget.phone,
-        token: otp,
-        type: OtpType.sms,
-      );
+            phone: widget.phone,
+            token: otp,
+            type: OtpType.sms,
+          );
 
       if (response.user == null) throw Exception('Verification failed');
 
@@ -76,7 +76,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const HomeDashboard()),
-            (route) => false,
+        (route) => false,
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,8 +95,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
     try {
       await AuthService.client().auth.signInWithOtp(
-        phone: widget.phone,
-      );
+            phone: widget.phone,
+          );
       _startResendCountdown();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('OTP resent successfully!')),
@@ -245,8 +245,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       await AuthService.client().auth.signOut();
                       Navigator.pushAndRemoveUntil(
                         context,
-                        MaterialPageRoute(builder: (context) => const LoginPage()),
-                            (route) => false,
+                        MaterialPageRoute(
+                            builder: (context) => const LoginPage()),
+                        (route) => false,
                       );
                     },
                     child: const Text(

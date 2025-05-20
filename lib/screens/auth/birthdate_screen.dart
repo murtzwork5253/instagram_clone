@@ -2,7 +2,7 @@ import 'package:Instagram/screens/auth/signup_with_mobile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'auth_service.dart';
+import 'service/auth_service.dart';
 
 class BirthDateScreen extends StatefulWidget {
   final String email;

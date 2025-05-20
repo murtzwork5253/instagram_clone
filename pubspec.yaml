@@ -49,6 +49,9 @@ dependencies:
   app_links: ^6.4.0
   fluttertoast: ^8.2.12
   country_code_picker: ^3.3.0
+  image_picker: ^1.1.2
+  uuid: ^4.5.1
+  permission_handler: ^12.0.0+1
 
 dev_dependencies:
   flutter_test:
@@ -82,6 +85,7 @@ flutter:
   assets:
     - assets/images/
     - assets/icon/
+    - lib/screens/auth/
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

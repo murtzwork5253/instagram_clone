@@ -1,14 +1,17 @@
-import 'package:Instagram/screens/auth/auth_service.dart';
+import 'package:Instagram/screens/auth/service/auth_service.dart';
 import 'package:Instagram/screens/auth/birthdate_screen.dart';
 import 'package:flutter/material.dart';
 
 class UsernameScreen extends StatefulWidget {
-
   final String password;
   final String email;
   final String userId;
 
-  const UsernameScreen({super.key, required this.password, required this.email, required this.userId});
+  const UsernameScreen(
+      {super.key,
+      required this.password,
+      required this.email,
+      required this.userId});
 
   @override
   State<UsernameScreen> createState() => UsernameScreenState();
@@ -47,7 +50,11 @@ class UsernameScreenState extends State<UsernameScreen> {
 
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => BirthDateScreen(userId: widget.userId, email: widget.email, username: username)),
+          MaterialPageRoute(
+              builder: (context) => BirthDateScreen(
+                  userId: widget.userId,
+                  email: widget.email,
+                  username: username)),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(

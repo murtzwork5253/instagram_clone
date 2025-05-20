@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import 'package:app_links/app_links.dart';
-import 'package:Instagram/screens/auth/auth_service.dart';
+import 'package:Instagram/screens/auth/service/auth_service.dart';
 import 'package:Instagram/screens/auth/profile_completion_screen.dart';
 import 'package:Instagram/screens/auth/signup_with_email_screen.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';
@@ -102,7 +102,7 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final profileData = await AuthService.client()
           .from('users')
-          .select('phone, birthdate, username, email')
+          .select('phone, birthdate, username, email,profile_image_url')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -309,7 +309,6 @@ class _LoginPageState extends State<LoginPage> {
       'username': username,
       'email': user.email,
       'full_name': googleUser.displayName ?? 'Instagram User',
-      'profile_image_url': googleUser.photoUrl,
       'created_at': DateTime.now().toIso8601String(),
       'updated_at': DateTime.now().toIso8601String(),
     });
