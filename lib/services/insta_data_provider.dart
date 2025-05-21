@@ -24,6 +24,14 @@ class InstaDataProvider extends ChangeNotifier {
     _initData();
   }
 
+  void reset() {
+    _currentUser = null;
+    _posts = [];
+    _stories = [];
+    _error = null;
+    notifyListeners();
+  }
+
   Future<void> _initData() async {
     setLoading(true);
     _error = null;
@@ -69,16 +77,16 @@ class InstaDataProvider extends ChangeNotifier {
 
   Future<void> _fetchPosts() async {
     try {
-      print('Fetching posts...');
-      final fetchedPosts = await SupabaseService.getFeedPosts();
-      print('Posts fetched: ${fetchedPosts.length}');
-      _posts = fetchedPosts;
+      final posts = await SupabaseService.getFeedPosts();
+      _posts = posts;
       notifyListeners();
     } catch (e) {
       print('Error fetching posts: $e');
       _error = 'Failed to load posts';
+      notifyListeners();
     }
   }
+
 
   Future<void> _fetchStories() async {
     try {
@@ -98,7 +106,9 @@ class InstaDataProvider extends ChangeNotifier {
     _error = null;
 
     try {
+      // Always fetch fresh data from the server to ensure counts are up-to-date
       await Future.wait([
+        _fetchCurrentUser(),
         _fetchPosts(),
         _fetchStories(),
       ]);
@@ -171,7 +181,7 @@ class InstaDataProvider extends ChangeNotifier {
     try {
       await SupabaseService.addComment(postId, content);
 
-      // Update comment count
+      // Update comment count in local state
       final index = _posts.indexWhere((post) => post.id == postId);
       if (index != -1) {
         final post = _posts[index];
@@ -192,6 +202,10 @@ class InstaDataProvider extends ChangeNotifier {
         _posts = newPosts;
         notifyListeners();
       }
+
+      // Force a refresh to make sure server and client are in sync
+      await Future.delayed(Duration(milliseconds: 500));
+      refreshFeed();
     } catch (e) {
       Fluttertoast.showToast(msg: "Error Adding Comment");
     }
@@ -208,13 +222,40 @@ class InstaDataProvider extends ChangeNotifier {
         caption: caption,
         location: location,
       );
-
       // Refresh feed to show the new post
       refreshFeed();
 
       Fluttertoast.showToast(msg: "Post Created Successfully");
     } catch (e) {
       Fluttertoast.showToast(msg: "Error Creating Post");
+    }
+  }
+
+  Future<Map<String, List<String>>> getCommentLikesMap(String postId) async {
+    final supabaseService = SupabaseService();
+    final data = await supabaseService.getCommentLikes(postId);
+    final Map<String, List<String>> likesMap = {};
+
+    for (final row in data) {
+      final commentId = row['comment_id'] as String;
+      final userId = row['user_id'] as String;
+
+      likesMap.putIfAbsent(commentId, () => []);
+      likesMap[commentId]!.add(userId);
+    }
+
+    return likesMap;
+  }
+
+
+  Future<void> deletePost(String postId, String mediaPath) async {
+    final result = await SupabaseService().deletePost(postId, mediaPath);
+
+    if (result) {
+      _posts.removeWhere((post) => post.id == postId);
+      notifyListeners();
+    } else {
+      throw Exception('Failed to delete post');
     }
   }
 

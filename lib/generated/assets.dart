@@ -2,45 +2,35 @@
 class Assets {
   Assets._();
 
-  static const String authBirthdateScreen =
-      'lib/screens/auth/birthdate_screen.dart';
-  static const String authCreatePasswordScreen =
-      'lib/screens/auth/create_password_screen.dart';
+  static const String authBirthdateScreen = 'lib/screens/auth/birthdate_screen.dart';
+  static const String authCreatePasswordScreen = 'lib/screens/auth/create_password_screen.dart';
   static const String authLoginPage = 'lib/screens/auth/login_page.dart';
-  static const String authOtpVerifyScreen =
-      'lib/screens/auth/otp_verify_screen.dart';
-  static const String authProfileCompletionScreen =
-      'lib/screens/auth/profile_completion_screen.dart';
-  static const String authSetUsernameScreen =
-      'lib/screens/auth/set_username_screen.dart';
-  static const String authSignupWithEmailScreen =
-      'lib/screens/auth/signup_with_email_screen.dart';
-  static const String authSignupWithMobileScreen =
-      'lib/screens/auth/signup_with_mobile_screen.dart';
+  static const String authOtpVerifyScreen = 'lib/screens/auth/otp_verify_screen.dart';
+  static const String authProfileCompletionScreen = 'lib/screens/auth/profile_completion_screen.dart';
+  static const String authSetUsernameScreen = 'lib/screens/auth/set_username_screen.dart';
+  static const String authSignupWithEmailScreen = 'lib/screens/auth/signup_with_email_screen.dart';
+  static const String authSignupWithMobileScreen = 'lib/screens/auth/signup_with_mobile_screen.dart';
+  static const String commentscreenCommentSection = 'lib/screens/commentscreen/comment_section.dart';
   static const String configConstants = 'lib/config/constants.dart';
-  static const String createscreensCreatePostScreen =
-      'lib/screens/createscreens/create_post_screen.dart';
-  static const String fontsGrandHotelRegular =
-      'assets/fonts/GrandHotel-Regular.ttf';
-  static const String fontsInter18ptRegular =
-      'assets/fonts/Inter_18pt-Regular.ttf';
+  static const String createscreensCreatePostScreen = 'lib/screens/createscreens/create_post_screen.dart';
+  static const String fontsGrandHotelRegular = 'assets/fonts/GrandHotel-Regular.ttf';
+  static const String fontsInter18ptRegular = 'assets/fonts/Inter_18pt-Regular.ttf';
   static const String generatedAssets = 'lib/generated/assets.dart';
-  static const String homescreenHomeScreen =
-      'lib/screens/homescreen/home_screen.dart';
-  static const String homescreenHomeScreenFeed =
-      'lib/screens/homescreen/home_screen_feed.dart';
+  static const String homescreenHomeScreen = 'lib/screens/homescreen/home_screen.dart';
+  static const String homescreenHomeScreenFeed = 'lib/screens/homescreen/home_screen_feed.dart';
+  static const String iconAddPostIcon = 'assets/icon/add_post_icon.png';
   static const String iconFacebook = 'assets/icon/facebook.png';
   static const String iconIcon = 'assets/icon/Icon.png';
+  static const String iconImg = 'assets/icon/img.png';
   static const String iconLogo = 'assets/icon/logo.png';
-  static const String iconShare = 'assets/icon/share.png';
-  static const String imagesAddSquareButton =
-      'assets/images/add-square-button.png';
+  static const String iconShareIcon = 'assets/icon/share_icon.png';
+  static const String iconShareicon = 'assets/icon/shareicon.png';
+  static const String imagesAddSquareButton = 'assets/images/add-square-button.png';
   static const String imagesGlass = 'assets/images/glass.png';
   static const String imagesGoogleLogo = 'assets/images/google_logo.png';
   static const String imagesHome = 'assets/images/home.png';
   static const String imagesHomefill = 'assets/images/homefill.png';
-  static const String imagesImageRemovebgPreview =
-      'assets/images/image-removebg-preview.png';
+  static const String imagesImageRemovebgPreview = 'assets/images/image-removebg-preview.png';
   static const String imagesInstagram = 'assets/images/instagram.png';
   static const String imagesLogo = 'assets/images/logo.png';
   static const String imagesProfilepic1 = 'assets/images/profilepic1.png';
@@ -50,27 +40,18 @@ class Assets {
   static const String imagesUser = 'assets/images/user.png';
   static const String imagesVideo = 'assets/images/video.png';
   static const String libMain = 'lib/main.dart';
-  static const String profilescreenCurrentUserProfile =
-      'lib/screens/profilescreen/current_user_profile.dart';
-  static const String profilescreenEditProfileScreen =
-      'lib/screens/profilescreen/edit_profile_screen.dart';
-  static const String profilescreenFollowersFollowingScreen =
-      'lib/screens/profilescreen/followers_following_screen.dart';
-  static const String profilescreenOtherUserProfileScreen =
-      'lib/screens/profilescreen/other_user_profile_screen.dart';
+  static const String profilescreenCurrentUserProfile = 'lib/screens/profilescreen/current_user_profile.dart';
+  static const String profilescreenEditProfileScreen = 'lib/screens/profilescreen/edit_profile_screen.dart';
+  static const String profilescreenFollowersFollowingScreen = 'lib/screens/profilescreen/followers_following_screen.dart';
+  static const String profilescreenOtherUserProfileScreen = 'lib/screens/profilescreen/other_user_profile_screen.dart';
+  static const String profilescreenSinglePostView = 'lib/screens/profilescreen/single_post_view.dart';
   static const String screensRegisterPage = 'lib/screens/register_page.dart';
-  static const String searchscreenSearchScreen =
-      'lib/screens/searchscreen/search_screen.dart';
-  static const String searchscreenSearchScreenState =
-      'lib/screens/searchscreen/search_screen_state.dart';
-  static const String serviceAuthService =
-      'lib/screens/auth/service/auth_service.dart';
-  static const String servicesInstaDataProvider =
-      'lib/services/insta_data_provider.dart';
-  static const String servicesSupabaseService =
-      'lib/services/supabase_service.dart';
-  static const String servicesSupabaseStorageService =
-      'lib/services/supabase_storage_service.dart';
-  static const String splashSplashScreen =
-      'lib/screens/splash/splash_screen.dart';
+  static const String searchscreenSearchScreen = 'lib/screens/searchscreen/search_screen.dart';
+  static const String searchscreenSearchScreenState = 'lib/screens/searchscreen/search_screen_state.dart';
+  static const String serviceAuthService = 'lib/screens/auth/service/auth_service.dart';
+  static const String servicesInstaDataProvider = 'lib/services/insta_data_provider.dart';
+  static const String servicesSupabaseService = 'lib/services/supabase_service.dart';
+  static const String servicesSupabaseStorageService = 'lib/services/supabase_storage_service.dart';
+  static const String splashSplashScreen = 'lib/screens/splash/splash_screen.dart';
+
 }

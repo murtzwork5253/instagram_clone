@@ -1,4 +1,5 @@
-import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
+import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
+import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart'; // Import current user profile screen
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
@@ -131,6 +132,30 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  // Navigate to the appropriate profile screen based on whether it's the current user or not
+  void navigateToProfile(BuildContext context, String userId) {
+    final supabase = Supabase.instance.client;
+    final currentUserId = supabase.auth.currentUser?.id;
+
+    if (currentUserId == userId) {
+      // Navigate to current user profile
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProfileScreen(),
+        ),
+      );
+    } else {
+      // Navigate to other user profile
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OtherUserProfileScreen(userId: userId),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isSearching = _searchController.text.isNotEmpty;
@@ -184,6 +209,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       final fullName = data['full_name'] ?? 'No Name';
                       final username = data['username'] ?? 'unknown';
                       final profileImageUrl = data['profile_image_url'];
+                      final userId = data['id'];
 
                       return ListTile(
                         leading: buildProfileImage(profileImageUrl, fullName),
@@ -192,13 +218,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         subtitle: Text('@$username',
                             style: TextStyle(color: Colors.grey)),
                         onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  OtherUserProfileScreen(userId: data['id']),
-                            ),
-                          );
+                          navigateToProfile(context, userId);
                         },
                       );
                     } else if (type == 'keyword') {

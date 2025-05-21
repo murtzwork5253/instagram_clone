@@ -1,9 +1,11 @@
+import 'package:Instagram/screens/commentscreen/comment_section.dart';
+import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
@@ -44,6 +46,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
 
       // 3. Clear any cached credentials
       // await _googleSignIn.disconnect();
+
+      Provider.of<InstaDataProvider>(context, listen: false).reset();
 
       // Optional: Navigate to login screen
       if (mounted) {
@@ -97,6 +101,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
         final posts = provider.posts;
 
         return CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverAppBar(
               pinned: false,
@@ -164,6 +169,14 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
   }
 
   Widget _buildStoryItem(StoryData story) {
+    final String imageUrl = story.profileImageUrl ?? '';
+    final bool isFullUrl = Uri.tryParse(imageUrl)?.hasAbsolutePath == true &&
+        (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'));
+
+    final String displayUrl = isFullUrl
+        ? imageUrl
+        : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$imageUrl';
+
     return GestureDetector(
       onTap: () {
         // Implement story viewing logic here
@@ -198,7 +211,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   backgroundColor: Colors.grey[800],
                   child: ClipOval(
                     child: Image.network(
-                      story.profileImageUrl ?? '',
+                      displayUrl,
                       width: 64,
                       height: 64,
                       fit: BoxFit.cover,
@@ -239,12 +252,22 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
       children: [
         ListTile(
           onTap: () {
-            // Navigate to profile screen
-            Navigator.push(
+            final user = AuthService.client().auth.currentUser;
+            final currentUserId = user?.id;
+
+            if (post.userId == currentUserId) {
+              // Navigate to current user's profile
+              Navigator.push(
                 context,
-                MaterialPageRoute(
-                    builder: (_) =>
-                        OtherUserProfileScreen(userId: post.userId)));
+                MaterialPageRoute(builder: (_) => ProfileScreen()),
+              );
+            } else {
+              // Navigate to other user's profile
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => OtherUserProfileScreen(userId: post.userId)),
+              );
+            }
           },
           leading: CircleAvatar(
             radius: 16,
@@ -344,7 +367,12 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   GestureDetector(
                     onTap: () {
                       // Navigate to comments screen
-                      // Navigator.push(context, MaterialPageRoute(builder: (_) => CommentScreen(postId: post.id)));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CommentSection(postId: post.id),
+                        ),
+                      );
                     },
                     child: Icon(
                       OIcons.EvaIcons.message_circle_outline,
@@ -366,11 +394,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                       // Show share options
                       _showShareOptions(post);
                     },
-                    child: Icon(
-                      OIcons.Bootstrap.send_fill,
-                      color: Colors.white,
-                      size: 22,
-                    ),
+                    child: Image.asset("assets/icon/shareicon.png", color: Colors.white, width: 25,height: 25,)
                   ),
                   Spacer(),
                   Icon(
@@ -411,48 +435,78 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
   }
 
   void _showPostOptions(PostData post) {
+    final currentUser = AuthService.client().auth.currentUser;
+    final currentUserId = currentUser?.id;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: Icon(Icons.save_alt, color: Colors.white),
-            title: Text('Save', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              // Save post implementation
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.share, color: Colors.white),
-            title: Text('Share', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              _showShareOptions(post);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.person_add_outlined, color: Colors.white),
-            title: Text('Follow', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              // Follow user implementation
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.report_outlined, color: Colors.red),
-            title: Text('Report', style: TextStyle(color: Colors.red)),
-            onTap: () {
-              Navigator.pop(context);
-              // Report post implementation
-            },
-          ),
-        ],
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom+16,top: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.save_alt, color: Colors.white),
+              title: Text('Save', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                // Save post implementation
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.share, color: Colors.white),
+              title: Text('Share', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _showShareOptions(post);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.person_add_outlined, color: Colors.white),
+              title: Text('Follow', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                // Follow user implementation
+              },
+            ),
+            if (post.userId == currentUserId)
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Colors.red),
+                title: Text('Delete Post', style: TextStyle(color: Colors.red)),
+                onTap: () async{
+                  Navigator.pop(context);
+                  // Delete post implementation
+                  try {
+                    final mediaPath = SupabaseService().extractMediaPath(post.imageUrl);
+
+                    await Provider.of<InstaDataProvider>(context, listen: false)
+                        .deletePost(post.id, mediaPath);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Post deleted')),
+                    );
+                  } catch (e) {
+                    print('Delete error: $e');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to delete post')),
+                    );
+                  }
+                },
+              )
+            else
+              ListTile(
+                leading: Icon(Icons.report_outlined, color: Colors.red),
+                title: Text('Report', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Report post implementation
+                },
+              ),
+          ],
+        ),
       ),
     );
   }

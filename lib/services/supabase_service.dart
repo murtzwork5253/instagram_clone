@@ -56,7 +56,7 @@ class SupabaseService {
     // Always include own ID
     followedUserIds.add(userId);
 
-    // Step 2: Fetch posts made by followed users
+    // Step 2: Fetch posts and join related data
     final postsResponse = await Supabase.instance.client
         .from('posts')
         .select('''
@@ -69,6 +69,12 @@ class SupabaseService {
         users (
           username,
           profile_image_url
+        ),
+        post_likes (
+          user_id
+        ),
+        comments (
+          id
         )
       ''')
         .inFilter('user_id', followedUserIds)
@@ -76,6 +82,11 @@ class SupabaseService {
 
     return (postsResponse as List).map((post) {
       final user = post['users'];
+      final likes = post['post_likes'] as List<dynamic>? ?? [];
+      final comments = post['comments'] as List<dynamic>? ?? [];
+
+      final isLiked = likes.any((like) => like['user_id'] == userId);
+
       return PostData(
         id: post['id'],
         userId: post['user_id'],
@@ -85,11 +96,9 @@ class SupabaseService {
         caption: post['caption'],
         location: post['location'],
         createdAt: DateTime.parse(post['created_at']),
-        likeCount: 0,
-        // Fetch separately or join if needed
-        commentCount: 0,
-        // Fetch separately or join if needed
-        isLiked: false,
+        likeCount: likes.length,
+        commentCount: comments.length,
+        isLiked: isLiked,
       );
     }).toList();
   }
@@ -235,6 +244,70 @@ class SupabaseService {
     });
   }
 
+  Future<bool> deletePost(String postId, String mediaPath) async {
+    try {
+      final client = SupabaseService.client();
+
+      // Step 1: Delete post likes
+      await client
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId);
+
+      // Step 2: Fetch all comment IDs related to this post
+      final commentResponse = await client
+          .from('comments')
+          .select('id')
+          .eq('post_id', postId);
+
+      final commentIds = List<String>.from(commentResponse.map((e) => e['id']));
+
+      // Step 3: Delete comment likes
+      if (commentIds.isNotEmpty) {
+        await client
+            .from('comment_likes')
+            .delete()
+            .inFilter('comment_id', commentIds);
+      }
+
+      // Step 4: Delete comments
+      await client
+          .from('comments')
+          .delete()
+          .eq('post_id', postId);
+
+      // Step 5: Delete the post
+      await client
+          .from('posts')
+          .delete()
+          .eq('id', postId)
+          .select();
+
+      // Step 6: Delete media file from storage
+      await client.storage
+          .from('post-media')
+          .remove([mediaPath]);
+
+      return true;
+    } catch (e) {
+      print('Error deleting post and related data: $e');
+      return false;
+    }
+  }
+
+
+  String extractMediaPath(String imageUrl) {
+    final uri = Uri.parse(imageUrl);
+    final segments = uri.pathSegments;
+
+    final postMediaIndex = segments.indexOf('post-media');
+    if (postMediaIndex != -1 && postMediaIndex + 1 < segments.length) {
+      return segments.sublist(postMediaIndex + 1).join('/');
+    }
+
+    throw FormatException('Invalid Supabase image URL format');
+  }
+
   static Future<bool> toggleLike(String postId) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('User not logged in');
@@ -266,7 +339,39 @@ class SupabaseService {
       'post_id': postId,
       'user_id': user.id,
       'content': content,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
     });
+  }
+
+  // Update the getComments method in supabase_service.dart
+  static Future<List<CommentData>> getComments(String postId, {bool forceRefresh = false}) async {
+    try {
+      // Get all comments for the post without filtering by user relationship
+      // This ensures all comments are visible regardless of who posted them
+      final result = await _client
+          .from('comments')
+          .select('id, content, created_at, user_id, users:user_id(username, profile_image_url)')
+          .eq('post_id', postId)
+          .order('created_at', ascending: false);
+
+      if (result == null) return [];
+
+      return (result as List).map((comment) {
+        final user = comment['users'] as Map<String, dynamic>?;
+
+        return CommentData(
+          id: comment['id'],
+          userId: comment['user_id'],
+          username: user?['username'] ?? 'Unknown User',
+          profileImageUrl: user?['profile_image_url'],
+          content: comment['content'],
+          createdAt: DateTime.parse(comment['created_at']),
+        );
+      }).toList();
+    } catch (e) {
+      print('Error fetching comments: $e');
+      return [];
+    }
   }
 
   static Future<void> createStory(String mediaUrl) async {
@@ -292,6 +397,36 @@ class SupabaseService {
       'viewer_id': user.id,
     });
   }
+
+  Future<void> likeComment(String commentId, String userId) async {
+    await _client.from('comment_likes').insert({
+      'comment_id': commentId,
+      'user_id': userId,
+    });
+  }
+
+  Future<void> unlikeComment(String commentId, String userId) async {
+    await _client
+        .from('comment_likes')
+        .delete()
+        .eq('comment_id', commentId)
+        .eq('user_id', userId);
+  }
+
+  Future<List<Map<String, dynamic>>> getCommentLikes(String postId) async {
+    final response = await _client
+        .from('comment_likes')
+        .select('comment_id, user_id')
+        .inFilter('comment_id',
+        (await _client.from('comments')
+            .select('id')
+            .eq('post_id', postId)
+        ).map((e) => e['id'] as String).toList()
+    );
+
+    return response;
+  }
+
 }
 
 class UserData {
@@ -313,6 +448,11 @@ class UserData {
 }
 
 class PostData {
+  @override
+  String toString() {
+    return 'PostData(username: $username, profileImageUrl: $profileImageUrl, imageUrl: $imageUrl, likeCount: $likeCount, commentCount: $commentCount, isLiked: $isLiked)';
+  }
+
   final String id;
   final String userId;
   final String username;
@@ -392,6 +532,37 @@ class StoryData {
       isMe: json['isMe'] ?? false,
       hasStory: json['hasStory'] ?? false,
       isViewed: json['isViewed'] ?? false,
+    );
+  }
+}
+
+class CommentData {
+  final String id;
+  final String userId;
+  final String username;
+  final String? profileImageUrl;
+  final String content;
+  final DateTime createdAt;
+
+  CommentData({
+    required this.id,
+    required this.userId,
+    required this.username,
+    this.profileImageUrl,
+    required this.content,
+    required this.createdAt,
+  });
+
+  factory CommentData.fromJson(Map<String, dynamic> json) {
+    final user = json['users'] ?? {};
+
+    return CommentData(
+      id: json['id'],
+      userId: json['user_id'],
+      username: user['username'] ?? 'Anonymous',
+      profileImageUrl: user['profile_image_url'],
+      content: json['content'] ?? '',
+      createdAt: DateTime.parse(json['created_at']),
     );
   }
 }

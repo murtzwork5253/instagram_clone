@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../services/supabase_service.dart';
 import 'edit_profile_screen.dart';
 import 'followers_following_screen.dart';
 
@@ -20,6 +22,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 
   Widget _buildProfileScreen() {
     final supabase = Supabase.instance.client;
@@ -59,13 +62,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final following = data['following'] ?? [];
 
         String? avatarUrl;
+        late final String imageUrl;
         if (profile['profile_image_url'] != null) {
-          final imageUrl = profile['profile_image_url'];
+          imageUrl = profile['profile_image_url'];
           avatarUrl = imageUrl.toString().startsWith('http')
               ? imageUrl
               : supabase.storage.from('avatars').getPublicUrl(imageUrl);
         }
 
+        debugPrint('Profile: $profile');
         return Scaffold(
           backgroundColor: Colors.black,
           appBar: AppBar(
@@ -133,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildActionButtons(),
                   const SizedBox(height: 12),
                   const Divider(color: Colors.white24, thickness: 0.2),
-                  _buildPostTabs(posts),
+                  _buildPostTabs(posts,imageUrl),
                 ],
               ),
             ),
@@ -185,8 +190,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final profileRes =
         await supabase.from('users').select().eq('id', userId).single();
-    final postsRes =
-        await supabase.from('posts').select().eq('user_id', userId);
+    final postsRes = await supabase
+        .from('posts')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', ascending: false);
     final followersRes =
         await supabase.from('followers').select().eq('following_id', userId);
     final followingRes =
@@ -450,7 +458,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildPostTabs(List posts) {
+  Widget _buildPostTabs(List posts, String imageUrl) {
     return DefaultTabController(
       length: 2,
       child: Column(
@@ -460,8 +468,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             labelColor: Colors.white,
             unselectedLabelColor: Colors.grey,
             tabs: [
-              Tab(icon: Icon(Icons.grid_3x3)),
-              Tab(icon: Icon(Icons.person_pin)),
+              Tab(icon: Icon(Icons.grid_on)),
+              Tab(icon: Icon(Icons.person_pin_outlined)),
             ],
           ),
           SizedBox(
@@ -480,22 +488,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             .from('post-media')
                             .getPublicUrl(mediaPath);
 
-                    return Container(
-                      margin: const EdgeInsets.all(1),
-                      decoration: BoxDecoration(
-                        image: DecorationImage(
-                            image: NetworkImage(mediaUrl), fit: BoxFit.cover),
+                    List<PostData> postObjects = posts.map((post) {
+                      return PostData.fromJson(
+                        post,
+                        likeCount: post['like_count'] ?? 0,
+                        commentCount: post['comment_count'] ?? 0,
+                        isLiked: post['is_liked'] ?? false,
+                      );
+                    }).toList();
+                    debugPrint('postObjects: $postObjects');
+                    print('mediaUrl: $imageUrl');
+
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SinglePostView(post: postObjects[index],Url : imageUrl),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.all(1),
+                        decoration: BoxDecoration(
+                          image: DecorationImage(
+                              image: NetworkImage(mediaUrl), fit: BoxFit.cover),
+                        ),
                       ),
                     );
                   },
                 ),
-                const Center(
-                  child: Text("Tagged Posts",
-                      style: TextStyle(color: Colors.white)),
-                ),
+                _buildTaggedGrid(),
               ],
             ),
           )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaggedGrid() {
+    // In a real app, you would fetch tagged posts
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.person_pin_outlined,
+            color: Colors.white,
+            size: 70,
+          ),
+          SizedBox(height: 16),
+          Text(
+            'No Photos',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'package:Instagram/screens/createscreens/create_post_screen.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/searchscreen/search_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'home_screen_feed.dart';
 
@@ -15,10 +16,35 @@ class HomeDashboard extends StatefulWidget {
 class _HomePageState extends State<HomeDashboard> {
   int _currentIndex = 0;
   final TextEditingController _searchController = TextEditingController();
+  String? _avatarUrl;
+
 
   // In initState, initialize searchResults with all items
   void initState() {
     super.initState();
+    _loadCurrentUserAvatar();
+  }
+
+  Future<void> _loadCurrentUserAvatar() async {
+    final supabase = Supabase.instance.client;
+    final user = supabase.auth.currentUser;
+
+    if (user == null) return;
+
+    final response = await supabase
+        .from('users')
+        .select('profile_image_url')
+        .eq('id', user.id)
+        .single();
+
+    if (response != null && response['profile_image_url'] != null) {
+      setState(() {
+        final rawUrl = response['profile_image_url'] as String;
+        _avatarUrl = rawUrl.startsWith('http')
+            ? rawUrl
+            : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$rawUrl';
+      });
+    }
   }
 
   List<String> recentSearches = [
@@ -113,13 +139,13 @@ class _HomePageState extends State<HomeDashboard> {
             BottomNavigationBarItem(
                 label: "Create Post",
                 icon: Image.asset(
-                  "assets/images/add-square-button.png",
+                  "assets/icon/add_post_icon.png",
                   width: 22,
                   height: 22,
                   color: Colors.grey,
                 ),
                 activeIcon: Image.asset(
-                  "assets/images/add-square-button.png",
+                  "assets/icon/add_post_icon.png",
                   width: 22,
                   height: 22,
                   color: Colors.white,
@@ -139,21 +165,11 @@ class _HomePageState extends State<HomeDashboard> {
                 color: Colors.white,
               ),
             ),
-            BottomNavigationBarItem(
-              label: "Profile",
-              icon: Image.asset(
-                "assets/images/user.png",
-                width: 28,
-                height: 28,
-                color: Colors.grey,
-              ),
-              activeIcon: Image.asset(
-                "assets/images/user.png",
-                width: 28,
-                height: 28,
-                color: Colors.white,
-              ),
-            )
+          BottomNavigationBarItem(
+            label: "Profile",
+            icon: _buildProfileIcon(isActive: false),
+            activeIcon: _buildProfileIcon(isActive: true),
+          ),
           ],
           onTap: (index) {
             setState(() {
@@ -172,6 +188,29 @@ class _HomePageState extends State<HomeDashboard> {
       ),
     );
   }
+  Widget _buildProfileIcon({required bool isActive}) {
+    final double size = 26;
+
+    return Container(
+      padding: EdgeInsets.all(1), // border thickness
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: isActive
+            ? Border.all(color: Colors.white, width: 2)
+            : null,
+      ),
+      child: CircleAvatar(
+        radius: size / 2,
+        backgroundColor: Colors.grey[800],
+        backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+        child: _avatarUrl == null
+            ? Icon(Icons.person, size: 18, color: Colors.white)
+            : null,
+      ),
+    );
+  }
+
+
 
   Widget _buildReelScreen() {
     return SafeArea(

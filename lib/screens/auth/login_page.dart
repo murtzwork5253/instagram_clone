@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
@@ -9,7 +10,9 @@ import 'package:Instagram/screens/auth/service/auth_service.dart';
 import 'package:Instagram/screens/auth/profile_completion_screen.dart';
 import 'package:Instagram/screens/auth/signup_with_email_screen.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';
-import 'package:Instagram/config/constants.dart'; // Create this file for storing API keys
+import 'package:Instagram/config/constants.dart';
+
+import '../../services/insta_data_provider.dart'; // Create this file for storing API keys
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -121,6 +124,8 @@ class _LoginPageState extends State<LoginPage> {
         );
       } else {
         _showSuccessMessage("Twitter Sign-In Successful");
+        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+        await provider.refreshFeed();
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),
@@ -164,6 +169,8 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       _showSuccessMessage("Login Successful");
+      final provider = Provider.of<InstaDataProvider>(context, listen: false);
+      await provider.refreshFeed();
 
       if (mounted) {
         Navigator.pushReplacement(
@@ -287,6 +294,8 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
       } else {
+        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+        await provider.refreshFeed();
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),
