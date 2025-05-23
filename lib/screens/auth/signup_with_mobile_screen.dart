@@ -42,7 +42,6 @@ class _SignUpWithMobileState extends State<SignUpWithMobile> {
             .from('users')
             .update({
               'phone': formattedPhone,
-              'phone_verified_at': DateTime.now().toIso8601String(),
             })
             .eq('id', widget.userId)
             .select();

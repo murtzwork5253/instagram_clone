@@ -123,7 +123,7 @@ class SinglePostView extends StatelessWidget {
                           GestureDetector(
                             onTap: () {
                               // Navigate to comments screen
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => CommentSection(postId: post.id)));
+                              showCommentSection(context, post.id);
                             },
                             child: Icon(
                               OIcons.EvaIcons.message_circle_outline,

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
@@ -13,18 +12,25 @@ import 'package:icons_plus/icons_plus.dart' as OIcons;
 import '../auth/login_page.dart'; // For date formatting
 
 class InstagramHomeScreen extends StatefulWidget {
-  const InstagramHomeScreen({Key? key}) : super(key: key);
+  final ValueNotifier<int>? refreshNotifier;
+  final ValueNotifier<int>? profileRefreshNotifier;
+
+  const InstagramHomeScreen({Key? key, this.refreshNotifier, this.profileRefreshNotifier}) : super(key: key);
 
   @override
   State<InstagramHomeScreen> createState() => _InstagramHomeScreenState();
 }
 
 class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
-  @override
   void initState() {
     super.initState();
-    // Your InstaDataProvider already loads data in its constructor
-    // so we don't need to call any additional methods
+
+    // Listen to notifier updates to refresh data in provider
+    widget.refreshNotifier?.addListener(() {
+      final provider = Provider.of<InstaDataProvider>(context, listen: false);
+      provider
+          .reloadData(); // Implement reloadData in your provider to fetch fresh data
+    });
   }
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -87,10 +93,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return _buildHomeScreen();
-  }
-
-  Widget _buildHomeScreen() {
     return Consumer<InstaDataProvider>(
       builder: (context, provider, _) {
         if (provider.isLoading) {
@@ -103,6 +105,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
         return CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
+            // Your SliverAppBar and UI here as-is
             SliverAppBar(
               pinned: false,
               floating: true,
@@ -265,7 +268,9 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               // Navigate to other user's profile
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => OtherUserProfileScreen(userId: post.userId)),
+                MaterialPageRoute(
+                    builder: (_) =>
+                        OtherUserProfileScreen(userId: post.userId)),
               );
             }
           },
@@ -367,12 +372,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   GestureDetector(
                     onTap: () {
                       // Navigate to comments screen
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => CommentSection(postId: post.id),
-                        ),
-                      );
+                      showCommentSection(context, post.id);
                     },
                     child: Icon(
                       OIcons.EvaIcons.message_circle_outline,
@@ -390,12 +390,16 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   ),
                   SizedBox(width: 12),
                   GestureDetector(
-                    onTap: () {
-                      // Show share options
-                      _showShareOptions(post);
-                    },
-                    child: Image.asset("assets/icon/shareicon.png", color: Colors.white, width: 25,height: 25,)
-                  ),
+                      onTap: () {
+                        // Show share options
+                        _showShareOptions(post);
+                      },
+                      child: Image.asset(
+                        "assets/icon/shareicon.png",
+                        color: Colors.white,
+                        width: 25,
+                        height: 25,
+                      )),
                   Spacer(),
                   Icon(
                     Icons.bookmark_border,
@@ -444,7 +448,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom+16,top: 12),
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16, top: 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -476,11 +481,12 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Colors.red),
                 title: Text('Delete Post', style: TextStyle(color: Colors.red)),
-                onTap: () async{
+                onTap: () async {
                   Navigator.pop(context);
                   // Delete post implementation
                   try {
-                    final mediaPath = SupabaseService().extractMediaPath(post.imageUrl);
+                    final mediaPath =
+                        SupabaseService().extractMediaPath(post.imageUrl);
 
                     await Provider.of<InstaDataProvider>(context, listen: false)
                         .deletePost(post.id, mediaPath);

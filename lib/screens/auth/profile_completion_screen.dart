@@ -27,42 +27,141 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
   DateTime? _birthDate;
   String _countryCode = '+1';
 
-  // 👉 Add these here
+  // Profile image variables
   File? _avatarFile;
-  String? _uploadedAvatarUrl; // Default country code (e.g., US)
+  String? _uploadedAvatarUrl;
+
+  // Loading state
+  bool _isLoading = true;
+
+  // Track if data was fetched from database
+  bool _hasExistingData = false;
 
   @override
   void initState() {
     super.initState();
     _phoneController = TextEditingController();
+    _loadExistingUserData();
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  // Fetch existing user data from database
+  Future<void> _loadExistingUserData() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final response = await AuthService.client()
+          .from('users')
+          .select('phone, birthdate, profile_image_url')
+          .eq('id', widget.user.id)
+          .maybeSingle();
+
+      if (response != null) {
+        setState(() {
+          _hasExistingData = true;
+
+          // Load phone number
+          if (response['phone'] != null && response['phone'].isNotEmpty) {
+            String phone = response['phone'].toString();
+            // Extract country code and phone number
+            _extractPhoneData(phone);
+          }
+
+          // Load birth date
+          if (response['birthdate'] != null) {
+            _birthDate = DateTime.parse(response['birthdate']);
+          }
+
+          // Load profile image
+          if (response['profile_image_url'] != null &&
+              response['profile_image_url'].isNotEmpty) {
+            _uploadedAvatarUrl = _getPublicImageUrl(response['profile_image_url']);
+          }
+        });
+      }
+    } catch (e) {
+      print("❌ Error loading existing user data: $e");
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Extract country code and phone number from full phone string
+  void _extractPhoneData(String fullPhone) {
+    // Common country codes to check
+    final countryCodes = ['+1', '+91', '+44', '+33', '+49', '+81', '+86', '+61'];
+
+    for (String code in countryCodes) {
+      if (fullPhone.startsWith(code)) {
+        _countryCode = code;
+        _phoneController.text = fullPhone.substring(code.length);
+        return;
+      }
+    }
+
+    // If no country code found, assume it's without country code
+    _phoneController.text = fullPhone;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Complete Profile")),
-      body: Form(
+      appBar: AppBar(
+          title: Text(_hasExistingData ? "Update Profile" : "Complete Profile")
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
         key: _formKey,
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
+              // Profile Image Section
               GestureDetector(
                 onTap: _pickAvatar,
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundImage: _avatarFile != null
-                      ? FileImage(_avatarFile!)
-                      : (_uploadedAvatarUrl != null
-                          ? NetworkImage(_uploadedAvatarUrl!) as ImageProvider
-                          : const AssetImage('assets/avatar_placeholder.png')),
-                  child: _avatarFile == null && _uploadedAvatarUrl == null
-                      ? const Icon(Icons.camera_alt,
-                          color: Colors.white, size: 30)
-                      : null,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundImage: _getProfileImage(),
+                      child: _shouldShowCameraIcon()
+                          ? const Icon(Icons.camera_alt, color: Colors.white, size: 30)
+                          : null,
+                    ),
+                    // Edit icon overlay
+                    if (_uploadedAvatarUrl != null || _avatarFile != null)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.blue,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.edit,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),
+
+              // Phone Number Section
               Row(
                 children: [
                   CountryCodePicker(
@@ -73,7 +172,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                     },
                     dialogBackgroundColor: Colors.black,
                     barrierColor: Colors.black,
-                    initialSelection: 'US',
+                    initialSelection: _getInitialCountryFromCode(),
                     favorite: ['+1', '+91'],
                     showCountryOnly: false,
                     showOnlyCountryWhenClosed: false,
@@ -84,17 +183,19 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                       controller: _phoneController,
                       keyboardType: TextInputType.phone,
                       maxLength: 10,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Phone Number',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                         focusColor: Colors.grey,
                         hintText: '1234567890',
+                        helperText: _phoneController.text.isNotEmpty
+                            ? 'Current: $_countryCode${_phoneController.text}'
+                            : null,
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your phone number';
                         }
-                        // Validate phone number without country code
                         if (!RegExp(r'^[0-9]{6,15}$').hasMatch(value)) {
                           return 'Enter a valid phone number';
                         }
@@ -105,12 +206,14 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                 ],
               ),
               const SizedBox(height: 20),
+
+              // Birth Date Section
               ListTile(
                 title: Text(
                   _birthDate == null
                       ? "Select Birth Date"
                       : "Birth Date: ${DateFormat('yyyy-MM-dd').format(_birthDate!)}",
-                  style: TextStyle(color: Colors.white),
+                  style: const TextStyle(color: Colors.white),
                 ),
                 trailing: const Icon(
                   Icons.calendar_today,
@@ -119,7 +222,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                 onTap: () async {
                   final date = await showDatePicker(
                     context: context,
-                    initialDate: DateTime.now(),
+                    initialDate: _birthDate ?? DateTime(2000),
                     firstDate: DateTime(1900),
                     lastDate: DateTime.now(),
                   );
@@ -131,15 +234,12 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                 textColor: Colors.white,
               ),
               const SizedBox(height: 50),
+
               // Submit Button
               SizedBox(
                 width: 300,
                 child: ElevatedButton(
                   onPressed: _submitProfile,
-                  child: const Text(
-                    "Complete Profile",
-                    style: TextStyle(fontSize: 15),
-                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     shape: RoundedRectangleBorder(
@@ -147,9 +247,14 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                     ),
                     foregroundColor: Colors.white,
                   ),
+                  child: Text(
+                    _hasExistingData ? "Update Profile" : "Complete Profile",
+                    style: const TextStyle(fontSize: 15),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
+
               // Cancel Button
               SizedBox(
                 width: 300,
@@ -165,11 +270,9 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                     Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => HomeDashboard()));
+                            builder: (context) => const HomeDashboard()));
                   },
-                  child: const Text(
-                    "Cancel",
-                  ),
+                  child: const Text("Cancel"),
                 ),
               ),
             ],
@@ -177,6 +280,68 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
         ),
       ),
     );
+  }
+
+  // Helper method to get public image URL
+  String _getPublicImageUrl(String imageUrl) {
+    // Check if it's already a full URL (starts with http/https)
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
+
+    // If it's just a path, construct the public URL
+    // Remove leading slash if present
+    String cleanPath = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
+
+    // If path doesn't start with 'public/', add it
+    if (!cleanPath.startsWith('public/')) {
+      cleanPath = 'public/$cleanPath';
+    }
+
+    // Generate public URL using Supabase storage
+    return Supabase.instance.client.storage
+        .from('avatars')
+        .getPublicUrl(cleanPath);
+  }
+
+  // Helper method to get profile image
+  ImageProvider? _getProfileImage() {
+    if (_avatarFile != null) {
+      return FileImage(_avatarFile!);
+    } else if (_uploadedAvatarUrl != null) {
+      return NetworkImage(_uploadedAvatarUrl!);
+    } else {
+      return const AssetImage('assets/avatar_placeholder.png');
+    }
+  }
+
+  // Helper method to determine if camera icon should be shown
+  bool _shouldShowCameraIcon() {
+    return _avatarFile == null && _uploadedAvatarUrl == null;
+  }
+
+  // Helper method to get initial country selection from country code
+  String _getInitialCountryFromCode() {
+    switch (_countryCode) {
+      case '+1':
+        return 'US';
+      case '+91':
+        return 'IN';
+      case '+44':
+        return 'GB';
+      case '+33':
+        return 'FR';
+      case '+49':
+        return 'DE';
+      case '+81':
+        return 'JP';
+      case '+86':
+        return 'CN';
+      case '+61':
+        return 'AU';
+      default:
+        return 'US';
+    }
   }
 
   Future<void> _submitProfile() async {
@@ -194,8 +359,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
               _uploadedAvatarUrl = profileImageUrl;
             });
           } else {
-            print(
-                "⚠️ Failed to upload avatar, continuing without profile image");
+            print("⚠️ Failed to upload avatar, continuing without profile image");
           }
         }
 
@@ -203,11 +367,11 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
 
         // Show loading indicator
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Saving profile...")),
+          SnackBar(content: Text(_hasExistingData ? "Updating profile..." : "Saving profile...")),
         );
 
         // Save to Supabase
-        final response = await AuthService.client().from('users').upsert({
+        await AuthService.client().from('users').upsert({
           'id': widget.user.id,
           'email': widget.email,
           'phone': "${_countryCode}${_phoneController.text}",
@@ -216,12 +380,10 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
           'updated_at': DateTime.now().toIso8601String(),
         });
 
-        print("Profile save response: $response");
         print("✅ Profile saved successfully");
 
         // Navigate to home
         if (mounted) {
-          // Check if the widget is still mounted
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const HomeDashboard()),
@@ -229,7 +391,6 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
         }
       } catch (e) {
         print("❌ Failed to save profile: $e");
-        // Show error message to the user
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Failed to save profile: ${e.toString()}")),
@@ -237,7 +398,6 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
         }
       }
     } else {
-      // Show validation message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill in all required fields")),
       );
@@ -246,7 +406,6 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
 
   Future<String?> _uploadAvatar(File file) async {
     try {
-      // Check if file exists and is readable
       if (!await file.exists()) {
         print("❌ File does not exist: ${file.path}");
         return null;
@@ -259,32 +418,24 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
           '${widget.user.id}_${DateTime.now().millisecondsSinceEpoch}${path_package.extension(file.path)}';
 
       print("Uploading avatar: $fileName");
-      print("File path: ${file.path}");
 
-      // Check if Supabase client is initialized
       if (Supabase.instance.client.auth.currentSession == null) {
         print("❌ Supabase client is not authenticated");
         return null;
       }
 
-      // Use ByteData for upload instead of File
       final bytes = await file.readAsBytes();
 
-      // Upload file to 'avatar' bucket
       print("Starting upload to Supabase storage...");
-      final response = await Supabase.instance.client.storage
+      await Supabase.instance.client.storage
           .from('avatars')
           .uploadBinary('public/$fileName', bytes);
 
-      print("Upload response: $response");
-
-      // Get the public URL for the uploaded file
       final avatarUrl = Supabase.instance.client.storage
           .from('avatars')
           .getPublicUrl('public/$fileName');
 
       print("✅ Avatar uploaded successfully, URL: $avatarUrl");
-
       return avatarUrl;
     } catch (e, stackTrace) {
       print("❌ Upload failed: $e");
@@ -304,12 +455,10 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
           _avatarFile = file;
         });
 
-        // Show loading indicator
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Uploading image...")),
         );
 
-        // Upload the avatar and get the URL
         final url = await _uploadAvatar(file);
 
         if (url != null) {
@@ -319,16 +468,13 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
 
           print("Avatar URL set in state: $_uploadedAvatarUrl");
 
-          // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Image uploaded successfully")),
           );
         } else {
-          // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content:
-                    Text("Failed to upload image - see console for details")),
+                content: Text("Failed to upload image - see console for details")),
           );
         }
       }
@@ -336,7 +482,6 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
       print("❌ Error in _pickAvatar: $e");
       print("Stack trace: $stackTrace");
 
-      // Show error message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error selecting image: ${e.toString()}")),
       );

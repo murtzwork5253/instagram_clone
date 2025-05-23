@@ -19,31 +19,33 @@ class CreatePasswordState extends State<CreatePassword> {
 
   Future<void> _createPassword() async {
     final password = passwordController.text.trim();
-
     if (_formKey.currentState!.validate()) {
       if (password.isNotEmpty) {
         setState(() {
           _isLoading = true;
         });
-
         try {
           final authResponse = await AuthService.client().auth.signUp(
-                email: widget.email,
-                password: password,
-              );
+            email: widget.email,
+            password: password,
+          );
 
-          if (authResponse.user == null) {
-            throw Exception('Sign up failed');
+          // Check if signup was successful
+          if (authResponse.user != null) {
+            // Use the user ID from the auth response
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => UsernameScreen(
+                      password: password,
+                      email: widget.email,
+                      userId: authResponse.user!.id,
+                    )
+                )
+            );
+          } else {
+            throw Exception('Sign up failed: No user returned');
           }
-
-          Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (context) => UsernameScreen(
-                        password: password,
-                        email: widget.email,
-                        userId: authResponse.user!.id,
-                      )));
         } catch (e) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error creating password: $e')),

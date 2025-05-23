@@ -12,7 +12,12 @@ class Assets {
   static const String authSignupWithMobileScreen = 'lib/screens/auth/signup_with_mobile_screen.dart';
   static const String commentscreenCommentSection = 'lib/screens/commentscreen/comment_section.dart';
   static const String configConstants = 'lib/config/constants.dart';
-  static const String createscreensCreatePostScreen = 'lib/screens/createscreens/create_post_screen.dart';
+  static const String createPostAddPostScreen = 'lib/screens/createscreens/create_post/add_post_screen.dart';
+  static const String createPostPostProvider = 'lib/screens/createscreens/create_post/post_provider.dart';
+  static const String createReelsCreateReelScreen = 'lib/screens/createscreens/create_reels/create_reel_screen.dart';
+  static const String createStoryCreateStoryScreen = 'lib/screens/createscreens/create_story/create_story_screen.dart';
+  static const String createscreensCreatePostScreen = 'lib/screens/createscreens/create_post_screen';
+  static const String createscreensCreateScreen = 'lib/screens/createscreens/create_screen.dart';
   static const String fontsGrandHotelRegular = 'assets/fonts/GrandHotel-Regular.ttf';
   static const String fontsInter18ptRegular = 'assets/fonts/Inter_18pt-Regular.ttf';
   static const String generatedAssets = 'lib/generated/assets.dart';
@@ -45,6 +50,10 @@ class Assets {
   static const String profilescreenFollowersFollowingScreen = 'lib/screens/profilescreen/followers_following_screen.dart';
   static const String profilescreenOtherUserProfileScreen = 'lib/screens/profilescreen/other_user_profile_screen.dart';
   static const String profilescreenSinglePostView = 'lib/screens/profilescreen/single_post_view.dart';
+  static const String reelsScreenAddReelsScreen = 'lib/screens/reels_screen/add_reels_screen.dart';
+  static const String reelsScreenReelModal = 'lib/screens/reels_screen/reel_modal.dart';
+  static const String reelsScreenReelPlayer = 'lib/screens/reels_screen/reel_player.dart';
+  static const String reelsScreenReelProvider = 'lib/screens/reels_screen/reel_provider.dart';
   static const String screensRegisterPage = 'lib/screens/register_page.dart';
   static const String searchscreenSearchScreen = 'lib/screens/searchscreen/search_screen.dart';
   static const String searchscreenSearchScreenState = 'lib/screens/searchscreen/search_screen_state.dart';

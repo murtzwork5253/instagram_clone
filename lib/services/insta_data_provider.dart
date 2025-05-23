@@ -21,7 +21,7 @@ class InstaDataProvider extends ChangeNotifier {
   String? get error => _error;
 
   InstaDataProvider() {
-    _initData();
+    reloadData();
   }
 
   void reset() {
@@ -32,7 +32,7 @@ class InstaDataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _initData() async {
+  Future<void> reloadData() async {
     setLoading(true);
     _error = null;
 

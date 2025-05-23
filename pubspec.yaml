@@ -37,9 +37,9 @@ dependencies:
   supabase_flutter: ^2.9.0
   riverpod: ^2.6.1
   provider: ^6.1.5
-  flutter_appauth: ^6.0.0
+  flutter_appauth: ^9.0.0
   flutter_web_auth_2: ^4.1.0
-  intl: ^0.18.0
+  intl: ^0.20.2
   google_sign_in: ^6.3.0
   flutter_meta_sdk: ^1.0.5
   flutter_facebook_auth: ^7.1.2
@@ -54,11 +54,20 @@ dependencies:
   permission_handler: ^12.0.0+1
   pull_to_refresh: ^2.0.0
   flutter_svg: ^2.1.0
+  camera: ^0.11.1
+  http: ^1.4.0
+  mime: ^2.0.0
+  video_player: ^2.9.5
+  chewie: ^1.11.3
+  visibility_detector: ^0.4.0+2
+  share_plus: ^11.0.0
+  dotted_border: ^3.0.1
+  photo_manager: ^3.7.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_launcher_icons: ^0.13.1
+  flutter_launcher_icons: ^0.14.3
 
 flutter_launcher_icons:
   android: true

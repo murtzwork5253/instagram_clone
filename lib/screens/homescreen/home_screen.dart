@@ -1,4 +1,6 @@
-import 'package:Instagram/screens/createscreens/create_post_screen.dart';
+import 'package:Instagram/screens/createscreens/create_post/add_post_screen.dart';
+import 'package:Instagram/screens/reels_screen/add_reels_screen.dart';
+import 'package:Instagram/screens/createscreens/create_screen.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/searchscreen/search_screen.dart';
 import 'package:flutter/material.dart';
@@ -15,14 +17,19 @@ class HomeDashboard extends StatefulWidget {
 
 class _HomePageState extends State<HomeDashboard> {
   int _currentIndex = 0;
+  int _selectedBodyIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   String? _avatarUrl;
-
+  final ValueNotifier<int> homeRefreshNotifier = ValueNotifier(0);
+  final ValueNotifier<int> profileRefreshNotifier = ValueNotifier(0);
+  // At the top of your _[YourMainScreen]State class, add:
+  final GlobalKey<CreatePostScreenState> _createPostScreenKey = GlobalKey();
 
   // In initState, initialize searchResults with all items
   void initState() {
     super.initState();
     _loadCurrentUserAvatar();
+    _selectedBodyIndex = _currentIndex;
   }
 
   Future<void> _loadCurrentUserAvatar() async {
@@ -87,11 +94,10 @@ class _HomePageState extends State<HomeDashboard> {
   }
 
   late final List<Widget> _pages = [
-    InstagramHomeScreen(),
+    InstagramHomeScreen(refreshNotifier: homeRefreshNotifier),
     InstagramSearchScreen(),
-    CreatePostScreen(),
-    _buildReelScreen(),
-    ProfileScreen(),
+    ReelsScreen(),
+    ProfileScreen(refreshNotifier: profileRefreshNotifier),
   ];
 
   @override
@@ -165,29 +171,67 @@ class _HomePageState extends State<HomeDashboard> {
                 color: Colors.white,
               ),
             ),
-          BottomNavigationBarItem(
-            label: "Profile",
-            icon: _buildProfileIcon(isActive: false),
-            activeIcon: _buildProfileIcon(isActive: true),
-          ),
+            BottomNavigationBarItem(
+              label: "Profile",
+              icon: _buildProfileIcon(isActive: false),
+              activeIcon: _buildProfileIcon(isActive: true),
+            ),
           ],
           onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
+            if (_currentIndex == index) {
+              // Same tab tapped again - trigger refresh
+              _refreshCurrentTab(index);
+            } else {
+              // Handle "Create Post" tab differently
+              if (index == 2) { // Assuming Create Post is index 2
+                Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) => const CreatePostScreen(),
+                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                      const begin = Offset(-1.0, 0.0); // Starts from the right
+                      const end = Offset.zero; // Ends at its normal position
+                      const curve = Curves.ease;
+
+                      var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+
+                      return SlideTransition(
+                        position: animation.drive(tween),
+                        child: child,
+                      );
+                    },
+                    fullscreenDialog: true, // Optional: still makes it feel like a modal
+                  ),
+                );
+              } else {
+                // For other tabs (Home, Search, Reels, Profile)
+                setState(() {
+                  _currentIndex = index; // Update the visual selected item in BottomNavigationBar
+
+                  // Calculate the _selectedBodyIndex for IndexedStack
+                  if (index < 2) {
+                    _selectedBodyIndex = index; // For Home (0) and Search (1), it's the same index
+                  } else {
+                    // For Reels (index 3) and Profile (index 4), subtract 1
+                    // because index 2 (Create Post) is skipped in our _pages list.
+                    _selectedBodyIndex = index - 1;
+                  }
+                });
+              }
+              }
+            },
           selectedItemColor: Colors.white,
           unselectedItemColor: Colors.grey,
           showUnselectedLabels: false,
           type: BottomNavigationBarType.fixed,
         ),
         body: IndexedStack(
-          index: _currentIndex,
+          index: _selectedBodyIndex,
           children: _pages,
         ),
       ),
     );
   }
+
   Widget _buildProfileIcon({required bool isActive}) {
     final double size = 26;
 
@@ -195,9 +239,7 @@ class _HomePageState extends State<HomeDashboard> {
       padding: EdgeInsets.all(1), // border thickness
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: isActive
-            ? Border.all(color: Colors.white, width: 2)
-            : null,
+        border: isActive ? Border.all(color: Colors.white, width: 2) : null,
       ),
       child: CircleAvatar(
         radius: size / 2,
@@ -210,16 +252,15 @@ class _HomePageState extends State<HomeDashboard> {
     );
   }
 
-
-
-  Widget _buildReelScreen() {
-    return SafeArea(
-        child: Scaffold(
-            appBar: AppBar(
-      title: Text(
-        "Reels",
-        style: TextStyle(color: Colors.white),
-      ),
-    )));
+  void _refreshCurrentTab(int index) {
+    switch (index) {
+      case 0: // Home
+        homeRefreshNotifier.value++;
+        break;
+      case 4: // Profile (assuming profile tab is index 4)
+        profileRefreshNotifier.value++;
+        break;
+      // Add more if needed
+    }
   }
 }

@@ -5,12 +5,39 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 
+// Function to show comment section as modal sheet
+void showCommentSection(BuildContext context, String postId) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    isDismissible: true,
+    builder: (context) {
+      return GestureDetector(
+        onTap: () {}, // Prevents tap-through dismiss
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, controller) => CommentSection(
+            postId: postId,
+            scrollController: controller,
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class CommentSection extends StatefulWidget {
   final String postId;
+  final ScrollController scrollController;
 
   const CommentSection({
     Key? key,
     required this.postId,
+    required this.scrollController,
   }) : super(key: key);
 
   @override
@@ -24,7 +51,7 @@ class _CommentSectionState extends State<CommentSection> {
   List<CommentData> _comments = [];
   DateTime? _lastRefreshed;
   final TextEditingController _commentController = TextEditingController();
-  late Map<String, List<String>> _commentLikes;
+  Map<String, List<String>> _commentLikes = {}; // Initialize with empty map
   final String currentUserId = AuthService.client().auth.currentUser!.id;
 
   String _formatLastUpdated(DateTime dateTime) {
@@ -48,17 +75,32 @@ class _CommentSectionState extends State<CommentSection> {
     Future.delayed(Duration(milliseconds: 100), () {
       _loadComments();
     });
-    _loadLikes(widget.postId); // Replace with actual postId
+    _loadLikes(widget.postId);
 
     // Add listener to update button state when text changes
     _commentController.addListener(_updatePostButton);
   }
 
   void _loadLikes(String postId) async {
-    final dataProvider = Provider.of<InstaDataProvider>(context, listen: false);
-    _commentLikes = await dataProvider.getCommentLikesMap(postId);
-    setState(() {});
+    try {
+      final dataProvider =
+          Provider.of<InstaDataProvider>(context, listen: false);
+      final likes = await dataProvider.getCommentLikesMap(postId);
+      if (mounted) {
+        setState(() {
+          _commentLikes = likes;
+        });
+      }
+    } catch (e) {
+      // Handle error gracefully
+      if (mounted) {
+        setState(() {
+          _commentLikes = {};
+        });
+      }
+    }
   }
+
   @override
   void dispose() {
     _commentController.removeListener(_updatePostButton);
@@ -85,7 +127,8 @@ class _CommentSectionState extends State<CommentSection> {
 
     try {
       // Force refresh from database to get the latest comments
-      final comments = await SupabaseService.getComments(widget.postId, forceRefresh: true);
+      final comments =
+          await SupabaseService.getComments(widget.postId, forceRefresh: true);
 
       if (mounted) {
         setState(() {
@@ -124,6 +167,8 @@ class _CommentSectionState extends State<CommentSection> {
       _commentController.clear();
       // This will trigger _updatePostButton via the listener
 
+      await Future.delayed(
+          Duration(milliseconds: 200)); // Slight animation delay
       // Refresh comments
       _loadComments();
     } catch (e) {
@@ -137,8 +182,6 @@ class _CommentSectionState extends State<CommentSection> {
     }
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     final currentUser = Provider.of<InstaDataProvider>(context).currentUser;
@@ -149,150 +192,264 @@ class _CommentSectionState extends State<CommentSection> {
     final String? resolvedImageUrl = isPublicUrl
         ? imageUrl
         : (imageUrl != null
-        ? Supabase.instance.client.storage
-        .from('avatars') // Adjust if your bucket name is different
-        .getPublicUrl(imageUrl)
-        : null);
+            ? Supabase.instance.client.storage
+                .from('avatars')
+                .getPublicUrl(imageUrl)
+            : null);
 
-
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        title: Text(
-          'Comments',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        iconTheme: IconThemeData(color: Colors.white),
-      ),
-      body: Column(
-        children: [
-          // Last refreshed indicator
-          if (_lastRefreshed != null)
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 4),
-              width: double.infinity,
-              color: Colors.black,
-              alignment: Alignment.center,
-              child: Text(
-                'Last updated ${_formatLastUpdated(_lastRefreshed!)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
+    return SafeArea(
+      child: LayoutBuilder(builder: (context, constraints) {
+        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+        return AnimatedPadding(
+          duration: Duration(milliseconds: 250),
+          padding: EdgeInsets.only(bottom: bottomInset),
+          curve: Curves.easeOut,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              // height: MediaQuery.of(context).size.height * 0.9,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
                 ),
               ),
-            ),
-          // Comments list
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadComments,
-              child: _isLoading
-                  ? Center(child: CircularProgressIndicator())
-                  : _comments.isEmpty
-                  ? Center(
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    Container(
-                      height: MediaQuery.of(context).size.height / 2,
-                      alignment: Alignment.center,
-                      child: Text(
-                        'No comments yet',
-                        style: TextStyle(color: Colors.grey),
+              child: Column(
+                children: [
+                  // Handle bar
+                  Container(
+                    margin: EdgeInsets.symmetric(vertical: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade600,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  // Header
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom:
+                            BorderSide(color: Colors.grey.shade800, width: 0.5),
                       ),
                     ),
-                  ],
-                ),
-              )
-                  : ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemCount: _comments.length,
-                itemBuilder: (context, index) {
-                  final comment = _comments[index];
-                  if (currentUser == null) {
-                    return Center(child: Text('Please sign in to view comments.'));
-                  }
-                  return CommentTile(
-                    comment: comment,
-                    commentLikes: _commentLikes,
-                    currentUserId: currentUser.id,
-                    dataProvider: dataProvider,
-                  );
-                },
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Comments',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Last refreshed indicator
+                  if (_lastRefreshed != null)
+                    Container(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Last updated ${_formatLastUpdated(_lastRefreshed!)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  // Comments list
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: _loadComments,
+                      child: _isLoading
+                          ? Center(
+                              child: CircularProgressIndicator(
+                                  color: Colors.white))
+                          : _comments.isEmpty
+                              ? Center(
+                                  child: ListView(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    children: [
+                                      Container(
+                                        height:
+                                            MediaQuery.of(context).size.height /
+                                                3,
+                                        alignment: Alignment.center,
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.chat_bubble_outline,
+                                              size: 50,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            SizedBox(height: 16),
+                                            Text(
+                                              'No comments yet',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            SizedBox(height: 8),
+                                            Text(
+                                              'Start the conversation.',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade700,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.builder(
+                                  controller: widget.scrollController,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  itemCount: _comments.length,
+                                  itemBuilder: (context, index) {
+                                    final comment = _comments[index];
+                                    if (currentUser == null) {
+                                      return Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(20),
+                                          child: Text(
+                                            'Please sign in to view comments.',
+                                            style:
+                                                TextStyle(color: Colors.grey),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return AnimatedSwitcher(
+                                      duration: Duration(milliseconds: 300),
+                                      child: CommentTile(
+                                        key: ValueKey(comment.id),
+                                        // Needed for animation
+                                        comment: comment,
+                                        commentLikes: _commentLikes,
+                                        currentUserId: currentUser.id,
+                                        dataProvider: dataProvider,
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ),
+                  // Add comment section
+                  Container(
+                    padding: EdgeInsets.only(
+                        left: 16, right: 16, top: 12, bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      border: Border(
+                        top:
+                            BorderSide(color: Colors.grey.shade800, width: 0.5),
+                      ),
+                    ),
+                    child: SafeArea(
+                      child: Row(
+                        children: [
+                          // Current user profile image
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundImage: resolvedImageUrl != null
+                                ? NetworkImage(resolvedImageUrl)
+                                : null,
+                            backgroundColor: Colors.grey.shade700,
+                            child: resolvedImageUrl == null
+                                ? Icon(Icons.person,
+                                    color: Colors.white, size: 20)
+                                : null,
+                          ),
+                          SizedBox(width: 12),
+                          // Comment text field
+                          Expanded(
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade900,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.grey.shade800),
+                              ),
+                              child: TextField(
+                                controller: _commentController,
+                                style: TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  hintText:
+                                      'Add a comment as ${currentUser?.username ?? "user"}...',
+                                  border: InputBorder.none,
+                                  hintStyle:
+                                      TextStyle(color: Colors.grey.shade600),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                                maxLines: null,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (_) {
+                                  if (_canPost) _addComment();
+                                },
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          // Post button
+                          GestureDetector(
+                            onTap:
+                                (_canPost && !_isPosting) ? _addComment : null,
+                            child: Container(
+                              padding: EdgeInsets.all(8),
+                              child: _isPosting
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.blue),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.send,
+                                      color: _canPost
+                                          ? Colors.blue
+                                          : Colors.grey.shade600,
+                                      size: 24,
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          // Add comment section
-          Container(
-            padding: EdgeInsets.only(left: 8.0, bottom: 16.0,right: 8,top: 10),
-            decoration: BoxDecoration(
-              color: Colors.black,
-              border: Border(
-                top: BorderSide(color: Colors.grey.shade300),
-              ),
-            ),
-            child: Row(
-              children: [
-                // Current user profile image
-                CircleAvatar(
-                  radius: 18,
-                  backgroundImage: resolvedImageUrl != null
-                      ? NetworkImage(resolvedImageUrl)
-                      : null,
-                  backgroundColor: Colors.grey.shade300,
-                  child: resolvedImageUrl == null
-                      ? Icon(Icons.person, color: Colors.white)
-                      : null,
-                ),
-                SizedBox(width: 10),
-                // Comment text field
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    decoration: InputDecoration(
-                      hintText: 'Add a comment as ${currentUser?.username ?? "user"}...',
-                      border: InputBorder.none,
-                      hintStyle: TextStyle(color: Colors.grey),
-                    ),
-                    maxLines: null,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) {
-                      if (_canPost) _addComment();
-                    },
-                  ),
-                ),
-                // Post button
-                TextButton(
-                  onPressed: (_canPost && !_isPosting) ? _addComment : null,
-                  child: _isPosting
-                      ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                    ),
-                  )
-                      : Text(
-                    'Post',
-                    style: TextStyle(
-                      color: _canPost
-                          ? Colors.blue
-                          : Colors.blue.shade200,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      }),
     );
   }
 }
 
-// Updated CommentTile widget with fixed image URL handling
+// Updated CommentTile widget with better styling
 class CommentTile extends StatefulWidget {
   final CommentData comment;
   final Map<String, List<String>> commentLikes;
@@ -312,31 +469,25 @@ class CommentTile extends StatefulWidget {
 }
 
 class _CommentTileState extends State<CommentTile> {
+  bool _isExpanded = false;
 
   String _getTimeAgo(DateTime dateTime) {
-    final difference = DateTime.now().difference(dateTime);
-
-    if (difference.inDays > 365) {
-      return '${(difference.inDays / 365).floor()}y';
-    } else if (difference.inDays > 30) {
-      return '${(difference.inDays / 30).floor()}mo';
-    } else if (difference.inDays > 0) {
-      return '${difference.inDays}d';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m';
-    } else {
-      return 'just now';
-    }
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inDays > 365) return '${(diff.inDays / 365).floor()}y';
+    if (diff.inDays > 30) return '${(diff.inDays / 30).floor()}mo';
+    if (diff.inDays > 0) return '${diff.inDays}d';
+    if (diff.inHours > 0) return '${diff.inHours}h';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m';
+    return 'just now';
   }
 
   ImageProvider? _getProfileImageProvider(String? url) {
     if (url == null || url.isEmpty) return null;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    if (!url.startsWith('http')) {
       if (url.startsWith('public/')) {
-        final storageUrl = SupabaseService.client().storage.from('avatars').getPublicUrl(url);
-        return NetworkImage(storageUrl);
+        return NetworkImage(
+          SupabaseService.client().storage.from('avatars').getPublicUrl(url),
+        );
       }
       return null;
     }
@@ -345,22 +496,30 @@ class _CommentTileState extends State<CommentTile> {
 
   @override
   Widget build(BuildContext context) {
-    final commentId = widget.comment.id;
-    final isLiked = widget.commentLikes[commentId]?.contains(widget.currentUserId) ?? false;
+    final comment = widget.comment;
+    final commentId = comment.id;
+    final isLiked =
+        widget.commentLikes[commentId]?.contains(widget.currentUserId) ?? false;
     final likeCount = widget.commentLikes[commentId]?.length ?? 0;
-    final supabaseService = SupabaseService();
+
+    final String contentPreview = comment.content.length > 120
+        ? comment.content.substring(0, 120) + '...'
+        : comment.content;
+
+    final bool isTruncated = comment.content.length > 120;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            radius: 16,
-            backgroundImage: _getProfileImageProvider(widget.comment.profileImageUrl),
-            backgroundColor: Colors.grey.shade300,
-            child: widget.comment.profileImageUrl == null || widget.comment.profileImageUrl!.isEmpty
-                ? Icon(Icons.person, color: Colors.white, size: 18)
+            radius: 18,
+            backgroundImage: _getProfileImageProvider(comment.profileImageUrl),
+            backgroundColor: Colors.grey.shade700,
+            child: comment.profileImageUrl == null ||
+                    comment.profileImageUrl!.isEmpty
+                ? Icon(Icons.person, size: 18, color: Colors.white)
                 : null,
           ),
           SizedBox(width: 12),
@@ -372,67 +531,93 @@ class _CommentTileState extends State<CommentTile> {
                   text: TextSpan(
                     children: [
                       TextSpan(
-                        text: widget.comment.username,
+                        text: comment.username,
                         style: TextStyle(
-                          fontWeight: FontWeight.bold,
                           color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
                         ),
                       ),
                       TextSpan(
-                        text: ' ${widget.comment.content}',
-                        style: TextStyle(color: Colors.white),
+                        text: ' ',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      TextSpan(
+                        text: _isExpanded || !isTruncated
+                            ? comment.content
+                            : contentPreview,
+                        style: TextStyle(color: Colors.white, fontSize: 14),
                       ),
                     ],
                   ),
                 ),
-                SizedBox(height: 4),
+                if (isTruncated && !_isExpanded)
+                  GestureDetector(
+                    onTap: () => setState(() => _isExpanded = true),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Text(
+                        'more',
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                SizedBox(height: 6),
                 Row(
                   children: [
                     Text(
-                      _getTimeAgo(widget.comment.createdAt),
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 12,
-                      ),
+                      _getTimeAgo(comment.createdAt),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                     SizedBox(width: 16),
-                    Text(
-                      'Reply',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                    if (likeCount > 0)
+                      Text(
+                        '$likeCount ${likeCount == 1 ? 'like' : 'likes'}',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                    SizedBox(width: 16),
+                    InkWell(
+                      onTap: () {
+                        // TODO: Add reply action
+                      },
+                      child: Text(
+                        'Reply',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade600),
                       ),
                     ),
                   ],
-                ),
+                )
               ],
             ),
           ),
-          Row(
-            children: [
-              IconButton(
-                icon: Icon(
-                  isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: isLiked ? Colors.red : Colors.grey,
-                  size: 20,
-                ),
-                onPressed: () async {
-                  if (isLiked) {
-                    await supabaseService.unlikeComment(commentId, widget.currentUserId);
-                    setState(() {
-                      widget.commentLikes[commentId]?.remove(widget.currentUserId);
-                    });
-                  } else {
-                    await supabaseService.likeComment(commentId, widget.currentUserId);
-                    setState(() {
-                      widget.commentLikes.putIfAbsent(commentId, () => []).add(widget.currentUserId);
-                    });
-                  }
-                },
+          GestureDetector(
+            onTap: () async {
+              final supabase = SupabaseService();
+              final updated =
+                  Set<String>.from(widget.commentLikes[commentId] ?? []);
+              if (isLiked) {
+                await supabase.unlikeComment(commentId, widget.currentUserId);
+                updated.remove(widget.currentUserId);
+              } else {
+                await supabase.likeComment(commentId, widget.currentUserId);
+                updated.add(widget.currentUserId);
+              }
+              setState(() {
+                widget.commentLikes[commentId] = updated.toList();
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Icon(
+                isLiked ? Icons.favorite : Icons.favorite_border,
+                color: isLiked ? Colors.red : Colors.grey.shade600,
+                size: 16,
               ),
-              Text('$likeCount'),
-            ],
+            ),
           ),
         ],
       ),

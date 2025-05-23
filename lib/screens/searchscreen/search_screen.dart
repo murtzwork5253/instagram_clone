@@ -1,8 +1,11 @@
+import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:Instagram/screens/searchscreen/search_screen_state.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:icons_plus/icons_plus.dart'
-    as OIcons; // Adjust the import for your OIcons
+    as OIcons;
+
+import '../../services/supabase_service.dart'; // Adjust the import for your OIcons
 
 class InstagramSearchScreen extends StatefulWidget {
   const InstagramSearchScreen({Key? key}) : super(key: key);
@@ -56,9 +59,23 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
     return imageUrls;
   }
 
-  void _refreshImages() {
+  Future<Map<String, dynamic>> _fetchPosts(String userId) async {
+    final supabase = Supabase.instance.client;
+
+    final postsRes = await supabase
+        .from('posts')
+        .select()
+        .order('created_at', ascending: false);
+
+    return {
+      'posts': postsRes,
+    };
+  }
+
+  Future<void> _refreshImages() async {
+    final images = await _fetchImagesFromStorage();
     setState(() {
-      _futureImages = _fetchImagesFromStorage();
+      _futureImages = Future.value(images);
     });
   }
 
@@ -121,10 +138,9 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
 
                   final images = snapshot.data!;
 
+
                   return RefreshIndicator(
-                    onRefresh: () async {
-                      _refreshImages();
-                    },
+                    onRefresh: _refreshImages,
                     child: GridView.builder(
                       padding: EdgeInsets.all(3),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -138,6 +154,7 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
                           onTap: () {
                             // Handle image tap - navigate to detail view, etc.
                             _showImageDetailView(context, images[index]);
+                            // Navigator.push(context, MaterialPageRoute(builder: (_) => SinglePostView(post: , Url: images[index])));
                           },
                           child: Hero(
                             tag: 'searchImage_$index',

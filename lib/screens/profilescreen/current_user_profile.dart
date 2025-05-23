@@ -1,28 +1,43 @@
-import 'dart:io';
 import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import 'edit_profile_screen.dart';
 import 'followers_following_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  final ValueNotifier<int>? refreshNotifier;
+
+  const ProfileScreen({Key? key, this.refreshNotifier}) : super(key: key);
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+
+  void initState() {
+    super.initState();
+
+    // Listen to notifier updates to refresh data in provider
+    widget.refreshNotifier?.addListener(() {
+      final provider = Provider.of<InstaDataProvider>(context, listen: false);
+      provider
+          .refreshFeed(); // Implement reloadData in your provider to fetch fresh data
+    });
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return _buildProfileScreen();
   }
 
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
 
   Widget _buildProfileScreen() {
     final supabase = Supabase.instance.client;
@@ -70,7 +85,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : supabase.storage.from('avatars').getPublicUrl(imageUrl);
         }
 
-        debugPrint('Profile: $profile');
+
         return Scaffold(
           backgroundColor: Colors.black,
           appBar: AppBar(
@@ -138,7 +153,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildActionButtons(),
                   const SizedBox(height: 12),
                   const Divider(color: Colors.white24, thickness: 0.2),
-                  _buildPostTabs(posts,imageUrl),
+                  _buildPostTabs(posts, imageUrl),
                 ],
               ),
             ),
@@ -496,15 +511,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         isLiked: post['is_liked'] ?? false,
                       );
                     }).toList();
-                    debugPrint('postObjects: $postObjects');
-                    print('mediaUrl: $imageUrl');
 
                     return GestureDetector(
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => SinglePostView(post: postObjects[index],Url : imageUrl),
+                            builder: (_) => SinglePostView(
+                                post: postObjects[index], Url: imageUrl),
                           ),
                         );
                       },

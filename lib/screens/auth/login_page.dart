@@ -168,14 +168,16 @@ class _LoginPageState extends State<LoginPage> {
         throw Exception('Login failed');
       }
 
+
       _showSuccessMessage("Login Successful");
       final provider = Provider.of<InstaDataProvider>(context, listen: false);
       await provider.refreshFeed();
 
       if (mounted) {
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),
+          (route) => false,
         );
       }
     } catch (e) {
@@ -296,9 +298,10 @@ class _LoginPageState extends State<LoginPage> {
       } else {
         final provider = Provider.of<InstaDataProvider>(context, listen: false);
         await provider.refreshFeed();
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),
+          (route) => false,
         );
       }
     } catch (e) {
