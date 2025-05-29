@@ -699,19 +699,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: 'Live',
                     onTap: () {
                       // Handle Live tap
-                      Navigator.pop(context);
-                      print('Live tapped!');
+                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const CreatePostScreen(initialTabIndex: 3,)));
                     },
                   ),
-                  _buildCreateOption(
-                    iconWidget: Icon(Icons.highlight,color: Colors.white,),
-                    label: 'Highlight',
-                    onTap: () {
-                      // Handle Highlight tap
-                      Navigator.pop(context);
-                      print('Highlight tapped!');
-                    },
-                  ),
+                  // _buildCreateOption(
+                  //   iconWidget: Icon(Icons.highlight,color: Colors.white,),
+                  //   label: 'Highlight',
+                  //   onTap: () {
+                  //     // Handle Highlight tap
+                  //     Navigator.pop(context);
+                  //     print('Highlight tapped!');
+                  //   },
+                  // ),
                   SizedBox(height: MediaQuery.of(context).padding.bottom), // Spacing for safe area
                 ],
               );

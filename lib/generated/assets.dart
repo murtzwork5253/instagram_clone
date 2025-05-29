@@ -10,6 +10,7 @@ class Assets {
   static const String authSetUsernameScreen = 'lib/screens/auth/set_username_screen.dart';
   static const String authSignupWithEmailScreen = 'lib/screens/auth/signup_with_email_screen.dart';
   static const String authSignupWithMobileScreen = 'lib/screens/auth/signup_with_mobile_screen.dart';
+  static const String chatscreenChatScreen = 'lib/screens/chatscreen/chat_screen.dart';
   static const String commentscreenCommentSection = 'lib/screens/commentscreen/comment_section.dart';
   static const String configConstants = 'lib/config/constants.dart';
   static const String createPostCreatePostScreen = 'lib/screens/createscreens/create_post/create_post_screen.dart';

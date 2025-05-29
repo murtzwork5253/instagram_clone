@@ -6,10 +6,12 @@ import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
+import '../chatscreen/chat_screen.dart';
 import '../createscreens/create_story/create_story_screen.dart'; // For date formatting
 
 class InstagramHomeScreen extends StatefulWidget {
@@ -70,53 +72,80 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     return GestureDetector(
-      // Detect a horizontal drag ending, specifically a swipe from left to right.
-      onHorizontalDragEnd: (details) {
-        // Check if the primary velocity is positive (indicating a swipe from left to right)
-        if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
-          // Push the CreateStoryContent screen as a full-screen modal dialog.
-          // This will overlay the story screen on top of the home feed without
-          // directly altering the home feed's AppBar or BottomNavigationBar.
-          Navigator.of(context).push(
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  CreatePostScreen(initialTabIndex: 1,),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                const beginOffset = Offset(-1.0, 0.0); // CreateStoryContent starts from left
-                const endOffset = Offset.zero;
+        // Detect a horizontal drag ending, specifically a swipe from left to right.
+        onHorizontalDragEnd: (details) {
+          if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
+            Navigator.of(context).push(
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) =>
+                    CreatePostScreen(initialTabIndex: 1),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  const beginOffset = Offset(-1.0, 0.0);
+                  const endOffset = Offset.zero;
 
-                const homeScreenBeginOffset = Offset.zero;
-                const homeScreenEndOffset = Offset(0.3, 0.0); // Home screen slides slightly to the right
+                  const homeScreenBeginOffset = Offset.zero;
+                  const homeScreenEndOffset = Offset(0.3, 0.0);
 
-                // Tween for the incoming CreateStoryContent
-                var storyScreenTween = Tween(begin: beginOffset, end: endOffset).chain(CurveTween(curve: Curves.ease));
+                  var storyScreenTween = Tween(begin: beginOffset, end: endOffset)
+                      .chain(CurveTween(curve: Curves.ease));
+                  var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset)
+                      .chain(CurveTween(curve: Curves.ease));
 
-                // Tween for the outgoing HomeScreen (current context)
-                var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset).chain(CurveTween(curve: Curves.ease));
+                  return Stack(
+                    children: <Widget>[
+                      SlideTransition(
+                        position: homeScreenTween.animate(animation),
+                        child: widget, // This is valid inside State<HomeScreen>
+                      ),
+                      SlideTransition(
+                        position: storyScreenTween.animate(animation),
+                        child: child,
+                      ),
+                    ],
+                  );
+                },
+                fullscreenDialog: true,
+              ),
+            );
+          }
+          else if (details.primaryVelocity != null && details.primaryVelocity! < 0) {
+            Navigator.of(context).push(
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) =>
+                    ChatScreen(currentUserId: currentUserId!),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  const beginOffset = Offset(1.0, 0.0);
+                  const endOffset = Offset.zero;
 
+                  const homeScreenBeginOffset = Offset.zero;
+                  const homeScreenEndOffset = Offset(0.0, 0.3);
 
-                return Stack(
-                  children: <Widget>[
-                    // The current route (HomeScreen) animates out slightly
-                    SlideTransition(
-                      position: homeScreenTween.animate(animation), // Use the main animation for the home screen
-                      child: this.widget, // Refers to the current widget, which is the HomeScreen
-                    ),
-                    // The new route (CreateStoryContent) animates in
-                    SlideTransition(
-                      position: storyScreenTween.animate(animation),
-                      child: child, // The child is CreateStoryContent
-                    ),
-                  ],
-                );
-              },
-              fullscreenDialog: true, // Optional: still makes it feel like a modal
-            ),
-          );
-        }
-      },
-      child: Consumer<InstaDataProvider>(
+                  var chatScreenTween = Tween(begin: beginOffset, end: endOffset)
+                      .chain(CurveTween(curve: Curves.ease));
+                  var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset)
+                      .chain(CurveTween(curve: Curves.ease));
+
+                  return Stack(
+                    children: <Widget>[
+                      SlideTransition(
+                        position: homeScreenTween.animate(animation),
+                        child: widget,
+                      ),
+                      SlideTransition(
+                        position: chatScreenTween.animate(animation),
+                        child: child,
+                      ),
+                    ],
+                  );
+                },
+                fullscreenDialog: true,
+              ),
+            );
+          }
+        },
+        child: Consumer<InstaDataProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading) {
             return Center(child: CircularProgressIndicator());
@@ -141,16 +170,41 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                     color: Colors.white,
                   ),
                 ),
+                // NEW CODE - Replace the above section with this:
                 actions: [
-                  IconButton(onPressed: (){}, icon: Image.asset("assets/icon/Icon.png",width: 25,height: 25,)),
+                  // This is likely your existing message icon
                   IconButton(
-                    onPressed: () {},
-                    icon: Image.asset(
-                      "assets/images/image-removebg-preview.png",
-                      width: 25,
-                      height: 25,
-                      color: Colors.white,
-                    ),
+                    onPressed: () {
+                      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+                      if (currentUserId != null) {
+                        Navigator.of(context).push(
+                          PageRouteBuilder(
+                            pageBuilder: (context, animation, secondaryAnimation) =>
+                                ChatScreen(currentUserId: currentUserId), // Pass the current user ID
+                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                              const begin = Offset(1.0, 0.0); // Start from right
+                              const end = Offset.zero;
+                              final tween = Tween(begin: begin, end: end);
+                              final offsetAnimation = animation.drive(tween);
+                              return SlideTransition(
+                                position: offsetAnimation,
+                                child: child,
+                              );
+                            },
+                          ),
+                        );
+                      } else {
+                        // Handle case where user is not logged in
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('You need to be logged in to view chats.')),
+                        );
+                      }
+                    },
+                    icon: Image.asset("assets/images/image-removebg-preview.png", width: 25, height: 25, color: Colors.white),
+                  ),
+                  IconButton(
+                    onPressed: (){},
+                    icon: Image.asset("assets/icon/Icon.png",width: 25,height: 25,),
                   ),
                 ],
               ),
@@ -234,7 +288,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
         : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$imageUrl';
 
     final bool isMyEmptyStory = story.isMe && !story.hasStory;
-    print("🧩 Building story item -> username: ${story.username}, isMe: ${story.isMe}, hasStory: ${story.hasStory}, isMyEmptyStory: ${isMyEmptyStory}");
+    // print("🧩 Building story item -> username: ${story.username}, isMe: ${story.isMe}, hasStory: ${story.hasStory}, isMyEmptyStory: ${isMyEmptyStory}");
 
 
     return GestureDetector(
@@ -244,7 +298,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
             context,
             PageRouteBuilder(
               pageBuilder: (context, animation, secondaryAnimation) =>
-                  CreateStoryContent(),
+                  CreatePostScreen(initialTabIndex: 1,),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 const begin = Offset(-1.0, 0.0);
                 const end = Offset.zero;

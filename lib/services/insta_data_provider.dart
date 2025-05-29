@@ -110,106 +110,116 @@ class InstaDataProvider extends ChangeNotifier {
   // }
 
   // --- MODIFIED _fetchStories() METHOD ---
+  // Optimized version of _fetchStories() with better performance and cleaner logic
   Future<void> _fetchStories() async {
     try {
       print('Fetching stories...');
+
       // 1. Fetch all individual stories from Supabase
       final fetchedStories = await SupabaseService.getStories();
 
-      // NEW: Store all individual stories grouped by user for direct access by StoryViewScreen
-      _allIndividualStoriesGrouped.clear(); // Clear previous data
-      for (final story in fetchedStories) {
-        _allIndividualStoriesGrouped.putIfAbsent(story.userId, () => []).add(story);
-      }
+      // 2. Update the grouped stories cache for StoryViewScreen
+      _updateIndividualStoriesCache(fetchedStories);
 
-      // 2. Group individual stories by userId for aggregation into _stories
-      final Map<String, List<StoryData>> groupedStories = {};
-      for (final story in fetchedStories) {
-        groupedStories.putIfAbsent(story.userId, () => []).add(story);
-      }
+      // 3. Process stories into aggregated format
+      final processedStories = _processStoriesToAggregated(fetchedStories);
 
+      // 4. Ensure current user appears first and handle empty story case
+      final finalStories = _ensureCurrentUserInStories(processedStories);
 
-      print('🪪 Checking if current user has stories in fetched list: ${fetchedStories.any((s) => s.userId == _currentUser?.id)}');
+      print("🧾 Final processed stories: ${finalStories.map((s) => '${s.username}: hasStory=${s.hasStory}, isMe=${s.isMe}, isViewed=${s.isViewed}').toList()}");
 
-      // 3. Process each user's group of stories into a single, aggregated StoryData object
-      final List<StoryData> processedStories = [];
-      for (final entry in groupedStories.entries) {
-        final userId = entry.key;
-        final userIndividualStories = entry.value; // List of individual stories for this specific user
-
-        // Sort stories for this user by creation time (oldest first for display order in StoryViewScreen)
-        userIndividualStories.sort((a, b) => a.createdAt!.compareTo(b.createdAt!)); // Sort ascending for view order
-
-        final bool hasAnyStory = userIndividualStories.isNotEmpty;
-        final bool userHasUnviewedStories = userIndividualStories.any((story) => !story.isViewed);
-
-        // Pick a representative story from the user's collection for the aggregated object
-        final StoryData representativeIndividualStory = userIndividualStories.first; // Using the first story as representative for properties
-
-        // Create the single aggregated StoryData object for this user
-        final aggregatedStoryData = StoryData(
-          id: representativeIndividualStory.id,
-          userId: userId,
-          username: representativeIndividualStory.username,
-          profileImageUrl: representativeIndividualStory.profileImageUrl,
-          mediaUrl: representativeIndividualStory.mediaUrl, // Media URL of the representative story
-          isMe: userId == _currentUser?.id,
-          hasStory: hasAnyStory,
-          isViewed: !userHasUnviewedStories,
-          createdAt: representativeIndividualStory.createdAt,
-        );
-        processedStories.add(aggregatedStoryData);
-      }
-      // 3.1 Handle the current user if they have no stories at all
-      final bool currentUserAlreadyIncluded = processedStories.any((story) => story.userId == _currentUser?.id);
-      if (!currentUserAlreadyIncluded && _currentUser != null) {
-        print('🚨 Inserting placeholder story for current user: ${_currentUser!.username}');
-        final emptyStory = StoryData(
-          id: '',
-          userId: _currentUser!.id,
-          username: _currentUser!.username,
-          profileImageUrl: _currentUser!.profileImageUrl,
-          mediaUrl: '',
-          isMe: true,
-          hasStory: false,
-          isViewed: true,
-          createdAt: DateTime.now(),
-        );
-        processedStories.insert(0, emptyStory);
-        print("✅ Inserted empty story for current user: hasStory=${emptyStory.hasStory}, isMe=${emptyStory.isMe}");
-      }
-
-      // 4. (Optional) Sort the processed stories for home screen display (e.g., current user first)
-      if (_currentUser != null) {
-        processedStories.sort((a, b) {
-          if (a.userId == _currentUser!.id) return -1;
-          if (b.userId == _currentUser!.id) return 1;
-          return 0;
-        });
-      }
-
-      print("🧾 Final processed stories: ${processedStories.map((s) => '${s.username}: hasStory=${s.hasStory}, isMe=${s.isMe}').toList()}");
-      // 5. Assign the list of aggregated StoryData objects to _stories for home screen display
-      _stories = processedStories;
-
-      // Debug check
-      if (_currentUser != null) {
-        final currentUserFinalStory = _stories.firstWhere(
-                (story) => story.userId == _currentUser?.id,
-            orElse: () => StoryData(id: '', userId: '', username: 'N/A', profileImageUrl: '', mediaUrl: '', isMe: false, hasStory: false, isViewed: true, createdAt: DateTime.now())
-        );
-        print('InstaDataProvider - FINAL Current User Aggregated Story isViewed: ${currentUserFinalStory.isViewed}');
-      }
-
+      _stories = finalStories;
       notifyListeners();
       print('InstaDataProvider: Stories fetched and aggregated successfully.');
+
     } catch (e) {
       _error = 'Failed to fetch stories: $e';
       print('Error fetching stories: $e');
       notifyListeners();
     }
   }
-  // --- END OF MODIFIED _fetchStories() METHOD ---
+
+  void _updateIndividualStoriesCache(List<StoryData> fetchedStories) {
+    _allIndividualStoriesGrouped.clear();
+    for (final story in fetchedStories) {
+      _allIndividualStoriesGrouped.putIfAbsent(story.userId, () => []).add(story);
+    }
+  }
+
+  List<StoryData> _processStoriesToAggregated(List<StoryData> fetchedStories) {
+    // Group stories by userId
+    final Map<String, List<StoryData>> groupedStories = {};
+    for (final story in fetchedStories) {
+      groupedStories.putIfAbsent(story.userId, () => []).add(story);
+    }
+
+    final List<StoryData> processedStories = [];
+
+    for (final entry in groupedStories.entries) {
+      final userId = entry.key;
+      final userStories = entry.value;
+
+      // Sort stories by creation time
+      userStories.sort((a, b) => a.createdAt!.compareTo(b.createdAt!));
+
+      final hasAnyStory = userStories.isNotEmpty;
+      final hasUnviewedStories = userStories.any((story) => !story.isViewed);
+      final representativeStory = userStories.first;
+
+      // Create aggregated story data
+      final aggregatedStory = StoryData(
+        id: representativeStory.id,
+        userId: userId,
+        username: representativeStory.username,
+        profileImageUrl: representativeStory.profileImageUrl,
+        mediaUrl: representativeStory.mediaUrl,
+        isMe: userId == _currentUser?.id,
+        hasStory: hasAnyStory,
+        isViewed: !hasUnviewedStories,
+        createdAt: representativeStory.createdAt,
+      );
+
+      processedStories.add(aggregatedStory);
+    }
+
+    return processedStories;
+  }
+
+  List<StoryData> _ensureCurrentUserInStories(List<StoryData> processedStories) {
+    // Check if current user is already in the list
+    final currentUserExists = processedStories.any((story) => story.userId == _currentUser?.id);
+
+    if (!currentUserExists && _currentUser != null) {
+      print('🚨 Adding placeholder story for current user: ${_currentUser!.username}');
+
+      final emptyStory = StoryData(
+        id: '',
+        userId: _currentUser!.id,
+        username: _currentUser!.username,
+        profileImageUrl: _currentUser!.profileImageUrl,
+        mediaUrl: '',
+        isMe: true,
+        hasStory: false,
+        isViewed: false,
+        createdAt: DateTime.now(),
+      );
+
+      processedStories.insert(0, emptyStory);
+      print("✅ Added empty story for current user");
+    }
+
+    // Sort to ensure current user appears first
+    if (_currentUser != null) {
+      processedStories.sort((a, b) {
+        if (a.userId == _currentUser!.id) return -1;
+        if (b.userId == _currentUser!.id) return 1;
+        return 0;
+      });
+    }
+
+    return processedStories;
+  }
 
   // NEW: Getter to provide individual stories for a specific user
   List<StoryData> getIndividualStoriesForUser(String userId) {

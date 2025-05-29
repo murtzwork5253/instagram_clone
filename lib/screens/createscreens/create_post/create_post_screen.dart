@@ -3,6 +3,7 @@ import 'package:Instagram/screens/createscreens/create_reels/create_reel_screen.
 import 'package:Instagram/screens/createscreens/create_story/create_story_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // For MissingPluginException
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
@@ -322,11 +323,34 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
       if (userId == null) throw Exception('User not authenticated');
 
       final String fileExt = path.extension(media.path);
-      final String exactname = '${const Uuid().v4()}$fileExt';
-      final fileName = '${userId}/${exactname}';
+      final String exactName = '${const Uuid().v4()}$fileExt';
+      final String fileName = '$userId/$exactName';
 
-      final bytes = await media.readAsBytes();
-      await supabase.storage.from('post-media').uploadBinary(fileName, bytes);
+      Uint8List? compressedBytes;
+
+      if (fileExt.toLowerCase() == '.jpg' ||
+          fileExt.toLowerCase() == '.jpeg' ||
+          fileExt.toLowerCase() == '.png') {
+        // 🗜️ Compress image before upload
+        compressedBytes = await FlutterImageCompress.compressWithFile(
+          media.path,
+          minWidth: 1080,
+          minHeight: 1080,
+          quality: 70,
+          format: fileExt.toLowerCase() == '.png'
+              ? CompressFormat.png
+              : CompressFormat.jpeg,
+        );
+
+        if (compressedBytes == null) {
+          throw Exception('Image compression failed');
+        }
+      } else {
+        // 📄 For non-image media, upload as-is
+        compressedBytes = await media.readAsBytes();
+      }
+
+      await supabase.storage.from('post-media').uploadBinary(fileName, compressedBytes);
 
       final publicUrl = supabase.storage.from('post-media').getPublicUrl(fileName);
       return publicUrl;
@@ -770,7 +794,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
                   return const Center(
                     child: Text(
                       'LIVE content goes here',
-                      style: TextStyle(fontSize: 24, color: Colors.black),
+                      style: TextStyle(fontSize: 24, color: Colors.white),
                     ),
                   );
                 }

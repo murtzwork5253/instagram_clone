@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path/path.dart' as path;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import 'insta_data_provider.dart';
 
@@ -14,10 +15,10 @@ class SupabaseStorageService {
   static final _uuid = Uuid();
 
   static Future<String> uploadImage(
-    File imageFile, {
-    String folder = 'post-media',
-    void Function(double progress)? onProgress,
-  }) async {
+      File imageFile, {
+        String folder = 'post-media',
+        void Function(double progress)? onProgress,
+      }) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('User not logged in');
 
@@ -25,23 +26,30 @@ class SupabaseStorageService {
     final fileName = '${_uuid.v4()}$fileExt';
     final filePath = '${user.id}/$fileName';
 
-    final total = await imageFile.length();
-    final bytes = <int>[];
-    int sent = 0;
+    // 📦 Step 1: Compress the image
+    final compressedBytes = await FlutterImageCompress.compressWithFile(
+      imageFile.absolute.path,
+      minWidth: 1080, // adjust resolution as needed
+      minHeight: 1080,
+      quality: 70, // adjust quality (0-100)
+      format: fileExt.toLowerCase() == '.png'
+          ? CompressFormat.png
+          : CompressFormat.jpeg,
+    );
 
-    await for (final chunk in imageFile.openRead()) {
-      bytes.addAll(chunk);
-      sent += chunk.length;
-      if (onProgress != null) {
-        onProgress(sent / total);
-      }
-    }
+    if (compressedBytes == null) throw Exception('Image compression failed');
 
+    // 👇 Optionally report "fake" progress since compression is instant
+    onProgress?.call(0.5);
+
+    // 📤 Step 2: Upload to Supabase
     await _client.storage.from(folder).uploadBinary(
-          filePath,
-          Uint8List.fromList(bytes), // ✅ Convert to Uint8List here
-          fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-        );
+      filePath,
+      Uint8List.fromList(compressedBytes),
+      fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+    );
+
+    onProgress?.call(1.0);
 
     return _client.storage.from(folder).getPublicUrl(filePath);
   }

@@ -1,3 +1,4 @@
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart'; // Assuming you use uuid for unique file names
 import 'package:path/path.dart' as path;
@@ -153,9 +154,9 @@ class SupabaseService {
 
       // Process My Stories
       final userData = await getCurrentUser();
+      // Process My Stories
       if (myStories.isNotEmpty) {
         for (final story in myStories) {
-          // --- MODIFIED LOGIC HERE: Check story_views for my own stories as well ---
           final viewed = await _client
               .from('story_views')
               .select()
@@ -163,7 +164,6 @@ class SupabaseService {
               .eq('viewer_id', user.id)
               .maybeSingle();
 
-          // ADD THIS PRINT STATEMENT:
           print('SupabaseService - Story ID: ${story['id']}, isViewed: ${viewed != null}');
 
           allStories.add(StoryData.fromJson({
@@ -171,23 +171,11 @@ class SupabaseService {
             'user': story['users'],
             'isMe': true,
             'hasStory': true,
-            'isViewed': viewed != null, // Set based on view status
+            'isViewed': viewed != null,
           }));
         }
         myStories.map((s) => {'id': s['id'], 'is_viewed': s['isViewed']}).toList();
         print('My Stories: $myStories');
-      } else {
-        // Logic for when the current user has no active stories
-        allStories.add(StoryData.fromJson({
-          'user': {
-            'id': user.id,
-            'username': userData?.username ?? 'Your Story',
-            'profile_image_url': userData?.profileImageUrl,
-          },
-          'isMe': true,
-          'hasStory': false,
-          'isViewed': true, // Assuming if user has no story, this placeholder is considered "viewed"
-        }));
       }
 
       // Following stories (this part was already correct)
@@ -474,36 +462,58 @@ class SupabaseService {
     return response;
   }
 
-  // New method for story media upload
   static Future<String> uploadStoryMedia(
-      File mediaFile, { // Renamed from imageFile to mediaFile to be generic for image/video
+      File mediaFile, {
         void Function(double progress)? onProgress,
       }) async {
-    const String folder = 'story-media'; // ✅ Specifically set to 'story-media'
+    const String folder = 'story-media';
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('User not logged in');
 
-    final fileExt = path.extension(mediaFile.path);
+    final fileExt = path.extension(mediaFile.path).toLowerCase();
     final fileName = '${_uuid.v4()}$fileExt';
     final filePath = '${user.id}/$fileName';
 
-    final total = await mediaFile.length();
-    final bytes = <int>[];
-    int sent = 0;
+    Uint8List bytesToUpload;
 
-    await for (final chunk in mediaFile.openRead()) {
-      bytes.addAll(chunk);
-      sent += chunk.length;
-      if (onProgress != null) {
-        onProgress(sent / total);
+    if (fileExt == '.jpg' || fileExt == '.jpeg' || fileExt == '.png') {
+      // 🗜️ Compress image before upload
+      final compressed = await FlutterImageCompress.compressWithFile(
+        mediaFile.path,
+        minWidth: 1080,
+        minHeight: 1080,
+        quality: 70,
+        format: fileExt == '.png' ? CompressFormat.png : CompressFormat.jpeg,
+      );
+
+      if (compressed == null) throw Exception('Image compression failed');
+      bytesToUpload = Uint8List.fromList(compressed);
+
+      // Fake simple progress
+      onProgress?.call(0.5);
+    } else {
+      // 📄 For non-image media (e.g., video), stream as-is
+      final total = await mediaFile.length();
+      final bytes = <int>[];
+      int sent = 0;
+
+      await for (final chunk in mediaFile.openRead()) {
+        bytes.addAll(chunk);
+        sent += chunk.length;
+        onProgress?.call(sent / total);
       }
+
+      bytesToUpload = Uint8List.fromList(bytes);
     }
 
+    // 📤 Upload to Supabase
     await _client.storage.from(folder).uploadBinary(
       filePath,
-      Uint8List.fromList(bytes),
+      bytesToUpload,
       fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
     );
+
+    onProgress?.call(1.0);
 
     return _client.storage.from(folder).getPublicUrl(filePath);
   }

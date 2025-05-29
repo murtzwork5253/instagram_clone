@@ -104,6 +104,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
       _startTimer();
       _markStoryAsViewed(widget.stories[_currentIndex].id!);
     } else {
+      Provider.of<InstaDataProvider>(context, listen: false).reloadData();
       Navigator.of(context).pop();
     }
   }
@@ -118,6 +119,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
       );
       _startTimer();
     } else {
+      Provider.of<InstaDataProvider>(context, listen: false).reloadData();
       Navigator.of(context).pop();
     }
   }
