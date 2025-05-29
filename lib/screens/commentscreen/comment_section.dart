@@ -510,117 +510,187 @@ class _CommentTileState extends State<CommentTile> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundImage: _getProfileImageProvider(comment.profileImageUrl),
-            backgroundColor: Colors.grey.shade700,
-            child: comment.profileImageUrl == null ||
-                    comment.profileImageUrl!.isEmpty
-                ? Icon(Icons.person, size: 18, color: Colors.white)
-                : null,
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: comment.username,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
+      child: GestureDetector(
+        onLongPress: _deleteComment,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundImage: _getProfileImageProvider(comment.profileImageUrl),
+              backgroundColor: Colors.grey.shade700,
+              child: comment.profileImageUrl == null ||
+                      comment.profileImageUrl!.isEmpty
+                  ? Icon(Icons.person, size: 18, color: Colors.white)
+                  : null,
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: comment.username,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        TextSpan(
+                          text: ' ',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                        TextSpan(
+                          text: _isExpanded || !isTruncated
+                              ? comment.content
+                              : contentPreview,
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isTruncated && !_isExpanded)
+                    GestureDetector(
+                      onTap: () => setState(() => _isExpanded = true),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text(
+                          'more',
+                          style: TextStyle(
+                              color: Colors.grey.shade500, fontSize: 13),
                         ),
                       ),
-                      TextSpan(
-                        text: ' ',
-                        style: TextStyle(fontSize: 14),
+                    ),
+                  SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        _getTimeAgo(comment.createdAt),
+                        style:
+                            TextStyle(fontSize: 12, color: Colors.grey.shade600),
                       ),
-                      TextSpan(
-                        text: _isExpanded || !isTruncated
-                            ? comment.content
-                            : contentPreview,
-                        style: TextStyle(color: Colors.white, fontSize: 14),
+                      SizedBox(width: 16),
+                      if (likeCount > 0)
+                        Text(
+                          '$likeCount ${likeCount == 1 ? 'like' : 'likes'}',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                      SizedBox(width: 16),
+                      InkWell(
+                        onTap: () {
+                          // TODO: Add reply action
+                        },
+                        child: Text(
+                          'Reply',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade600),
+                        ),
                       ),
                     ],
-                  ),
-                ),
-                if (isTruncated && !_isExpanded)
-                  GestureDetector(
-                    onTap: () => setState(() => _isExpanded = true),
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4.0),
-                      child: Text(
-                        'more',
-                        style: TextStyle(
-                            color: Colors.grey.shade500, fontSize: 13),
-                      ),
-                    ),
-                  ),
-                SizedBox(height: 6),
-                Row(
-                  children: [
-                    Text(
-                      _getTimeAgo(comment.createdAt),
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    ),
-                    SizedBox(width: 16),
-                    if (likeCount > 0)
-                      Text(
-                        '$likeCount ${likeCount == 1 ? 'like' : 'likes'}',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                    SizedBox(width: 16),
-                    InkWell(
-                      onTap: () {
-                        // TODO: Add reply action
-                      },
-                      child: Text(
-                        'Reply',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                    ),
-                  ],
-                )
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () async {
-              final supabase = SupabaseService();
-              final updated =
-                  Set<String>.from(widget.commentLikes[commentId] ?? []);
-              if (isLiked) {
-                await supabase.unlikeComment(commentId, widget.currentUserId);
-                updated.remove(widget.currentUserId);
-              } else {
-                await supabase.likeComment(commentId, widget.currentUserId);
-                updated.add(widget.currentUserId);
-              }
-              setState(() {
-                widget.commentLikes[commentId] = updated.toList();
-              });
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8.0),
-              child: Icon(
-                isLiked ? Icons.favorite : Icons.favorite_border,
-                color: isLiked ? Colors.red : Colors.grey.shade600,
-                size: 16,
+                  )
+                ],
               ),
             ),
-          ),
-        ],
+            GestureDetector(
+              onTap: () async {
+                final supabase = SupabaseService();
+                final updated =
+                    Set<String>.from(widget.commentLikes[commentId] ?? []);
+                if (isLiked) {
+                  await supabase.unlikeComment(commentId, widget.currentUserId);
+                  updated.remove(widget.currentUserId);
+                } else {
+                  await supabase.likeComment(commentId, widget.currentUserId);
+                  updated.add(widget.currentUserId);
+                }
+                setState(() {
+                  widget.commentLikes[commentId] = updated.toList();
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: Icon(
+                  isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: isLiked ? Colors.red : Colors.grey.shade600,
+                  size: 16,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  // Inside your CommentItem's State class (assuming it's a StatefulWidget)
+  void _deleteComment() async {
+    final comment = widget.comment;
+    final commentId = comment.id;
+
+    // Show confirmation dialog
+    final bool? confirmDelete = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[850], // Dark background for AlertDialog
+          title: const Text(
+            'Delete Comment?',
+            style: TextStyle(color: Colors.white), // White text for title
+          ),
+          content: const Text(
+            'Are you sure you want to delete this comment? This action cannot be undone.',
+            style: TextStyle(color: Colors.white70), // Slightly lighter text for content
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false); // User cancelled
+              },
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.blueAccent), // Accent color for cancel
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true); // User confirmed
+              },
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.redAccent), // Red accent for delete
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    // If the user did not confirm, do nothing
+    if (confirmDelete != true) {
+      return;
+    }
+
+    // If confirmed, proceed with deletion
+    try {
+      await widget.dataProvider.deleteComment(commentId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Comment deleted successfully')),
+      );
+      // Pop the comment section if this comment is part of a list that should update
+      // or if the comment section itself should close after deletion.
+      // If you're on a screen that only shows *one* comment, this is appropriate.
+      // If it's a list, you might just want the list to rebuild, not pop the screen.
+      Navigator.of(context).pop();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete comment: $e')),
+      );
+      print('Error deleting comment: $e'); // Keep this for debugging
+    }
   }
 }

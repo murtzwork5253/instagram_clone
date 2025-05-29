@@ -1,11 +1,15 @@
 import 'package:Instagram/screens/splash/splash_screen.dart';
 import 'package:Instagram/services/insta_data_provider.dart';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Create a global navigator key that can be used throughout the app
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+// Global variable to store a list of available cameras
+List<CameraDescription> cameras = [];
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +19,14 @@ void main() async {
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwcml6bGtleG9janh2eWdmYnluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcxOTk4NDksImV4cCI6MjA2Mjc3NTg0OX0.GF5O_3TG8FPuH-GJKrLrYMroVepx3vwvgHvquSuFl6I',
     debug: true,
   );
+
+  // Obtain a list of the available cameras on the device.
+  try {
+    cameras = await availableCameras();
+  } on CameraException catch (e) {
+    print('Error fetching cameras: $e');
+    // Handle error, e.g., show a dialog to the user
+  }
   runApp(
     MultiProvider(
       providers: [

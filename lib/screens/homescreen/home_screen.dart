@@ -1,6 +1,5 @@
-import 'package:Instagram/screens/createscreens/create_post/add_post_screen.dart';
-import 'package:Instagram/screens/reels_screen/add_reels_screen.dart';
-import 'package:Instagram/screens/createscreens/create_screen.dart';
+import 'package:Instagram/screens/createscreens/create_post/create_post_screen.dart';
+import 'package:Instagram/screens/reels_screen/reels_screen.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/searchscreen/search_screen.dart';
 import 'package:flutter/material.dart';
@@ -22,8 +21,8 @@ class _HomePageState extends State<HomeDashboard> {
   String? _avatarUrl;
   final ValueNotifier<int> homeRefreshNotifier = ValueNotifier(0);
   final ValueNotifier<int> profileRefreshNotifier = ValueNotifier(0);
+  final ValueNotifier<int> searchRefreshNotifier = ValueNotifier(0);
   // At the top of your _[YourMainScreen]State class, add:
-  final GlobalKey<CreatePostScreenState> _createPostScreenKey = GlobalKey();
 
   // In initState, initialize searchResults with all items
   void initState() {
@@ -44,7 +43,7 @@ class _HomePageState extends State<HomeDashboard> {
         .eq('id', user.id)
         .single();
 
-    if (response != null && response['profile_image_url'] != null) {
+    if (response['profile_image_url'] != null) {
       setState(() {
         final rawUrl = response['profile_image_url'] as String;
         _avatarUrl = rawUrl.startsWith('http')
@@ -95,7 +94,7 @@ class _HomePageState extends State<HomeDashboard> {
 
   late final List<Widget> _pages = [
     InstagramHomeScreen(refreshNotifier: homeRefreshNotifier),
-    InstagramSearchScreen(),
+    InstagramSearchScreen(refreshNotifier: searchRefreshNotifier,),
     ReelsScreen(),
     ProfileScreen(refreshNotifier: profileRefreshNotifier),
   ];
@@ -186,7 +185,7 @@ class _HomePageState extends State<HomeDashboard> {
               if (index == 2) { // Assuming Create Post is index 2
                 Navigator.of(context).push(
                   PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) => const CreatePostScreen(),
+                    pageBuilder: (context, animation, secondaryAnimation) => const CreatePostScreen(initialTabIndex: 0,),
                     transitionsBuilder: (context, animation, secondaryAnimation, child) {
                       const begin = Offset(-1.0, 0.0); // Starts from the right
                       const end = Offset.zero; // Ends at its normal position
@@ -256,6 +255,9 @@ class _HomePageState extends State<HomeDashboard> {
     switch (index) {
       case 0: // Home
         homeRefreshNotifier.value++;
+        break;
+      case 1:
+        searchRefreshNotifier.value++;
         break;
       case 4: // Profile (assuming profile tab is index 4)
         profileRefreshNotifier.value++;

@@ -1,15 +1,16 @@
 import 'package:Instagram/screens/commentscreen/comment_section.dart';
+import 'package:Instagram/screens/createscreens/create_post/create_post_screen.dart';
+import 'package:Instagram/screens/homescreen/story_view_screen.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
-import '../auth/login_page.dart'; // For date formatting
+import '../createscreens/create_story/create_story_screen.dart'; // For date formatting
 
 class InstagramHomeScreen extends StatefulWidget {
   final ValueNotifier<int>? refreshNotifier;
@@ -22,55 +23,31 @@ class InstagramHomeScreen extends StatefulWidget {
 }
 
 class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
+
+  // Store the listener function so we can remove it later
+  VoidCallback? _refreshListener;
+
   void initState() {
     super.initState();
 
-    // Listen to notifier updates to refresh data in provider
-    widget.refreshNotifier?.addListener(() {
-      final provider = Provider.of<InstaDataProvider>(context, listen: false);
-      provider
-          .reloadData(); // Implement reloadData in your provider to fetch fresh data
-    });
+    // Define the listener function
+    _refreshListener = () {
+      // Always check if the widget is still mounted before using context
+      if (mounted) {
+        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+        provider.reloadData();
+      }
+    };
+
+    // Add the listener
+    widget.refreshNotifier?.addListener(_refreshListener!);
   }
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'profile'],
-    serverClientId:
-        '1051202779186-kqac9ms2803rllegshdu2d3n6bjff23h.apps.googleusercontent.com', // Add this for better security
-  );
-
-  // Enhanced logout function
-  Future<void> _logout() async {
-    try {
-      // setState(() => _isLoading = true);
-
-      // 1. Sign out from Google
-      await _googleSignIn.signOut();
-
-      // 2. Sign out from Supabase
-      await AuthService.client().auth.signOut();
-
-      // 3. Clear any cached credentials
-      // await _googleSignIn.disconnect();
-
-      Provider.of<InstaDataProvider>(context, listen: false).reset();
-
-      // Optional: Navigate to login screen
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => LoginPage()),
-          (route) => false,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Logout error: ${e.toString()}')),
-        );
-      }
-    } finally {
-      if (mounted) {}
-    }
+  // IMPORTANT: Remove the listener when the widget is disposed
+  @override
+  void dispose() {
+    widget.refreshNotifier?.removeListener(_refreshListener!);
+    super.dispose();
   }
 
   String _formatTime(DateTime? time) {
@@ -93,85 +70,161 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<InstaDataProvider>(
-      builder: (context, provider, _) {
-        if (provider.isLoading) {
-          return Center(child: CircularProgressIndicator());
+    return GestureDetector(
+      // Detect a horizontal drag ending, specifically a swipe from left to right.
+      onHorizontalDragEnd: (details) {
+        // Check if the primary velocity is positive (indicating a swipe from left to right)
+        if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
+          // Push the CreateStoryContent screen as a full-screen modal dialog.
+          // This will overlay the story screen on top of the home feed without
+          // directly altering the home feed's AppBar or BottomNavigationBar.
+          Navigator.of(context).push(
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  CreatePostScreen(initialTabIndex: 1,),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                const beginOffset = Offset(-1.0, 0.0); // CreateStoryContent starts from left
+                const endOffset = Offset.zero;
+
+                const homeScreenBeginOffset = Offset.zero;
+                const homeScreenEndOffset = Offset(0.3, 0.0); // Home screen slides slightly to the right
+
+                // Tween for the incoming CreateStoryContent
+                var storyScreenTween = Tween(begin: beginOffset, end: endOffset).chain(CurveTween(curve: Curves.ease));
+
+                // Tween for the outgoing HomeScreen (current context)
+                var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset).chain(CurveTween(curve: Curves.ease));
+
+
+                return Stack(
+                  children: <Widget>[
+                    // The current route (HomeScreen) animates out slightly
+                    SlideTransition(
+                      position: homeScreenTween.animate(animation), // Use the main animation for the home screen
+                      child: this.widget, // Refers to the current widget, which is the HomeScreen
+                    ),
+                    // The new route (CreateStoryContent) animates in
+                    SlideTransition(
+                      position: storyScreenTween.animate(animation),
+                      child: child, // The child is CreateStoryContent
+                    ),
+                  ],
+                );
+              },
+              fullscreenDialog: true, // Optional: still makes it feel like a modal
+            ),
+          );
         }
+      },
+      child: Consumer<InstaDataProvider>(
+        builder: (context, provider, _) {
+          if (provider.isLoading) {
+            return Center(child: CircularProgressIndicator());
+          }
 
-        final stories = provider.stories;
-        final posts = provider.posts;
+          final stories = provider.stories;
+          final posts = provider.posts;
 
-        return CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            // Your SliverAppBar and UI here as-is
-            SliverAppBar(
-              pinned: false,
-              floating: true,
-              backgroundColor: Colors.black,
-              title: Text(
-                'Instagram',
-                style: TextStyle(
-                  fontFamily: 'GrandHotel',
-                  fontSize: 33,
-                  color: Colors.white,
-                ),
-              ),
-              actions: [
-                IconButton(
-                  onPressed: _logout,
-                  icon: Icon(Icons.logout, color: Colors.white),
-                ),
-                IconButton(
-                  onPressed: () {},
-                  icon: Image.asset(
-                    "assets/images/image-removebg-preview.png",
-                    width: 25,
-                    height: 25,
+          return CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              // Your SliverAppBar and UI here as-is
+              SliverAppBar(
+                pinned: false,
+                floating: true,
+                backgroundColor: Colors.black,
+                title: Text(
+                  'Instagram',
+                  style: TextStyle(
+                    fontFamily: 'GrandHotel',
+                    fontSize: 33,
                     color: Colors.white,
                   ),
                 ),
-              ],
-            ),
-            SliverToBoxAdapter(
-              child: _buildStories(stories),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => _buildPost(posts[index]),
-                childCount: posts.length,
+                actions: [
+                  IconButton(onPressed: (){}, icon: Image.asset("assets/icon/Icon.png",width: 25,height: 25,)),
+                  IconButton(
+                    onPressed: () {},
+                    icon: Image.asset(
+                      "assets/images/image-removebg-preview.png",
+                      width: 25,
+                      height: 25,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            SliverToBoxAdapter(child: SizedBox(height: 10)),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildStories(List<StoryData> stories) {
-    // Sort stories - unviewed first, then viewed
-    final sortedStories = List.from(stories)
-      ..sort((a, b) {
-        if (a.isMe == true) return -1; // Your Story always first
-        if (b.isMe == true) return 1;
-        if (a.isViewed == false && b.isViewed == true) return -1;
-        if (a.isViewed == true && b.isViewed == false) return 1;
-        return 0;
-      });
-
-    return Container(
-      height: 130,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: sortedStories.length,
-        itemBuilder: (context, index) => _buildStoryItem(sortedStories[index]),
+              // --- MODIFIED STORIES SECTION ---
+              SliverToBoxAdapter(
+                child: Container(
+                  height: 110, // Fixed height for story row
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: stories.length, // Iterate over the aggregated stories
+                    itemBuilder: (context, index) {
+                      final story = stories[index]; // 'story' is a single aggregated StoryData object
+                      return _buildStoryItem(story, context); // Pass the single aggregated StoryData
+                    },
+                  ),
+                ),
+              ),
+              // --- END MODIFIED STORIES SECTION ---
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _buildPost(posts[index]),
+                  childCount: posts.length,
+                ),
+              ),
+              SliverToBoxAdapter(child: SizedBox(height: 10)),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildStoryItem(StoryData story) {
+  // Widget _buildStories(List<StoryData> stories) {
+  //   // Group all stories by userId
+  //   final Map<String, List<StoryData>> groupedStories = {};
+  //
+  //
+  //   for (final story in stories) {
+  //     groupedStories.putIfAbsent(story.userId, () => []).add(story);
+  //   }
+  //
+  //   // Convert grouped values into a list
+  //   final List<List<StoryData>> groupedList = groupedStories.values.toList();
+  //
+  //
+  //   // Sort user groups: isMe first, then unviewed, then viewed
+  //   groupedList.sort((a, b) {
+  //     final storyA = a.first;
+  //     final storyB = b.first;
+  //
+  //     if (storyA.isMe) return -1;
+  //     if (storyB.isMe) return 1;
+  //     if (!storyA.isViewed && storyB.isViewed) return -1;
+  //     if (storyA.isViewed && !storyB.isViewed) return 1;
+  //     return 0;
+  //   });
+  //
+  //   return Container(
+  //     height: 110,
+  //     child: ListView.builder(
+  //       scrollDirection: Axis.horizontal,
+  //       itemCount: groupedList.length,
+  //       itemBuilder: (context, index) {
+  //         final userStories = groupedList[index];
+  //         return _buildStoryItem(userStories);
+  //       },
+  //     ),
+  //   );
+  // }
+
+  // --- MODIFIED _buildStoryItem METHOD ---
+  // Now accepts a single StoryData object (the aggregated one)
+  Widget _buildStoryItem(StoryData story, BuildContext context) {
+    // No need for userStories.first, 'story' is already the aggregated object
     final String imageUrl = story.profileImageUrl ?? '';
     final bool isFullUrl = Uri.tryParse(imageUrl)?.hasAbsolutePath == true &&
         (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'));
@@ -180,57 +233,135 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
         ? imageUrl
         : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$imageUrl';
 
+    final bool isMyEmptyStory = story.isMe && !story.hasStory;
+    print("🧩 Building story item -> username: ${story.username}, isMe: ${story.isMe}, hasStory: ${story.hasStory}, isMyEmptyStory: ${isMyEmptyStory}");
+
+
     return GestureDetector(
       onTap: () {
-        // Implement story viewing logic here
-        if (!story.isMe) {
-          // Navigate to story view screen
-          // Navigator.push(context, MaterialPageRoute(builder: (_) => StoryViewScreen(story: story)));
-        } else {
-          // Navigate to create story screen
-          // Navigator.push(context, MaterialPageRoute(builder: (_) => CreateStoryScreen()));
+        if (isMyEmptyStory) {
+          Navigator.push(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  CreateStoryContent(),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                const begin = Offset(-1.0, 0.0);
+                const end = Offset.zero;
+                final tween = Tween(begin: begin, end: end);
+                final offsetAnimation = animation.drive(tween);
+                return SlideTransition(
+                  position: offsetAnimation,
+                  child: child,
+                );
+              },
+            ),
+          );
+        }
+        else {
+          final provider = Provider.of<InstaDataProvider>(context, listen: false);
+
+          // Get all individual stories for this user from the provider's dedicated map
+          final List<StoryData> userAllIndividualStories = provider.getIndividualStoriesForUser(story.userId);
+
+          // Sort stories for display order in StoryViewScreen (oldest first)
+          userAllIndividualStories.sort((a, b) {
+            if (a.createdAt == null && b.createdAt == null) return 0;
+            if (a.createdAt == null) return 1;
+            if (b.createdAt == null) return -1;
+            return a.createdAt!.compareTo(b.createdAt!);
+          });
+
+          // NEW LOGIC: Find the initial index of the first unviewed story
+          int initialIndex = 0; // Default to the first story
+          if (!story.isViewed) { // Only search for unviewed if the aggregated story is not viewed
+            final firstUnviewedIndex = userAllIndividualStories.indexWhere((s) => !s.isViewed);
+            if (firstUnviewedIndex != -1) {
+              initialIndex = firstUnviewedIndex;
+            }
+          }
+
+
+          if (userAllIndividualStories.isNotEmpty) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => StoryViewScreen(
+                  stories: userAllIndividualStories, // Pass the list of ALL individual stories
+                  initialIndex: initialIndex, // Pass the calculated initial index
+                ),
+              ),
+            );
+          } else {
+            // Handle case where no individual stories are found, even if aggregated had 'hasStory'
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('No individual stories found for ${story.username}')),
+            );
+          }
         }
       },
       child: Container(
         width: 80,
-        margin: EdgeInsets.only(left: 10, top: 8, bottom: 8),
+        margin: const EdgeInsets.only(left: 10, top: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                gradient: story.isViewed || story.isMe
-                    ? LinearGradient(colors: [Colors.grey, Colors.grey])
-                    : LinearGradient(
-                        colors: [Colors.purple, Colors.orange, Colors.red]),
-                shape: BoxShape.circle,
-              ),
-              child: CircleAvatar(
-                radius: 36,
-                backgroundColor: Colors.black,
-                child: CircleAvatar(
-                  radius: 32,
-                  backgroundColor: Colors.grey[800],
-                  child: ClipOval(
-                    child: Image.network(
-                      displayUrl,
-                      width: 64,
-                      height: 64,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          Icon(Icons.person, size: 40),
+            // Stack to position the plus icon over the avatar
+            Stack(
+              children: [
+                // Avatar with border
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    // Modify gradient: if it's "My Empty Story", set it to transparent.
+                    // Otherwise, use the existing logic for grey/colorful borders.
+                    gradient: isMyEmptyStory
+                        ? const LinearGradient(colors: [Colors.transparent, Colors.transparent])
+                        : (story.isViewed // Use the aggregated 'isViewed'
+                        ? const LinearGradient(colors: [Colors.grey, Colors.grey]) // All viewed
+                        : const LinearGradient(colors: [Colors.purple, Colors.orange, Colors.red])), // Unviewed exists
+                    shape: BoxShape.circle,
+                  ),
+                  child: CircleAvatar(
+                    radius: 36,
+                    backgroundColor: Colors.black,
+                    child: CircleAvatar(
+                      radius: 32,
+                      backgroundColor: Colors.grey[800],
+                      backgroundImage: NetworkImage(displayUrl),
                     ),
                   ),
                 ),
-              ),
+                // Plus icon, conditionally shown when it's the current user's empty story
+                if (isMyEmptyStory)
+                  Positioned(
+                    bottom: 0,
+                    right: 8,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black, width: 2),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            SizedBox(height: 4),
-            Container(
+            const SizedBox(height: 4),
+            SizedBox(
               width: 80,
               child: Text(
-                story.isMe ? "Your story" : story.username,
-                style: TextStyle(color: Colors.white),
+                story.isMe ? "Your Story" : story.username,
+                style: const TextStyle(color: Colors.white),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -241,6 +372,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
       ),
     );
   }
+  // --- END MODIFIED _buildStoryItem METHOD ---
 
   Widget _buildPost(PostData post) {
     final imageUrl = (post.profileImageUrl != null &&
@@ -253,53 +385,56 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          onTap: () {
-            final user = AuthService.client().auth.currentUser;
-            final currentUserId = user?.id;
+        Material(
+          color: Colors.transparent,
+          child: ListTile(
+            onTap: () {
+              final user = AuthService.client().auth.currentUser;
+              final currentUserId = user?.id;
 
-            if (post.userId == currentUserId) {
-              // Navigate to current user's profile
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => ProfileScreen()),
-              );
-            } else {
-              // Navigate to other user's profile
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) =>
-                        OtherUserProfileScreen(userId: post.userId)),
-              );
-            }
-          },
-          leading: CircleAvatar(
-            radius: 16,
-            backgroundImage: NetworkImage(
-              imageUrl,
-            ),
-          ),
-          title: Text(
-            post.username,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          subtitle: post.location != null && post.location!.isNotEmpty
-              ? Text(
-                  post.location!,
-                  style: TextStyle(color: Colors.white),
-                )
-              : null,
-          trailing: IconButton(
-            icon: Icon(Icons.more_vert, color: Colors.white),
-            onPressed: () {
-              // Show post options
-              _showPostOptions(post);
+              if (post.userId == currentUserId) {
+                // Navigate to current user's profile
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => ProfileScreen()),
+                );
+              } else {
+                // Navigate to other user's profile
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          OtherUserProfileScreen(userId: post.userId)),
+                );
+              }
             },
+            leading: CircleAvatar(
+              radius: 16,
+              backgroundImage: NetworkImage(
+                imageUrl,
+              ),
+            ),
+            title: Text(
+              post.username,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            subtitle: post.location != null && post.location!.isNotEmpty
+                ? Text(
+                    post.location!,
+                    style: TextStyle(color: Colors.white),
+                  )
+                : null,
+            trailing: IconButton(
+              icon: Icon(Icons.more_vert, color: Colors.white),
+              onPressed: () {
+                // Show post options
+                _showPostOptions(post);
+              },
+            ),
           ),
         ),
         GestureDetector(
@@ -469,14 +604,72 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                 _showShareOptions(post);
               },
             ),
-            ListTile(
-              leading: Icon(Icons.person_add_outlined, color: Colors.white),
-              title: Text('Follow', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                // Follow user implementation
-              },
-            ),
+            if (post.userId != currentUserId)
+              FutureBuilder<bool>(
+                // Use FutureBuilder to check follow status asynchronously
+                future: Provider.of<InstaDataProvider>(context, listen: false)
+                    .isFollowingUser(currentUserId!, post.userId), // Ensure currentUserId is not null
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const ListTile(
+                      leading: SizedBox(
+                        width: 24, // Match icon size
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      ),
+                      title: Text('Loading...', style: TextStyle(color: Colors.white)),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    print("Error checking follow status: ${snapshot.error}");
+                    return ListTile(
+                      leading: const Icon(Icons.error, color: Colors.red),
+                      title: const Text('Error loading follow status', style: TextStyle(color: Colors.red)),
+                      onTap: () {
+                        Navigator.pop(context);
+                      },
+                    );
+                  }
+
+                  final bool isFollowing = snapshot.data ?? false;
+
+                  return ListTile(
+                    leading: Icon(
+                      isFollowing ? Icons.person_remove_outlined : Icons.person_add_outlined,
+                      color: Colors.white,
+                    ),
+                    title: Text(
+                      isFollowing ? 'Unfollow' : 'Follow',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context); // Close bottom sheet immediately
+
+                      try {
+                        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+                        if (isFollowing) {
+                          await provider.unfollowUser(currentUserId, post.userId);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Unfollowed ${post.username}')),
+                          );
+                        } else {
+                          await provider.followUser(currentUserId, post.userId);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Following ${post.username}')),
+                          );
+                        }
+                        // You might want to refresh the UI that shows the follow status
+                        // by calling setState in the parent widget or updating a provider.
+                      } catch (e) {
+                        print('Error following/unfollowing: $e');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed to ${isFollowing ? 'unfollow' : 'follow'} user')),
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
             if (post.userId == currentUserId)
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Colors.red),

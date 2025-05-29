@@ -1,8 +1,13 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart'; // Assuming you use uuid for unique file names
+import 'package:path/path.dart' as path;
+import 'dart:typed_data';
+import 'dart:io';
 
 // Data models are included below the class definition
 class SupabaseService {
   static final SupabaseClient _client = Supabase.instance.client;
+  static final Uuid _uuid = Uuid();
 
   static SupabaseClient client() => _client;
 
@@ -104,6 +109,8 @@ class SupabaseService {
   }
 
   // -------------------- STORY FEED --------------------
+  // Inside lib/services/supabase_service.dart
+
   static Future<List<StoryData>> getStories() async {
     try {
       final user = _client.auth.currentUser;
@@ -118,6 +125,7 @@ class SupabaseService {
           .eq('user_id', user.id)
           .gte('expires_at', now.toIso8601String());
 
+
       // Get following ids
       final followingIds = await _client
           .from('followers')
@@ -125,15 +133,14 @@ class SupabaseService {
           .eq('follower_id', user.id);
 
       List<String> ids = [];
-
       if (followingIds.isNotEmpty) {
         ids = (followingIds as List)
             .map((e) => e['following_id'] as String)
             .toList();
       }
 
-      // Get following stories
-      List followingStories = [];
+      // Get all stories from followed users
+      List<dynamic> followingStories = [];
       if (ids.isNotEmpty) {
         followingStories = await _client
             .from('stories')
@@ -142,20 +149,35 @@ class SupabaseService {
             .gte('expires_at', now.toIso8601String());
       }
 
-      List<StoryData> allStories = [];
+      final List<StoryData> allStories = [];
 
-      // Add current user's story
+      // Process My Stories
       final userData = await getCurrentUser();
       if (myStories.isNotEmpty) {
-        allStories.add(StoryData.fromJson({
-          'id': myStories[0]['id'],
-          'media_url': myStories[0]['media_url'],
-          'user': myStories[0]['users'],
-          'isMe': true,
-          'hasStory': true,
-          'isViewed': false,
-        }));
+        for (final story in myStories) {
+          // --- MODIFIED LOGIC HERE: Check story_views for my own stories as well ---
+          final viewed = await _client
+              .from('story_views')
+              .select()
+              .eq('story_id', story['id'])
+              .eq('viewer_id', user.id)
+              .maybeSingle();
+
+          // ADD THIS PRINT STATEMENT:
+          print('SupabaseService - Story ID: ${story['id']}, isViewed: ${viewed != null}');
+
+          allStories.add(StoryData.fromJson({
+            ...story,
+            'user': story['users'],
+            'isMe': true,
+            'hasStory': true,
+            'isViewed': viewed != null, // Set based on view status
+          }));
+        }
+        myStories.map((s) => {'id': s['id'], 'is_viewed': s['isViewed']}).toList();
+        print('My Stories: $myStories');
       } else {
+        // Logic for when the current user has no active stories
         allStories.add(StoryData.fromJson({
           'user': {
             'id': user.id,
@@ -164,11 +186,11 @@ class SupabaseService {
           },
           'isMe': true,
           'hasStory': false,
-          'isViewed': false,
+          'isViewed': true, // Assuming if user has no story, this placeholder is considered "viewed"
         }));
       }
 
-      // Add following stories
+      // Following stories (this part was already correct)
       for (final story in followingStories) {
         try {
           final viewed = await _client
@@ -385,17 +407,42 @@ class SupabaseService {
       'user_id': user.id,
       'media_url': mediaUrl,
       'expires_at': expiresAt.toIso8601String(),
+      'created_at': now.toIso8601String(),
     });
   }
 
-  static Future<void> markStoryAsViewed(String storyId) async {
-    final user = _client.auth.currentUser;
-    if (user == null) throw Exception('User not logged in');
+  // Inside lib/services/supabase_service.dart
 
-    await _client.from('story_views').insert({
-      'story_id': storyId,
-      'viewer_id': user.id,
-    });
+  static Future<void> markStoryAsViewed(String storyId,{required String storyOwnerId}) async {
+    try {
+      final currentUserId = _client.auth.currentUser?.id;
+      if (currentUserId == null) {
+        print('User not authenticated to mark story as viewed.');
+        return;
+      }
+      print('Marking story $storyId as viewed by $currentUserId.');
+
+      // The condition to skip view tracking for own stories has been removed.
+      // Now, even if currentUserId == storyOwnerId, the upsert will proceed.
+
+      // Use upsert to prevent duplicate key violations
+      // 'story_id,viewer_id' should match the columns that form your unique constraint
+      await _client.from('story_views').upsert(
+        {
+          'story_id': storyId,
+          'viewer_id': currentUserId,
+          'viewed_at': DateTime.now().toIso8601String(),
+        },
+        onConflict: 'story_id,viewer_id', // Specify the unique constraint columns
+      );
+      print('Story $storyId marked as viewed by $currentUserId (upserted).');
+    }on PostgrestException catch (e) {
+      print('Supabase PostgrestException: ${e.message}');
+      rethrow;
+    } catch (e) {
+      print('Unexpected error: $e');
+      rethrow;
+    }
   }
 
   Future<void> likeComment(String commentId, String userId) async {
@@ -425,6 +472,40 @@ class SupabaseService {
     );
 
     return response;
+  }
+
+  // New method for story media upload
+  static Future<String> uploadStoryMedia(
+      File mediaFile, { // Renamed from imageFile to mediaFile to be generic for image/video
+        void Function(double progress)? onProgress,
+      }) async {
+    const String folder = 'story-media'; // ✅ Specifically set to 'story-media'
+    final user = _client.auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
+
+    final fileExt = path.extension(mediaFile.path);
+    final fileName = '${_uuid.v4()}$fileExt';
+    final filePath = '${user.id}/$fileName';
+
+    final total = await mediaFile.length();
+    final bytes = <int>[];
+    int sent = 0;
+
+    await for (final chunk in mediaFile.openRead()) {
+      bytes.addAll(chunk);
+      sent += chunk.length;
+      if (onProgress != null) {
+        onProgress(sent / total);
+      }
+    }
+
+    await _client.storage.from(folder).uploadBinary(
+      filePath,
+      Uint8List.fromList(bytes),
+      fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+    );
+
+    return _client.storage.from(folder).getPublicUrl(filePath);
   }
 
 }
@@ -509,6 +590,7 @@ class StoryData {
   final bool isMe;
   final bool hasStory;
   final bool isViewed;
+  final DateTime? createdAt;
 
   StoryData({
     this.id,
@@ -519,6 +601,7 @@ class StoryData {
     required this.isMe,
     required this.hasStory,
     required this.isViewed,
+    this.createdAt,
   });
 
   factory StoryData.fromJson(Map<String, dynamic> json) {
@@ -532,6 +615,9 @@ class StoryData {
       isMe: json['isMe'] ?? false,
       hasStory: json['hasStory'] ?? false,
       isViewed: json['isViewed'] ?? false,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
     );
   }
 }

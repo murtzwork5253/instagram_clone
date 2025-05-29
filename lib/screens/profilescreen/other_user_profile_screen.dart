@@ -1,5 +1,7 @@
+// other_user_profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:Instagram/screens/profilescreen/followers_following_screen.dart'; // Import FollowersList
 
 class OtherUserProfileScreen extends StatefulWidget {
   final String userId;
@@ -99,6 +101,8 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     setState(() {
       // Optimistic UI update
       isFollowing = !isFollowing;
+      // Note: followersCount update here is just for optimistic UI.
+      // Real counts should ideally be updated via Supabase functions or a re-fetch.
       followersCount = isFollowing ? followersCount + 1 : followersCount - 1;
     });
 
@@ -114,6 +118,8 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           'following_id': widget.userId,
         });
       }
+      // Re-fetch counts after actual DB operation to ensure accuracy
+      await _loadOtherProfile();
     } catch (e) {
       // Revert optimistic update on error
       setState(() {
@@ -147,8 +153,8 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     final rawAvatar = profile!['profile_image_url'];
     final avatarUrl = rawAvatar != null
         ? (rawAvatar.toString().startsWith('http')
-            ? rawAvatar
-            : supabase.storage.from('avatars').getPublicUrl(rawAvatar))
+        ? rawAvatar
+        : supabase.storage.from('avatars').getPublicUrl(rawAvatar))
         : null;
 
     return Scaffold(
@@ -219,8 +225,8 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     final rawAvatar = profile!['profile_image_url'];
     final avatarUrl = rawAvatar != null
         ? (rawAvatar.toString().startsWith('http')
-            ? rawAvatar
-            : supabase.storage.from('avatars').getPublicUrl(rawAvatar))
+        ? rawAvatar
+        : supabase.storage.from('avatars').getPublicUrl(rawAvatar))
         : null;
 
     return Container(
@@ -235,19 +241,19 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                 radius: 40,
                 backgroundColor: Colors.grey[800],
                 backgroundImage:
-                    avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                avatarUrl != null ? NetworkImage(avatarUrl) : null,
                 child: avatarUrl == null
                     ? Text(
-                        profile!['username'] != null &&
-                                profile!['username'].isNotEmpty
-                            ? profile!['username'][0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
+                  profile!['username'] != null &&
+                      profile!['username'].isNotEmpty
+                      ? profile!['username'][0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
                     : null,
               ),
               const SizedBox(width: 24),
@@ -257,9 +263,56 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildStatColumn(postsCount, 'Posts'),
-                    _buildStatColumn(followersCount, 'Followers'),
-                    _buildStatColumn(followingCount, 'Following'),
+                    _buildStatColumn(postsCount, 'Posts', null), // Posts are always visible
+                    // Conditional display for Followers and Following lists
+                    _buildStatColumn(
+                      followersCount,
+                      'Followers',
+                      isFollowing // Only enable tap if following
+                          ? () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => FollowersList(
+                              userId: widget.userId,
+                              isFollowersTab: true,
+                            ),
+                          ),
+                        );
+                      }
+                          : () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Follow this user to see their followers.'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      },
+                    ),
+                    _buildStatColumn(
+                      followingCount,
+                      'Following',
+                      isFollowing // Only enable tap if following
+                          ? () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => FollowersList(
+                              userId: widget.userId,
+                              isFollowersTab: false,
+                            ),
+                          ),
+                        );
+                      }
+                          : () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Follow this user to see who they follow.'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -297,7 +350,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                   onPressed: _toggleFollow,
                   style: ElevatedButton.styleFrom(
                     backgroundColor:
-                        isFollowing ? Colors.grey[800] : Colors.blue,
+                    isFollowing ? Colors.grey[800] : Colors.blue,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -364,28 +417,32 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     );
   }
 
-  Widget _buildStatColumn(int count, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          count.toString(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
+  // Modified _buildStatColumn to accept an onTap callback
+  Widget _buildStatColumn(int count, String label, VoidCallback? onTap) {
+    return GestureDetector(
+      onTap: onTap, // Assign the onTap callback here
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            count.toString(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -551,7 +608,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           ListTile(
             leading: const Icon(Icons.person_add_disabled, color: Colors.white),
             title:
-                const Text('Restrict', style: TextStyle(color: Colors.white)),
+            const Text('Restrict', style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
             },

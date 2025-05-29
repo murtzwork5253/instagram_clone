@@ -18,6 +18,7 @@ import path_provider_foundation
 import photo_manager
 import share_plus
 import shared_preferences_foundation
+import sqflite_darwin
 import url_launcher_macos
 import video_player_avfoundation
 import wakelock_plus
@@ -37,6 +38,7 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   PhotoManagerPlugin.register(with: registry.registrar(forPlugin: "PhotoManagerPlugin"))
   SharePlusMacosPlugin.register(with: registry.registrar(forPlugin: "SharePlusMacosPlugin"))
   SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
+  SqflitePlugin.register(with: registry.registrar(forPlugin: "SqflitePlugin"))
   UrlLauncherPlugin.register(with: registry.registrar(forPlugin: "UrlLauncherPlugin"))
   FVPVideoPlayerPlugin.register(with: registry.registrar(forPlugin: "FVPVideoPlayerPlugin"))
   WakelockPlusMacosPlugin.register(with: registry.registrar(forPlugin: "WakelockPlusMacosPlugin"))

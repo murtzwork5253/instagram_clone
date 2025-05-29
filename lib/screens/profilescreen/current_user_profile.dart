@@ -1,3 +1,5 @@
+import 'package:Instagram/screens/createscreens/create_post/create_post_screen.dart';
+import 'package:Instagram/screens/profilescreen/profile_settings_menu.dart';
 import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -19,7 +21,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-
   void initState() {
     super.initState();
 
@@ -30,7 +31,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .refreshFeed(); // Implement reloadData in your provider to fetch fresh data
     });
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -85,23 +85,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : supabase.storage.from('avatars').getPublicUrl(imageUrl);
         }
 
-
         return Scaffold(
           backgroundColor: Colors.black,
           appBar: AppBar(
             backgroundColor: Colors.black,
             elevation: 0,
-            leading: const Icon(Icons.lock_outline, color: Colors.white),
-            title: Text(profile['username'] ?? 'Profile',
-                style: const TextStyle(color: Colors.white)),
+            title: Row(
+              children: [
+                const Icon(Icons.lock_outline, color: Colors.white, size: 20), // Lock icon
+                const SizedBox(width: 8), // Spacing between icon and text
+                Text(
+                  profile['username'] ?? 'Profile',
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
             actions: [
               IconButton(
-                  onPressed: () {},
-                  icon:
-                      const Icon(Icons.add_box_outlined, color: Colors.white)),
+                  onPressed: () {
+                    showCreateSection(context);
+                  },
+                  icon: Image.asset("assets/icon/add_post_icon.png",color: Colors.white,width: 21,)),
               IconButton(
-                  onPressed: () {},
-                  icon: const Icon(Icons.menu, color: Colors.white)),
+                  onPressed: () {
+                    Navigator.of(context).push(PageRouteBuilder(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            const ProfileMenuScreen(),
+                        transitionsBuilder:
+                            (context, animation, secondaryAnimation, child) {
+                          const begin = Offset(1.0, 0.0);
+                          const end =
+                              Offset.zero; // Ends at its normal position
+                          const curve = Curves.ease;
+
+                          var tween = Tween(begin: begin, end: end)
+                              .chain(CurveTween(curve: curve));
+
+                          return SlideTransition(
+                            position: animation.drive(tween),
+                            child: child,
+                          );
+                        },
+                        fullscreenDialog: false));
+                  },
+                  icon: const Icon(Icons.menu, color: Colors.white),iconSize: 28,),
             ],
           ),
           body: RefreshIndicator(
@@ -122,19 +149,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildAvatarSection(avatarUrl, profile),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 14), // Spacing between story and name/stats
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Padding(
-                                padding: const EdgeInsets.only(left: 28),
-                                child: Text(profile['full_name'] ?? '',
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
-                              ),
+                              // Removed the extra Padding(left: 28) here to allow the name to align
+                              // more naturally with the stats below it after removing the avatar.
+                              // You might need to adjust this padding based on your exact design.
+                              Text(profile['full_name'] ?? '',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
                               const SizedBox(height: 14),
                               _buildStatsSection(posts.length, followers.length,
                                   following.length),
@@ -563,6 +590,150 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // void showCreateSection(BuildContext context) {
+  //   showModalBottomSheet(
+  //     context: context,
+  //     enableDrag: true,
+  //     showDragHandle: true,
+  //     backgroundColor: Colors.black,
+  //     isDismissible: true,
+  //     builder: (context) {
+  //       return GestureDetector(
+  //         onTap: () {}, // Prevents tap-through dismiss
+  //         child: DraggableScrollableSheet(
+  //           initialChildSize: 0.95,
+  //           minChildSize: 0.2,
+  //           maxChildSize: 0.95,
+  //           expand: false,
+  //           builder: (_, controller){
+  //             return Column(
+  //               children: [
+  //                 Row(
+  //                   crossAxisAlignment: CrossAxisAlignment.center,
+  //                   mainAxisAlignment: MainAxisAlignment.center,
+  //                   children: [
+  //                     Text("Create",style: TextStyle(fontSize: 16),),
+  //                   ],
+  //                 ),
+  //                 Column(
+  //                   children: [
+  //                     _buildCreateOption(icon: Icons.video_collection, label: "Reel", onTap: (){
+  //                     }),
+  //                     _buildCreateOption(icon: Icons.grid_3x3_outlined, label: "Post", onTap: (){
+  //                       _showImagePicker(Supabase.instance.client.auth.currentUser?.id);
+  //                     }),
+  //                   ],
+  //                 ),
+  //               ],
+  //             );
+  //           }
+  //         ),
+  //       );
+  //     },
+  //   );
+  // }
+
+  void showCreateSection(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      enableDrag: true,
+      showDragHandle: true,
+      backgroundColor: Colors.black,
+      isDismissible: true,
+      builder: (context) {
+        return GestureDetector(
+          onTap: () {}, // Prevents tap-through dismiss
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.95, // Adjust initial size to fit content better
+            minChildSize: 0.2, // Can be smaller
+            maxChildSize: 1.0, // Max size for the options
+            expand: false,
+            builder: (_, controller) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      'Create',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const Divider(color: Colors.white24, thickness: 0.2),
+                  _buildCreateOption(
+                    iconWidget: Image.asset("assets/images/reelblack.png",color: Colors.white,width: 24,),
+                    label: 'Reel',
+                    onTap: () {
+                      // Handle Reel tap
+                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const CreatePostScreen(initialTabIndex: 2,))); // Close bottom sheet
+                      print('Reel tapped!');
+                    },
+                  ),
+                  _buildCreateOption(
+                    iconWidget: Icon(Icons.grid_on,color: Colors.white,),
+                    label: 'Post',
+                    onTap: () {
+                      // Handle Post tap
+                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const CreatePostScreen(initialTabIndex: 0,)));
+                      print('Post tapped!');
+                    },
+                  ),
+                  _buildCreateOption(
+                    iconWidget: Icon(Icons.add_circle_outline,color: Colors.white,),
+                    label: 'Story',
+                    onTap: () {
+                      // Handle Story tap
+                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const CreatePostScreen(initialTabIndex: 1,)));
+                      print('Story tapped!');
+                    },
+                  ),
+                  _buildCreateOption(
+                    iconWidget: Icon(Icons.live_tv,color: Colors.white,),
+                    label: 'Live',
+                    onTap: () {
+                      // Handle Live tap
+                      Navigator.pop(context);
+                      print('Live tapped!');
+                    },
+                  ),
+                  _buildCreateOption(
+                    iconWidget: Icon(Icons.highlight,color: Colors.white,),
+                    label: 'Highlight',
+                    onTap: () {
+                      // Handle Highlight tap
+                      Navigator.pop(context);
+                      print('Highlight tapped!');
+                    },
+                  ),
+                  SizedBox(height: MediaQuery.of(context).padding.bottom), // Spacing for safe area
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCreateOption({
+    required Widget iconWidget,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: iconWidget,
+      title: Text(
+        label,
+        style: TextStyle(color: Colors.white, fontSize: 16),
+      ),
+      onTap: onTap,
     );
   }
 }

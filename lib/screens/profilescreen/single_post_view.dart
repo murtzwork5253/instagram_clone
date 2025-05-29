@@ -33,6 +33,8 @@ class SinglePostView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = AuthService.client().auth.currentUser;
+    final currentUserId = user?.id;
     late final String profileUrl;
     if (Url.isNotEmpty && Url.startsWith('http')){
       profileUrl = Url;
@@ -65,10 +67,12 @@ class SinglePostView extends StatelessWidget {
                   ),
                   title: GestureDetector(
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => ProfileScreen()),
-                      );
+                      if(post.userId == currentUserId){
+                        Navigator.push(context, MaterialPageRoute(builder: (_)=> ProfileScreen()));
+                      }
+                      else{
+                        Navigator.push(context, MaterialPageRoute(builder: (_)=> OtherUserProfileScreen(userId: post.userId)));
+                      }
                     },
                     child: Text(
                       updatedPost.username,
@@ -210,14 +214,72 @@ class SinglePostView extends StatelessWidget {
                 _showShareOptions(post,context);
               },
             ),
-            ListTile(
-              leading: Icon(Icons.person_add_outlined, color: Colors.white),
-              title: Text('Follow', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                // Follow user implementation
-              },
-            ),
+            if (post.userId != currentUserId)
+              FutureBuilder<bool>(
+                // Use FutureBuilder to check follow status asynchronously
+                future: Provider.of<InstaDataProvider>(context, listen: false)
+                    .isFollowingUser(currentUserId!, post.userId), // Ensure currentUserId is not null
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const ListTile(
+                      leading: SizedBox(
+                        width: 24, // Match icon size
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      ),
+                      title: Text('Loading...', style: TextStyle(color: Colors.white)),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    print("Error checking follow status: ${snapshot.error}");
+                    return ListTile(
+                      leading: const Icon(Icons.error, color: Colors.red),
+                      title: const Text('Error loading follow status', style: TextStyle(color: Colors.red)),
+                      onTap: () {
+                        Navigator.pop(context);
+                      },
+                    );
+                  }
+
+                  final bool isFollowing = snapshot.data ?? false;
+
+                  return ListTile(
+                    leading: Icon(
+                      isFollowing ? Icons.person_remove_outlined : Icons.person_add_outlined,
+                      color: Colors.white,
+                    ),
+                    title: Text(
+                      isFollowing ? 'Unfollow' : 'Follow',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context); // Close bottom sheet immediately
+
+                      try {
+                        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+                        if (isFollowing) {
+                          await provider.unfollowUser(currentUserId!, post.userId);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Unfollowed ${post.username}')),
+                          );
+                        } else {
+                          await provider.followUser(currentUserId!, post.userId);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Following ${post.username}')),
+                          );
+                        }
+                        // You might want to refresh the UI that shows the follow status
+                        // by calling setState in the parent widget or updating a provider.
+                      } catch (e) {
+                        print('Error following/unfollowing: $e');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed to ${isFollowing ? 'unfollow' : 'follow'} user')),
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
             if (post.userId == currentUserId)
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Colors.red),

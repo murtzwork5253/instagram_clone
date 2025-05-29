@@ -16,7 +16,9 @@ enum PostCreationStage {
 }
 
 class CreatePostScreen extends StatefulWidget {
-  const CreatePostScreen({Key? key}) : super(key: key);
+
+  final int initialTabIndex;
+  const CreatePostScreen({Key? key,this.initialTabIndex=0}) : super(key: key);
 
   @override
   State<CreatePostScreen> createState() => CreatePostScreenState();
@@ -38,7 +40,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   bool _hasRequestedPermission = false;
 
   // Replaced TabController with PageController and ScrollController for custom tabs
-  final PageController _pageController = PageController();
+  PageController _pageController = PageController();
   final ScrollController _scrollController = ScrollController();
   final List<String> _tabs = ['POST', 'STORY', 'REEL', 'LIVE']; // Added LIVE tab
   int _selectedIndex = 0; // Tracks the selected tab for the custom tab bar
@@ -48,6 +50,11 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   @override
   void initState() {
     super.initState();
+    // Initialize _selectedIndex and _pageController based on initialTabIndex
+    _selectedIndex = widget.initialTabIndex;
+    _pageController = PageController(initialPage: _selectedIndex);
+
+
     _pageController.addListener(() {
       if (_pageController.page?.round() != _selectedIndex) {
         setState(() {
@@ -93,10 +100,21 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   }
 
   void _centerTab(int index) {
-    // Item width (approximate, or can be calculated precisely)
     const double itemWidth = 80.0;
-    double offset =
-        (itemWidth * index) - (MediaQuery.of(context).size.width - itemWidth) / 2;
+    const double horizontalPadding = 40.0; // Half of itemWidth for partial visibility
+
+    // Calculate the offset to center the selected tab.
+    // The center of the selected item relative to the ListView's starting point (after padding).
+    final double centerOfSelectedItemInListView = (index * itemWidth) + (itemWidth / 2);
+
+    // The center of the visible viewport.
+    final double centerOfViewport = MediaQuery.of(context).size.width / 2;
+
+    // Calculate the scroll position needed to bring the center of the selected item
+    // to the center of the viewport, taking into account the ListView's own padding.
+    double offset = centerOfSelectedItemInListView - centerOfViewport + horizontalPadding;
+
+
     _scrollController.animateTo(offset.clamp(
       0.0,
       _scrollController.position.maxScrollExtent,
@@ -661,11 +679,11 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
         : const NeverScrollableScrollPhysics(); // Disable scrolling in post details
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: _selectedIndex == 0 ? Colors.black : Colors.transparent, // Transparent for other tabs
+      appBar: _selectedIndex == 0 // Conditionally render the entire AppBar
+          ? AppBar(
+        backgroundColor: Colors.black,
         elevation: 0,
-        leading: _selectedIndex == 0 // Only show leading icon for POST tab
-            ? IconButton(
+        leading: IconButton(
           icon: Icon(
             _currentStage == PostCreationStage.gallerySelection
                 ? Icons.close // Close icon for gallery selection
@@ -681,17 +699,13 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
               Navigator.of(context).pop(); // Close the screen entirely
             }
           },
-        )
-            : null, // No leading icon for other tabs
-        title: _selectedIndex == 0 // Only show title for POST tab
-            ? Text(
+        ),
+        title: const Text(
           'New post',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        )
-            : null, // No title for other tabs
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
-        actions: _selectedIndex == 0 // Only show actions for POST tab
-            ? [
+        actions: [
           TextButton(
             onPressed: () {
               if (_currentStage == PostCreationStage.gallerySelection) {
@@ -722,10 +736,9 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
               style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
             ),
           ),
-        ]
-            : null, // No actions for other tabs
-      ),
-
+        ],
+      )
+          : null, // No AppBar for other tabs
       body: Stack( // Using Stack to position the custom tab bar over the PageView
         children: [
           Positioned.fill(
@@ -766,42 +779,70 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
           ),
           // Custom Floating Tab Bar at the bottom - only visible on gallery selection stage for any tab
           if (_currentStage == PostCreationStage.gallerySelection)
-            Positioned(
-              bottom: 20, // Adjusted bottom padding
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 40,
-                margin: const EdgeInsets.symmetric(horizontal: 40),
-                decoration: BoxDecoration(
-                  color: Colors.grey[900], // Dark background for the custom tab bar
-                  borderRadius: BorderRadius.circular(25),
-                ),
-                child: ListView.builder(
-                  controller: _scrollController,
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _tabs.length,
-                  itemBuilder: (context, index) {
-                    final isSelected = _selectedIndex == index;
-                    return GestureDetector(
-                      onTap: () => _onTabTap(index),
-                      child: Container(
-                        width: 80, // Fixed width for each tab item
-                        alignment: Alignment.center,
-                        child: Text(
-                          _tabs[index],
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.grey,
-                            fontSize: 16,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            letterSpacing: 2,
-                          ),
-                        ),
+            Builder( // Using Builder to access context for screen width calculation
+                builder: (context) {
+                  double dynamicLeft;
+
+                  // Define dynamicLeft based on selectedIndex
+                  // These are example values; you may need to fine-tune them
+                  // to achieve the exact visual positioning you desire.
+                  if (_selectedIndex == 0) {
+                    dynamicLeft = 150.0; // Keeps 'POST' tab visible towards the right
+                  } else if (_selectedIndex == 1) {
+                    // Adjust left to shift the bar so 'STORY' is more centered or prominent
+                    dynamicLeft = MediaQuery.of(context).size.width / 2 - 142;
+                  } else if (_selectedIndex == 2) {
+                    // Further adjust for 'REEL'
+                    dynamicLeft = MediaQuery.of(context).size.width / 2 - 220;
+                  } else { // For _selectedIndex == 3 (LIVE) or any other unexpected index
+                    // Align 'LIVE' towards the far left or adjust as needed
+                    dynamicLeft = MediaQuery.of(context).size.width / 2 - 296;
+                  }
+
+                  return Positioned(
+                    bottom: 20, // Adjusted bottom padding
+                    left: dynamicLeft,
+                    right: 0, // Keeping right as 0. This means the width of the tab bar container will be dynamic.
+                    child: Container(
+                      height: 40,
+                      // Removed horizontal margin from Container
+                      decoration: BoxDecoration(
+                        // Make background transparent for Story/Reel/Live pages
+                        color: (_selectedIndex == 1 || _selectedIndex == 2 || _selectedIndex == 3)
+                            ? Colors.transparent
+                            : Colors.grey[900], // Dark background for the POST tab
+                        borderRadius: BorderRadius.circular(25),
                       ),
-                    );
-                  },
-                ),
-              ),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _tabs.length,
+                        // !!! IMPORTANT: Removed physics: NeverScrollableScrollPhysics() !!!
+                        padding: const EdgeInsets.symmetric(horizontal: 20.0), // Reverted to 40.0 for half-hidden effect
+                        itemBuilder: (context, index) {
+                          // Removed isEffectivelyHidden logic to ensure all tabs are interactive
+                          final isSelected = _selectedIndex == index;
+                          return GestureDetector(
+                            onTap: () => _onTabTap(index), // Always allow tapping
+                            child: Container(
+                              width: 80, // Fixed width for each tab item to maintain layout
+                              alignment: Alignment.center,
+                              child: Text(
+                                _tabs[index],
+                                style: TextStyle(
+                                  color: isSelected ? Colors.white : Colors.white, // All visible tabs white
+                                  fontSize: 16,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                }
             ),
         ],
       ),

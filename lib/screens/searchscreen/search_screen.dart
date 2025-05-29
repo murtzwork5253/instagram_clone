@@ -1,81 +1,108 @@
+// search_screen.dart
 import 'package:Instagram/screens/profilescreen/single_post_view.dart';
-import 'package:Instagram/screens/searchscreen/search_screen_state.dart';
+import 'package:Instagram/screens/searchscreen/search_screen_state.dart'; // This import seems unused, you might want to remove it if not needed.
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:icons_plus/icons_plus.dart'
-    as OIcons;
+import 'package:icons_plus/icons_plus.dart' as OIcons;
 
-import '../../services/supabase_service.dart'; // Adjust the import for your OIcons
+import '../../services/supabase_service.dart'; // Make sure PostData is accessible from here
 
 class InstagramSearchScreen extends StatefulWidget {
-  const InstagramSearchScreen({Key? key}) : super(key: key);
+  // Add a refreshNotifier parameter
+  final ValueNotifier<int>? refreshNotifier;
+
+  const InstagramSearchScreen({Key? key, this.refreshNotifier}) : super(key: key);
 
   @override
   State<InstagramSearchScreen> createState() => _InstagramSearchScreenState();
 }
 
 class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
-  late Future<List<String>> _futureImages;
+  late Future<List<PostData>> _futurePosts; // Changed to PostData based on previous conversation.
 
   @override
   void initState() {
     super.initState();
-    _futureImages = _fetchImagesFromStorage();
+    _futurePosts = _fetchExplorePosts(); // Changed to _fetchExplorePosts
+    // Listen to the refresh notifier
+    widget.refreshNotifier?.addListener(_onRefreshTriggered);
   }
 
-  Future<List<String>> _fetchImagesFromStorage() async {
+  @override
+  void dispose() {
+    // Remove the listener when the widget is disposed
+    widget.refreshNotifier?.removeListener(_onRefreshTriggered);
+    super.dispose();
+  }
+
+  // Method to handle the refresh triggered by the notifier
+  void _onRefreshTriggered() {
+    setState(() {
+      _futurePosts = _fetchExplorePosts(); // Re-fetch posts
+    });
+  }
+
+  // Refactored function to fetch full PostData objects for the explore feed
+  Future<List<PostData>> _fetchExplorePosts() async {
     final supabase = Supabase.instance.client;
-    final List<String> imageUrls = [];
+    final userId = supabase.auth.currentUser?.id; // Current user ID if logged in
 
     try {
-      final folders = await supabase.storage
-          .from('post-media')
-          .list(path: '', searchOptions: SearchOptions(limit: 100));
+      final postsResponse = await supabase
+          .from('posts')
+          .select('''
+            id,
+            user_id,
+            caption,
+            location,
+            image_url,
+            created_at,
+            users (
+              username,
+              profile_image_url
+            ),
+            post_likes (
+              user_id
+            ),
+            comments (
+              id
+            )
+          ''')
+          .order('created_at', ascending: false);
 
-      for (final folder in folders) {
-        final isFolder = !folder.name.contains('.'); // simulate a folder check
+      return (postsResponse as List).map((post) {
+        final user = post['users'];
+        final likes = post['post_likes'] as List<dynamic>? ?? [];
+        final comments = post['comments'] as List<dynamic>? ?? [];
 
-        if (isFolder) {
-          final files = await supabase.storage.from('post-media').list(
-              path: folder.name,
-              searchOptions: const SearchOptions(limit: 100));
+        final bool isLiked = userId != null
+            ? likes.any((like) => like['user_id'] == userId)
+            : false;
 
-          for (final file in files) {
-            if (file.name.endsWith('.jpg') ||
-                file.name.endsWith('.png') ||
-                file.name.endsWith('.jpeg')) {
-              final publicUrl = supabase.storage
-                  .from('post-media')
-                  .getPublicUrl('${folder.name}/${file.name}');
-              imageUrls.add(publicUrl);
-            }
-          }
-        }
-      }
+        return PostData(
+          id: post['id'],
+          userId: post['user_id'],
+          username: user['username'],
+          profileImageUrl: user['profile_image_url'],
+          imageUrl: post['image_url'],
+          caption: post['caption'],
+          location: post['location'],
+          createdAt: DateTime.parse(post['created_at']),
+          likeCount: likes.length,
+          commentCount: comments.length,
+          isLiked: isLiked,
+        );
+      }).toList();
     } catch (e) {
-      print('Error fetching images: $e');
+      print('Error fetching posts for explore feed: $e');
+      return [];
     }
-
-    return imageUrls;
   }
 
-  Future<Map<String, dynamic>> _fetchPosts(String userId) async {
-    final supabase = Supabase.instance.client;
-
-    final postsRes = await supabase
-        .from('posts')
-        .select()
-        .order('created_at', ascending: false);
-
-    return {
-      'posts': postsRes,
-    };
-  }
-
-  Future<void> _refreshImages() async {
-    final images = await _fetchImagesFromStorage();
+  // Renamed _refreshImages to _refreshPosts for consistency with _fetchExplorePosts
+  Future<void> _refreshPosts() async {
     setState(() {
-      _futureImages = Future.value(images);
+      _futurePosts = _fetchExplorePosts();
     });
   }
 
@@ -119,49 +146,60 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
               ),
             ),
             Expanded(
-              child: FutureBuilder<List<String>>(
-                future: _futureImages,
+              child: FutureBuilder<List<PostData>>( // Changed to PostData
+                future: _futurePosts,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(child: CircularProgressIndicator());
+                    return const Center(child: CircularProgressIndicator());
                   } else if (snapshot.hasError) {
                     return Center(
-                      child: Text('Error loading images',
-                          style: TextStyle(color: Colors.white)),
+                      child: Text('Error loading posts: ${snapshot.error}', // Changed text
+                          style: const TextStyle(color: Colors.white)),
                     );
                   } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(
-                      child: Text('No images found',
+                    return const Center(
+                      child: Text('No posts found', // Changed text
                           style: TextStyle(color: Colors.white)),
                     );
                   }
 
-                  final images = snapshot.data!;
-
+                  final posts = snapshot.data!; // Changed to posts
 
                   return RefreshIndicator(
-                    onRefresh: _refreshImages,
+                    onRefresh: _refreshPosts, // Changed to _refreshPosts
                     child: GridView.builder(
-                      padding: EdgeInsets.all(3),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      padding: const EdgeInsets.all(3),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
                         crossAxisSpacing: 1,
                         mainAxisSpacing: 1,
                       ),
-                      itemCount: images.length,
+                      itemCount: posts.length,
                       itemBuilder: (context, index) {
+                        final post = posts[index]; // Get the PostData object
+                        final mediaUrl = post.imageUrl.toString().startsWith('http')
+                            ? post.imageUrl
+                            : Supabase.instance.client.storage
+                            .from('post-media')
+                            .getPublicUrl(post.imageUrl);
                         return GestureDetector(
                           onTap: () {
-                            // Handle image tap - navigate to detail view, etc.
-                            _showImageDetailView(context, images[index]);
-                            // Navigator.push(context, MaterialPageRoute(builder: (_) => SinglePostView(post: , Url: images[index])));
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => SinglePostView(
+                                  post: post, // Pass the PostData object
+                                  Url: post.profileImageUrl ?? '', // Pass profile image URL
+                                ),
+                              ),
+                            );
                           },
                           child: Hero(
-                            tag: 'searchImage_$index',
+                            tag: 'searchImage_${post.id}', // Use post.id for unique tag
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(1),
                               child: Image.network(
-                                images[index],
+                                mediaUrl,
                                 fit: BoxFit.cover,
                                 loadingBuilder:
                                     (context, child, loadingProgress) {
@@ -171,12 +209,12 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
                                     child: Center(
                                       child: CircularProgressIndicator(
                                         value: loadingProgress
-                                                    .expectedTotalBytes !=
-                                                null
+                                            .expectedTotalBytes !=
+                                            null
                                             ? loadingProgress
-                                                    .cumulativeBytesLoaded /
-                                                loadingProgress
-                                                    .expectedTotalBytes!
+                                            .cumulativeBytesLoaded /
+                                            loadingProgress
+                                                .expectedTotalBytes!
                                             : null,
                                       ),
                                     ),
@@ -184,9 +222,9 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
                                 },
                                 errorBuilder: (context, error, stackTrace) =>
                                     Container(
-                                  color: Colors.grey[800],
-                                  child: Icon(Icons.error, color: Colors.white),
-                                ),
+                                      color: Colors.grey[800],
+                                      child: const Icon(Icons.error, color: Colors.white),
+                                    ),
                               ),
                             ),
                           ),
@@ -198,71 +236,6 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  void _showImageDetailView(BuildContext context, String imageUrl) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => _ImageDetailScreen(imageUrl: imageUrl),
-      ),
-    );
-  }
-}
-
-// Simple image detail screen
-class _ImageDetailScreen extends StatelessWidget {
-  final String imageUrl;
-
-  const _ImageDetailScreen({Key? key, required this.imageUrl})
-      : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        iconTheme: IconThemeData(color: Colors.white),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          minScale: 0.5,
-          maxScale: 4.0,
-          child: Hero(
-            tag: imageUrl,
-            child: Image.network(
-              imageUrl,
-              fit: BoxFit.contain,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded /
-                            loadingProgress.expectedTotalBytes!
-                        : null,
-                  ),
-                );
-              },
-              errorBuilder: (context, error, stackTrace) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.error_outline, color: Colors.white, size: 48),
-                    SizedBox(height: 16),
-                    Text(
-                      'Failed to load image',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         ),
       ),
     );
