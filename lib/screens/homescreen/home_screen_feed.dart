@@ -12,7 +12,6 @@ import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import '../chatscreen/chat_screen.dart';
-import '../createscreens/create_story/create_story_screen.dart'; // For date formatting
 
 class InstagramHomeScreen extends StatefulWidget {
   final ValueNotifier<int>? refreshNotifier;
@@ -93,11 +92,22 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset)
                       .chain(CurveTween(curve: Curves.ease));
 
+                  // Replace the above section with this:
                   return Stack(
                     children: <Widget>[
-                      SlideTransition(
-                        position: homeScreenTween.animate(animation),
-                        child: widget, // This is valid inside State<HomeScreen>
+                      // Wrap the home screen's SlideTransition in an OverflowBox
+                      // This allows the home screen to render its full size even when
+                      // partially off-screen due to the slide animation, preventing overflow.
+                      OverflowBox(
+                        minHeight: 0.0,
+                        maxHeight: double.infinity,
+                        minWidth: 0.0,
+                        maxWidth: double.infinity,
+                        alignment: Alignment.topLeft, // Ensures content starts from the top-left of its "allowed" infinite space
+                        child: SlideTransition(
+                          position: homeScreenTween.animate(animation),
+                          child: widget, // This is the home screen
+                        ),
                       ),
                       SlideTransition(
                         position: storyScreenTween.animate(animation),
@@ -127,11 +137,22 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset)
                       .chain(CurveTween(curve: Curves.ease));
 
+                  // Replace the above section with this:
                   return Stack(
                     children: <Widget>[
-                      SlideTransition(
-                        position: homeScreenTween.animate(animation),
-                        child: widget,
+                      // Wrap the home screen's SlideTransition in an OverflowBox
+                      // This allows the home screen to render its full size even when
+                      // partially off-screen due to the slide animation, preventing overflow.
+                      OverflowBox(
+                        minHeight: 0.0,
+                        maxHeight: double.infinity,
+                        minWidth: 0.0,
+                        maxWidth: double.infinity,
+                        alignment: Alignment.topLeft, // Ensures content starts from the top-left of its "allowed" infinite space
+                        child: SlideTransition(
+                          position: homeScreenTween.animate(animation),
+                          child: widget, // This is the home screen
+                        ),
                       ),
                       SlideTransition(
                         position: chatScreenTween.animate(animation),
@@ -172,6 +193,10 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                 ),
                 // NEW CODE - Replace the above section with this:
                 actions: [
+                  IconButton(
+                    onPressed: (){},
+                    icon: Image.asset("assets/icon/Icon.png",width: 25,height: 25,),
+                  ),
                   // This is likely your existing message icon
                   IconButton(
                     onPressed: () {
@@ -201,10 +226,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                       }
                     },
                     icon: Image.asset("assets/images/image-removebg-preview.png", width: 25, height: 25, color: Colors.white),
-                  ),
-                  IconButton(
-                    onPressed: (){},
-                    icon: Image.asset("assets/icon/Icon.png",width: 25,height: 25,),
                   ),
                 ],
               ),

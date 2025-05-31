@@ -4,7 +4,9 @@ import 'package:Instagram/screens/homescreen/home_screen.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/insta_data_provider.dart';
 import 'service/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path_package;
@@ -384,6 +386,8 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
 
         // Navigate to home
         if (mounted) {
+          final provider = Provider.of<InstaDataProvider>(context, listen: false);
+          await provider.refreshFeed();
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const HomeDashboard()),

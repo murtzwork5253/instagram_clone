@@ -11,6 +11,8 @@ class Assets {
   static const String authSignupWithEmailScreen = 'lib/screens/auth/signup_with_email_screen.dart';
   static const String authSignupWithMobileScreen = 'lib/screens/auth/signup_with_mobile_screen.dart';
   static const String chatscreenChatScreen = 'lib/screens/chatscreen/chat_screen.dart';
+  static const String chatscreenMessageService = 'lib/screens/chatscreen/message_service.dart';
+  static const String chatscreenNewChatDialog = 'lib/screens/chatscreen/new_chat_dialog.dart';
   static const String commentscreenCommentSection = 'lib/screens/commentscreen/comment_section.dart';
   static const String configConstants = 'lib/config/constants.dart';
   static const String createPostCreatePostScreen = 'lib/screens/createscreens/create_post/create_post_screen.dart';
@@ -18,6 +20,7 @@ class Assets {
   static const String createReelsCreateReelScreen = 'lib/screens/createscreens/create_reels/create_reel_screen.dart';
   static const String createStoryCreateStoryScreen = 'lib/screens/createscreens/create_story/create_story_screen.dart';
   static const String createStoryStoryPreviewScreen = 'lib/screens/createscreens/create_story/story_preview_screen.dart';
+  static const String createscreensCameraService = 'lib/screens/createscreens/camera_service.dart';
   static const String createscreensCreatePostScreen = 'lib/screens/createscreens/create_post_screen';
   static const String fontsGrandHotelRegular = 'assets/fonts/GrandHotel-Regular.ttf';
   static const String fontsInter18ptRegular = 'assets/fonts/Inter_18pt-Regular.ttf';
@@ -46,6 +49,8 @@ class Assets {
   static const String imagesUser = 'assets/images/user.png';
   static const String imagesVideo = 'assets/images/video.png';
   static const String libMain = 'lib/main.dart';
+  static const String modelModels = 'lib/screens/chatscreen/model/models.dart';
+  static const String moonApp = '.env';
   static const String profilescreenCurrentUserProfile = 'lib/screens/profilescreen/current_user_profile.dart';
   static const String profilescreenEditProfileScreen = 'lib/screens/profilescreen/edit_profile_screen.dart';
   static const String profilescreenFollowersFollowingScreen = 'lib/screens/profilescreen/followers_following_screen.dart';

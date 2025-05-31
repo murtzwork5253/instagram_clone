@@ -66,6 +66,7 @@ dependencies:
   flutter_riverpod: ^2.6.1
   cached_network_image: ^3.4.1
   flutter_image_compress: ^2.4.0
+  flutter_dotenv: ^5.2.1
 
 dev_dependencies:
   flutter_test:
@@ -100,6 +101,7 @@ flutter:
     - assets/images/
     - assets/icon/
     - lib/screens/auth/
+    - .env
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

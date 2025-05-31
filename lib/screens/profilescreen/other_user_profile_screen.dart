@@ -1,7 +1,10 @@
 // other_user_profile_screen.dart
+import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:Instagram/screens/profilescreen/followers_following_screen.dart'; // Import FollowersList
+import 'package:Instagram/screens/profilescreen/followers_following_screen.dart';
+
+import '../../services/supabase_service.dart'; // Import FollowersList
 
 class OtherUserProfileScreen extends StatefulWidget {
   final String userId;
@@ -534,6 +537,26 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
         return GestureDetector(
           onTap: () {
             // Navigate to post detail
+            // Navigator.push(
+            //   context,
+            //   MaterialPageRoute(
+            //     builder: (context) => SinglePostView(
+            //       post: PostData(
+            //         id: posts[index]['id'],
+            //         userId: posts[index]['user_id'],
+            //         username: profile!['username'],
+            //         imageUrl: mediaUrl,
+            //         caption: posts[index]['caption'],
+            //         createdAt: DateTime.parse(posts[index]['created_at']),
+            //         likeCount: posts[index]['like_count'],
+            //         commentCount: posts[index]['comment_count'],
+            //         isLiked: posts[index]['is_liked'],
+            //       ),
+            //       Url: mediaUrl,
+            //
+            //     ),
+            //   ),
+            // );
           },
           child: Container(
             decoration: BoxDecoration(

@@ -153,7 +153,7 @@ class SupabaseService {
       final List<StoryData> allStories = [];
 
       // Process My Stories
-      final userData = await getCurrentUser();
+      // final userData = await getCurrentUser();
       // Process My Stories
       if (myStories.isNotEmpty) {
         for (final story in myStories) {
@@ -364,7 +364,6 @@ class SupabaseService {
           .eq('post_id', postId)
           .order('created_at', ascending: false);
 
-      if (result == null) return [];
 
       return (result as List).map((comment) {
         final user = comment['users'] as Map<String, dynamic>?;

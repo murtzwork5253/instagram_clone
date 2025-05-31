@@ -84,6 +84,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ? imageUrl
               : supabase.storage.from('avatars').getPublicUrl(imageUrl);
         }
+        else{
+          imageUrl = "";
+          avatarUrl = null;
+        }
 
         return Scaffold(
           backgroundColor: Colors.black,

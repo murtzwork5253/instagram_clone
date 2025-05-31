@@ -1,6 +1,7 @@
 import 'package:Instagram/screens/commentscreen/comment_section.dart';
 import 'package:Instagram/screens/reels_screen/reel_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
@@ -9,68 +10,131 @@ import 'package:share_plus/share_plus.dart';
 import 'package:Instagram/screens/reels_screen/reel_modal.dart';
 
 class ReelPlayer extends StatefulWidget {
-  final Reel reel;// Redundant if PageView handles it
+  final Reel reel;
+  final bool isFirstReel; // Add this to know if it's the first reel
 
   const ReelPlayer({
     Key? key,
     required this.reel,
+    this.isFirstReel = false,
   }) : super(key: key);
 
   @override
   _ReelPlayerState createState() => _ReelPlayerState();
 }
 
-class _ReelPlayerState extends State<ReelPlayer> {
+class _ReelPlayerState extends State<ReelPlayer>
+    with SingleTickerProviderStateMixin {
   late VideoPlayerController _videoController;
   ChewieController? _chewieController;
-  bool isLiked = false; // Local state, should be managed by Provider
+  bool isLiked = false;
+  bool _isInitialized = false;
+  String? _error;
+
+  // AppBar animation
+  late AnimationController _appBarAnimationController;
+  late Animation<double> _appBarAnimation;
+  bool _isAppBarVisible = true;
 
   @override
   void initState() {
     super.initState();
-    _videoController = VideoPlayerController.network(widget.reel.videoUrl);
-    _videoController.initialize().then((_) {
+    _initializeVideo();
+    _setupAppBarAnimation();
+
+    // Show app bar initially for first reel
+    if (widget.isFirstReel) {
+      _showAppBar();
+    }
+  }
+
+  void _setupAppBarAnimation() {
+    _appBarAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _appBarAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _appBarAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    // Start with app bar visible for first reel
+    if (widget.isFirstReel) {
+      _appBarAnimationController.forward();
+    }
+  }
+
+  void _showAppBar() {
+    if (!_isAppBarVisible) {
+      setState(() => _isAppBarVisible = true);
+      _appBarAnimationController.forward();
+    }
+  }
+
+  void _hideAppBar() {
+    if (_isAppBarVisible) {
+      setState(() => _isAppBarVisible = false);
+      _appBarAnimationController.reverse();
+    }
+  }
+
+  Future<void> _initializeVideo() async {
+    try {
+      _videoController = VideoPlayerController.network(widget.reel.videoUrl);
+      await _videoController.initialize();
+
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
-        autoPlay: false, // Set to true for auto-play on visibility
+        autoPlay: true,
         looping: true,
         showControls: false,
       );
-      setState(() {});
-    });
+
+      setState(() {
+        _isInitialized = true;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load video: $e';
+      });
+    }
   }
 
   @override
   void dispose() {
+    _appBarAnimationController.dispose();
     _chewieController?.dispose();
     _videoController.dispose();
     super.dispose();
   }
 
   void _onVisibilityChanged(VisibilityInfo info) {
-    if (_videoController.value.isInitialized) { // Ensure controller is initialized
+    if (_isInitialized && _videoController.value.isInitialized) {
       if (info.visibleFraction > 0.5 && !_videoController.value.isPlaying) {
         _videoController.play();
-      } else if (info.visibleFraction <= 0.5 && _videoController.value.isPlaying) {
+        // Show app bar when this reel becomes visible and it's the first one
+        if (widget.isFirstReel) {
+          _showAppBar();
+        }
+      } else if (info.visibleFraction <= 0.5 &&
+          _videoController.value.isPlaying) {
         _videoController.pause();
-        _videoController.seekTo(Duration.zero); // Reset to start when off-screen
       }
     }
   }
 
   void _handleDoubleTapLike() {
-    // This is a local UI animation.
-    // The actual like logic should go through the ReelProvider.
     setState(() {
-      isLiked = true; // For animation feedback
+      isLiked = true;
     });
-    // Trigger the actual like/unlike via provider
-    Provider.of<ReelProvider>(context, listen: false)
-        .toggleReelLike(widget.reel.id); // You'll create this method in ReelProvider
 
-    // Hide heart after animation (adjust duration for a smoother fade)
+    Provider.of<ReelProvider>(context, listen: false)
+        .toggleReelLike(widget.reel.id);
+
     Future.delayed(const Duration(milliseconds: 800), () {
-      if (mounted) { // Check if widget is still mounted before setState
+      if (mounted) {
         setState(() {
           isLiked = false;
         });
@@ -78,142 +142,110 @@ class _ReelPlayerState extends State<ReelPlayer> {
     });
   }
 
+  void _handleVerticalDrag(DragUpdateDetails details) {
+    // Hide app bar when user starts scrolling down
+    if (details.delta.dy > 5) {
+      _hideAppBar();
+    }
+    // Show app bar when user scrolls up significantly
+    else if (details.delta.dy < -10) {
+      _showAppBar();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // You'll need to consume ReelProvider to get the updated reel data
-    // for actual like status and count.
-    return Consumer<ReelProvider>( // Add Consumer here
+    return Consumer<ReelProvider>(
       builder: (context, reelProvider, child) {
-        // Get the latest Reel object from the provider
         final currentReel = reelProvider.reels.firstWhere(
-              (r) => r.id == widget.reel.id,
-          orElse: () => widget.reel, // Fallback to initial reel if not found
+          (r) => r.id == widget.reel.id,
+          orElse: () => widget.reel,
         );
 
         return VisibilityDetector(
-          key: Key(currentReel.id), // Use currentReel.id for key
+          key: Key(currentReel.id),
           onVisibilityChanged: _onVisibilityChanged,
           child: GestureDetector(
             onDoubleTap: _handleDoubleTapLike,
-            // Remove onVerticalDragEnd here, as PageView.builder handles it.
+            onPanUpdate: _handleVerticalDrag,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
-                    ? Chewie(controller: _chewieController!)
-                    : const Center(child: CircularProgressIndicator()),
-
-                // Gradient Overlay (Modern Instagram style often uses a darker top/bottom)
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.black54, Colors.transparent, Colors.transparent, Colors.black87],
-                      stops: [0.0, 0.3, 0.7, 1.0], // Adjust stops for desired fade
+                // Video Player
+                if (_error != null)
+                  Container(
+                    color: Colors.black,
+                    child: Center(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.white),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
+                  )
+                else if (_isInitialized && _chewieController != null)
+                  Chewie(controller: _chewieController!)
+                else
+                  Container(
+                    color: Colors.black,
+                    child: const Center(child: CircularProgressIndicator()),
                   ),
-                ),
 
-                // Heart animation on double tap (keep as is for visual feedback)
                 if (isLiked)
                   Center(
-                    child: Icon(Icons.favorite, color: Colors.white.withOpacity(0.8), size: 100),
+                    child: Icon(
+                      Icons.favorite,
+                      color: Colors.white.withOpacity(0.8),
+                      size: 100,
+                    ),
                   ),
 
-                // Left-aligned User Info (Top Left)
-                Positioned(
-                  top: MediaQuery.of(context).padding.top + 650, // Adjust for status bar
-                  left: 16,
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundImage: NetworkImage(currentReel.userAvatar),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        currentReel.username,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Follow button (will be conditional based on follow status)
-                      OutlinedButton(
-                        onPressed: () { /* Implement follow logic via provider */ },
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Follow', style: TextStyle(fontSize: 12)),
-                      )
-                    ],
-                  ),
-                ),
-
-                // Right-side controls (Vertical Stack) - Modern Instagram style
-                Positioned(
-                  right: 10,
-                  bottom: 30, // Adjust this based on bottom details height
-                  child: Column(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          currentReel.isLiked ? Icons.favorite : Icons.favorite_border, // Use reel's actual like status
-                          color: currentReel.isLiked ? Colors.red : Colors.white,
-                          size: 30,
-                        ),
-                        onPressed: _handleDoubleTapLike, // Single tap should also like
-                      ),
-                      Text(
-                        '${currentReel.likes}', // Use reel's actual likes
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      const SizedBox(height: 15),
-                      IconButton(
-                        icon: const Icon(Icons.comment, color: Colors.white, size: 30),
-                        onPressed: () {
-                          showCommentSection(context, currentReel.id); // Pass currentReel.id
-                        },
-                      ),
-                      // Display comment count (if added to Reel model)
-                      Text(
-                        '${currentReel.commentCount}',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      const SizedBox(height: 15),
-                      IconButton(
-                        icon: const Icon(Icons.share, color: Colors.white, size: 28),
-                        onPressed: () {
-                          Share.share(currentReel.videoUrl); // Share currentReel.videoUrl
-                        },
-                      ),
-                      const SizedBox(height: 15),
-                      IconButton(
-                        icon: const Icon(Icons.more_vert, color: Colors.white, size: 28),
-                        onPressed: () { /* Implement more options/bottom sheet */ },
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Bottom details (Caption, Audio, etc.)
+                // User Info (Bottom Left)
                 Positioned(
                   bottom: 20,
                   left: 16,
-                  right: 100, // Make room for right-side controls
+                  right: 100,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundImage:
+                                NetworkImage(currentReel.userAvatar),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            currentReel.username,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(width: 9),
+                          OutlinedButton(
+                            onPressed: () {},
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.white),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 2),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6)),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Follow',
+                                style: TextStyle(fontSize: 12)),
+                          )
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       Text(
                         currentReel.caption,
-                        style: const TextStyle(color: Colors.white, fontSize: 15),
-                        maxLines: 2, // Limit caption lines
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 15),
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 8),
@@ -221,16 +253,70 @@ class _ReelPlayerState extends State<ReelPlayer> {
                         children: const [
                           Icon(Icons.music_note, color: Colors.white, size: 16),
                           SizedBox(width: 4),
-                          Expanded( // Use Expanded for long audio titles
+                          Expanded(
                             child: Text(
-                              'Original Audio - Reel Music', // Consider making this dynamic
-                              style: TextStyle(color: Colors.white, fontSize: 12),
+                              'Original Audio - Reel Music',
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 12),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           )
                         ],
                       )
+                    ],
+                  ),
+                ),
+
+                // Right-side controls
+                Positioned(
+                  right: 10,
+                  bottom: 30,
+                  child: Column(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          currentReel.isLiked
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color:
+                              currentReel.isLiked ? Colors.red : Colors.white,
+                          size: 30,
+                        ),
+                        onPressed: _handleDoubleTapLike,
+                      ),
+                      Text(
+                        '${currentReel.likes}',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                      const SizedBox(height: 15),
+                      IconButton(
+                        icon: const Icon(Icons.comment,
+                            color: Colors.white, size: 30),
+                        onPressed: () {
+                          showCommentSection(context, currentReel.id);
+                        },
+                      ),
+                      Text(
+                        '${currentReel.commentCount}',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                      const SizedBox(height: 15),
+                      IconButton(
+                        icon: const Icon(Icons.share,
+                            color: Colors.white, size: 28),
+                        onPressed: () {
+                          Share.share(currentReel.videoUrl);
+                        },
+                      ),
+                      const SizedBox(height: 15),
+                      IconButton(
+                        icon: const Icon(Icons.more_vert,
+                            color: Colors.white, size: 28),
+                        onPressed: () {},
+                      ),
                     ],
                   ),
                 ),

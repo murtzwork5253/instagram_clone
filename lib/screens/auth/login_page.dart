@@ -168,18 +168,40 @@ class _LoginPageState extends State<LoginPage> {
         throw Exception('Login failed');
       }
 
+      final profileData = await AuthService.client()
+          .from('users')
+          .select('phone, birthdate')
+          .eq('id', response.user!.id)
+          .maybeSingle();
 
-      _showSuccessMessage("Login Successful");
-      final provider = Provider.of<InstaDataProvider>(context, listen: false);
-      await provider.refreshFeed();
+      if (!mounted) return;
 
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
+      if (profileData == null || profileData['phone'] == null) {
+        Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomeDashboard()),
-          (route) => false,
+          MaterialPageRoute(
+            builder: (context) => ProfileCompletionScreen(
+              user: response.user!,
+              email: emailController.text.trim(),
+            ),
+          ),
         );
       }
+      else{
+        _showSuccessMessage("Login Successful");
+        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+        await provider.refreshFeed();
+
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeDashboard()),
+                (route) => false,
+          );
+        }
+      }
+
+
     } catch (e) {
       _showErrorMessage('Login failed: ${_getReadableErrorMessage(e)}');
     } finally {

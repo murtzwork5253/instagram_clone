@@ -1,7 +1,9 @@
+import 'package:Instagram/screens/reels_screen/reel_provider.dart';
 import 'package:Instagram/screens/splash/splash_screen.dart';
 import 'package:Instagram/services/insta_data_provider.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -10,13 +12,19 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 // Global variable to store a list of available cameras
 List<CameraDescription> cameras = [];
 
+Future<void> testEnvLoad() async {
+  await dotenv.load(fileName: ".env");
+
+  print("API_KEY: ${dotenv.env['API_KEY']}");
+  print("BASE_URL: ${dotenv.env['BASE_URL']}");
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await testEnvLoad();
   await Supabase.initialize(
-    url: 'https://kprizlkexocjxvygfbyn.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwcml6bGtleG9janh2eWdmYnluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcxOTk4NDksImV4cCI6MjA2Mjc3NTg0OX0.GF5O_3TG8FPuH-GJKrLrYMroVepx3vwvgHvquSuFl6I',
+    url: dotenv.env['BASE_URL'] ?? '',
+    anonKey: dotenv.env['API_KEY'] ?? '',
     debug: true,
   );
 
@@ -31,6 +39,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => InstaDataProvider()),
+        ChangeNotifierProvider(create: (_) => ReelProvider()),
         // other providers...
       ],
       child: const App(),
