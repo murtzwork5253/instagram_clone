@@ -1,13 +1,17 @@
-import 'package:Instagram/screens/commentscreen/comment_section.dart';
+import 'dart:async';
+import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/reels_screen/reel_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:Instagram/screens/reels_screen/reel_modal.dart';
+
+import '../auth/service/auth_service.dart';
+import '../profilescreen/other_user_profile_screen.dart';
 
 class ReelPlayer extends StatefulWidget {
   final Reel reel;
@@ -30,11 +34,14 @@ class _ReelPlayerState extends State<ReelPlayer>
   bool isLiked = false;
   bool _isInitialized = false;
   String? _error;
+  AudioPlayer? _audioPlayer;
+  bool _hasMusic = false;
 
   // AppBar animation
   late AnimationController _appBarAnimationController;
   late Animation<double> _appBarAnimation;
   bool _isAppBarVisible = true;
+  final ReelPlayerEnhancements _enhancements = ReelPlayerEnhancements();
 
   @override
   void initState() {
@@ -80,14 +87,18 @@ class _ReelPlayerState extends State<ReelPlayer>
     }
   }
 
+  // Replace your _initializeVideo method with this:
   Future<void> _initializeVideo() async {
     try {
       _videoController = VideoPlayerController.network(widget.reel.videoUrl);
       await _videoController.initialize();
 
+      // Important: Set video volume BEFORE creating Chewie controller
+      _handleVideoAudio();
+
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
-        autoPlay: true,
+        autoPlay: widget.isFirstReel, // Auto-play first reel
         looping: true,
         showControls: false,
       );
@@ -102,25 +113,109 @@ class _ReelPlayerState extends State<ReelPlayer>
     }
   }
 
-  @override
-  void dispose() {
-    _appBarAnimationController.dispose();
-    _chewieController?.dispose();
-    _videoController.dispose();
-    super.dispose();
-  }
+  void _onVisibilityChanged(VisibilityInfo info) async {
+    print('📱 Reel ${widget.reel.id} visibility: ${info.visibleFraction}');
 
-  void _onVisibilityChanged(VisibilityInfo info) {
     if (_isInitialized && _videoController.value.isInitialized) {
-      if (info.visibleFraction > 0.5 && !_videoController.value.isPlaying) {
-        _videoController.play();
-        // Show app bar when this reel becomes visible and it's the first one
+      if (info.visibleFraction > 0.8) {
+        print(
+            '👁️ Reel ${widget.reel.id} became visible (${info.visibleFraction})');
+
+        // Still in _onVisibilityChanged, after session activation
+        if (_videoController.value.isInitialized &&
+            !_videoController.value.isPlaying) {
+          _handleVideoAudio(); // Set volume appropriately
+          await _videoController.play();
+          print('ReelPlayer: Video playback initiated.');
+        }
+
+        // SECOND: Start video playback
+        if (!_videoController.value.isPlaying) {
+          try {
+            print('🎬 Starting video playback...');
+            await _videoController.play();
+            print('✅ Video started successfully');
+
+            // Wait a moment for video to stabilize
+            await Future.delayed(Duration(milliseconds: 300));
+          } catch (e) {
+            print('❌ Error starting video: $e');
+          }
+        }
+
+        // THIRD: Start audio playback (with delay to ensure video doesn't interrupt)
+        // if (_hasMusic && _audioPlayer != null) {
+        //   try {
+        //     print('🎵 Starting audio playback...');
+        //
+        //     // Ensure audio session is active and configured properly
+        //     await _audioSession?.setActive(true);
+        //     await _audioSession?.configure(AudioSessionConfiguration(
+        //       avAudioSessionCategory: AVAudioSessionCategory.playback,
+        //       avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.mixWithOthers,
+        //       avAudioSessionMode: AVAudioSessionMode.defaultMode,
+        //       avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        //       avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+        //       androidAudioAttributes: const AndroidAudioAttributes(
+        //         contentType: AndroidAudioContentType.music,
+        //         flags: AndroidAudioFlags.none,
+        //         usage: AndroidAudioUsage.media,
+        //       ),
+        //       androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+        //       androidWillPauseWhenDucked: false,
+        //     ));
+        //
+        //     if (!_audioPlayer!.playing) {
+        //       await _setupAudioWhenVisible();
+        //
+        //       // Verify audio started
+        //       await Future.delayed(Duration(milliseconds: 200));
+        //       print('🔍 Audio state after start:');
+        //       print('  - Playing: ${_audioPlayer!.playing}');
+        //       print('  - Position: ${_audioPlayer!.position}');
+        //       print('  - Processing state: ${_audioPlayer!.processingState}');
+        //     }
+        //
+        //   } catch (e) {
+        //     print('❌ Error starting audio: $e');
+        //   }
+        // }
+
+        // Show app bar for first reel
         if (widget.isFirstReel) {
           _showAppBar();
         }
-      } else if (info.visibleFraction <= 0.5 &&
-          _videoController.value.isPlaying) {
-        _videoController.pause();
+      } else if (info.visibleFraction < 0.2) {
+        print(
+            '👁️ Reel ${widget.reel.id} became hidden (${info.visibleFraction})');
+
+        // Pause both video and audio
+        if (_videoController.value.isPlaying) {
+          _videoController.pause();
+          print('⏸️ Video paused for reel ${widget.reel.id}');
+        }
+
+        if (_hasMusic && _audioPlayer != null && _audioPlayer!.playing) {
+          await _audioPlayer!.pause();
+          print('⏸️ Audio paused for reel ${widget.reel.id}');
+        }
+      }
+    } else {
+      print(
+          '⚠️ Reel ${widget.reel.id} - Not ready (initialized: $_isInitialized, video initialized: ${_videoController.value.isInitialized})');
+    }
+  }
+
+  void _handleVideoAudio() {
+    if (_videoController.value.isInitialized) {
+      // Mute original video if reel has background music
+      if (_hasMusic) {
+        _videoController.setVolume(0.0);
+        print('🔇 Video muted (has background music)');
+      } else {
+        _videoController.setVolume(widget.reel.isVideoMuted ? 0.0 : 1.0);
+        print(
+            '🔊 Video volume set to: ${widget.reel.isVideoMuted ? 0.0 : 1.0}');
       }
     }
   }
@@ -130,8 +225,8 @@ class _ReelPlayerState extends State<ReelPlayer>
       isLiked = true;
     });
 
-    Provider.of<ReelProvider>(context, listen: false)
-        .toggleReelLike(widget.reel.id);
+    // Use enhanced like handler with haptic feedback
+    _enhancements.handleDoubleTapLike(context, widget.reel.id);
 
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
@@ -200,131 +295,1075 @@ class _ReelPlayerState extends State<ReelPlayer>
                     ),
                   ),
 
-                // User Info (Bottom Left)
-                Positioned(
-                  bottom: 20,
-                  left: 16,
-                  right: 100,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundImage:
-                                NetworkImage(currentReel.userAvatar),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            currentReel.username,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(width: 9),
-                          OutlinedButton(
-                            onPressed: () {},
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Colors.white),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 2),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6)),
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Follow',
-                                style: TextStyle(fontSize: 12)),
-                          )
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        currentReel.caption,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 15),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: const [
-                          Icon(Icons.music_note, color: Colors.white, size: 16),
-                          SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              'Original Audio - Reel Music',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 12),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          )
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-
-                // Right-side controls
-                Positioned(
-                  right: 10,
-                  bottom: 30,
-                  child: Column(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          currentReel.isLiked
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          color:
-                              currentReel.isLiked ? Colors.red : Colors.white,
-                          size: 30,
-                        ),
-                        onPressed: _handleDoubleTapLike,
-                      ),
-                      Text(
-                        '${currentReel.likes}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      const SizedBox(height: 15),
-                      IconButton(
-                        icon: const Icon(Icons.comment,
-                            color: Colors.white, size: 30),
-                        onPressed: () {
-                          showCommentSection(context, currentReel.id);
-                        },
-                      ),
-                      Text(
-                        '${currentReel.commentCount}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      const SizedBox(height: 15),
-                      IconButton(
-                        icon: const Icon(Icons.share,
-                            color: Colors.white, size: 28),
-                        onPressed: () {
-                          Share.share(currentReel.videoUrl);
-                        },
-                      ),
-                      const SizedBox(height: 15),
-                      IconButton(
-                        icon: const Icon(Icons.more_vert,
-                            color: Colors.white, size: 28),
-                        onPressed: () {},
-                      ),
-                    ],
-                  ),
-                ),
+                _buildUserInfoSection(currentReel),
+                _buildRightControls(currentReel),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildUserInfoSection(Reel currentReel) {
+    return _enhancements.buildUserInfoSection(currentReel, context);
+  }
+
+  // Replace your Right Controls section in build method
+  Widget _buildRightControls(Reel currentReel) {
+    return _enhancements.buildRightControls(currentReel, context);
+  }
+
+  @override
+  void dispose() {
+    _appBarAnimationController.dispose();
+    _chewieController?.dispose();
+    _videoController.dispose();
+    super.dispose();
+  }
+}
+
+class ReelPlayerEnhancements {
+  // Enhanced double tap like handler with animation
+  void handleDoubleTapLike(BuildContext context, String reelId) async {
+    HapticFeedback.mediumImpact();
+
+    try {
+      await Provider.of<ReelProvider>(context, listen: false)
+          .toggleReelLike(reelId);
+    } catch (e) {
+      // FIXED: Show error message to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.red[700],
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  // Enhanced follow button handler
+  void handleFollowTap(
+      BuildContext context, String userId, String username) async {
+    HapticFeedback.lightImpact();
+
+    try {
+      await Provider.of<ReelProvider>(context, listen: false)
+          .toggleUserFollow(userId, username);
+    } catch (e) {
+      // FIXED: Show error message to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.red[700],
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  // Enhanced share handler
+  void handleShare(
+      BuildContext context, String reelId, String username, String caption) {
+    HapticFeedback.selectionClick();
+
+    Provider.of<ReelProvider>(context, listen: false)
+        .shareReel(reelId, username, caption);
+  }
+
+  // Show comment bottom sheet
+  void showCommentBottomSheet(BuildContext context, String reelId) {
+    HapticFeedback.lightImpact();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CommentBottomSheet(reelId: reelId),
+    );
+  }
+
+  Widget buildUserInfoSection(Reel currentReel, BuildContext context) {
+    return Consumer<ReelProvider>(
+      builder: (context, reelProvider, child) {
+        // FIXED: Get current user ID properly
+        final currentUserId = AuthService.client().auth.currentUser?.id;
+        final isOwnReel = currentUserId == currentReel.userId;
+
+        return Positioned(
+          bottom: 20,
+          left: 16,
+          right: 100,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      if(currentReel.userId == currentUserId)
+                        // Navigate to user profile
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ProfileScreen(),
+                          ),
+                        );
+                      else
+                        // Navigate to user profile
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => OtherUserProfileScreen(
+                              userId: currentReel.userId,
+                            ),
+                          ),
+                        );
+                    },
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundImage: currentReel.userAvatar.isNotEmpty
+                          ? NetworkImage(currentReel.userAvatar)
+                          : null,
+                      backgroundColor: Colors.grey.shade700,
+                      child: currentReel.userAvatar.isEmpty
+                          ? Icon(Icons.person, color: Colors.white, size: 18)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        if(currentReel.userId == currentUserId)
+                          // Navigate to user profile
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ProfileScreen(),
+                            ),
+                          );
+                        else
+                          // Navigate to user profile
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => OtherUserProfileScreen(
+                                userId: currentReel.userId,
+                              ),
+                            ),
+                          );
+                      },
+                      child: Text(
+                        currentReel.username,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // FIXED: Only show follow button for other users
+                  if (!isOwnReel) ...[
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      child: OutlinedButton(
+                        onPressed: () => handleFollowTap(
+                            context, currentReel.userId, currentReel.username),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: currentReel.isFollowing
+                                ? Colors.grey
+                                : Colors.white,
+                          ),
+                          backgroundColor: currentReel.isFollowing
+                              ? Colors.grey.withOpacity(0.3)
+                              : Colors.transparent,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 2),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: Text(
+                          currentReel.isFollowing ? 'Following' : 'Follow',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () {
+                  // Show full caption in dialog
+                  _showFullCaption(context, currentReel.caption);
+                },
+                child: Text(
+                  currentReel.caption,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.music_note,
+                      color: Colors.white, size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Original Audio - ${currentReel.username}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // FIXED: Build enhanced right-side controls with proper state management
+  Widget buildRightControls(Reel currentReel, BuildContext context) {
+    return Consumer<ReelProvider>(
+      builder: (context, reelProvider, child) {
+        return Positioned(
+          right: 10,
+          bottom: 30,
+          child: Column(
+            children: [
+              // FIXED: Like button with proper animation and state
+              AnimatedScale(
+                scale: currentReel.isLiked ? 1.2 : 1.0,
+                duration: const Duration(milliseconds: 150),
+                child: IconButton(
+                  icon: Icon(
+                    currentReel.isLiked
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                    color: currentReel.isLiked ? Colors.red : Colors.white,
+                    size: 30,
+                  ),
+                  onPressed: () => handleDoubleTapLike(context, currentReel.id),
+                ),
+              ),
+              Text(
+                _formatCount(currentReel.likes),
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+
+              const SizedBox(height: 15),
+
+              // Comment button
+              IconButton(
+                icon: const Icon(Icons.comment, color: Colors.white, size: 30),
+                onPressed: () =>
+                    showCommentBottomSheet(context, currentReel.id),
+              ),
+              Text(
+                _formatCount(currentReel.commentCount),
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+
+              const SizedBox(height: 15),
+
+              // Share button
+              IconButton(
+                icon: const Icon(Icons.share, color: Colors.white, size: 28),
+                onPressed: () => handleShare(
+                    context,
+                    currentReel.id,
+                    currentReel.username,
+                    currentReel.caption
+                ),
+              ),
+
+              const SizedBox(height: 15),
+
+              // More options
+              IconButton(
+                icon: const Icon(Icons.more_vert, color: Colors.white, size: 28),
+                onPressed: () => _showMoreOptions(context, currentReel),
+              ),
+              // ... rest of the controls remain the same
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Helper method to format large numbers
+  String _formatCount(int count) {
+    if (count >= 1000000) {
+      return '${(count / 1000000).toStringAsFixed(1)}M';
+    } else if (count >= 1000) {
+      return '${(count / 1000).toStringAsFixed(1)}K';
+    }
+    return count.toString();
+  }
+
+  // Show full caption dialog
+  void _showFullCaption(BuildContext context, String caption) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text(
+          'Caption',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          caption,
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show more options bottom sheet
+  void _showMoreOptions(BuildContext context, Reel reel) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.report, color: Colors.white),
+              title:
+                  const Text('Report', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                // Handle report
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.block, color: Colors.white),
+              title: const Text('Block User',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                // Handle block user
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy, color: Colors.white),
+              title: const Text('Copy Link',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Clipboard.setData(ClipboardData(text: reel.videoUrl));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Link copied to clipboard')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Comment Bottom Sheet Widget
+class CommentBottomSheet extends StatefulWidget {
+  final String reelId;
+
+  const CommentBottomSheet({Key? key, required this.reelId}) : super(key: key);
+
+  @override
+  _CommentBottomSheetState createState() => _CommentBottomSheetState();
+}
+
+class _CommentBottomSheetState extends State<CommentBottomSheet> {
+  final TextEditingController _commentController = TextEditingController();
+  List<Map<String, dynamic>> comments = [];
+  bool isLoading = false;
+  bool _canPost = false;
+  bool _isPosting = false;
+  DateTime? _lastRefreshed;
+  final String currentUserId = AuthService.client().auth.currentUser!.id;
+
+  @override
+  void initState() {
+    super.initState();
+    // Add a slight delay to ensure the widget is fully mounted
+    Future.delayed(Duration(milliseconds: 100), () {
+      _loadComments();
+    });
+
+    // Add listener to update button state when text changes
+    _commentController.addListener(_updatePostButton);
+  }
+
+  @override
+  void dispose() {
+    _commentController.removeListener(_updatePostButton);
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  void _updatePostButton() {
+    final canPost = _commentController.text.trim().isNotEmpty;
+    if (canPost != _canPost) {
+      setState(() {
+        _canPost = canPost;
+      });
+    }
+  }
+
+  String _formatLastUpdated(DateTime dateTime) {
+    final difference = DateTime.now().difference(dateTime);
+
+    if (difference.inSeconds < 60) {
+      return 'just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+
+  Future<void> _loadComments() async {
+    if (comments.isEmpty) {
+      setState(() {
+        isLoading = true;
+      });
+    }
+
+    try {
+      final reelProvider = Provider.of<ReelProvider>(context, listen: false);
+      final loadedComments = await reelProvider.getReelComments(widget.reelId);
+
+      if (mounted) {
+        setState(() {
+          comments = loadedComments;
+          _lastRefreshed = DateTime.now();
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      // FIXED: Better error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.red[700],
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: _loadComments,
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addComment() async {
+    if (!_canPost || _isPosting) return;
+
+    final content = _commentController.text.trim();
+    if (content.isEmpty) return;
+
+    final reelProvider = Provider.of<ReelProvider>(context, listen: false);
+
+    setState(() {
+      _isPosting = true;
+    });
+
+    try {
+      await reelProvider.addComment(widget.reelId, content);
+      _commentController.clear();
+
+      // FIXED: Show success feedback
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Comment added successfully'),
+            backgroundColor: Colors.green[700],
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      await Future.delayed(Duration(milliseconds: 200));
+      // Refresh comments
+      await _loadComments();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red[700],
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPosting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          return AnimatedPadding(
+            duration: Duration(milliseconds: 250),
+            padding: EdgeInsets.only(bottom: bottomInset),
+            curve: Curves.easeOut,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.85,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    // Handle bar
+                    Container(
+                      margin: EdgeInsets.symmetric(vertical: 8),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade600,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+
+                    // Header
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                              color: Colors.grey.shade800, width: 0.5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          SizedBox(width: 24), // Balance the close button
+                          Text(
+                            'Comments',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Last refreshed indicator
+                    if (_lastRefreshed != null)
+                      Container(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        width: double.infinity,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Last updated ${_formatLastUpdated(_lastRefreshed!)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+
+                    // Comments list
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _loadComments,
+                        color: Colors.white,
+                        backgroundColor: Colors.grey[800],
+                        child: isLoading
+                            ? Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                ),
+                              )
+                            : comments.isEmpty
+                                ? Center(
+                                    child: ListView(
+                                      physics:
+                                          const AlwaysScrollableScrollPhysics(),
+                                      children: [
+                                        Container(
+                                          height: MediaQuery.of(context)
+                                                  .size
+                                                  .height /
+                                              3,
+                                          alignment: Alignment.center,
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.chat_bubble_outline,
+                                                size: 50,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                              SizedBox(height: 16),
+                                              Text(
+                                                'No comments yet',
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade600,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                              SizedBox(height: 8),
+                                              Text(
+                                                'Start the conversation.',
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade700,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    padding: EdgeInsets.symmetric(vertical: 8),
+                                    itemCount: comments.length,
+                                    itemBuilder: (context, index) {
+                                      final comment = comments[index];
+                                      return AnimatedSwitcher(
+                                        duration: Duration(milliseconds: 300),
+                                        child: ReelCommentTile(
+                                          key: ValueKey(comment['id']),
+                                          comment: comment,
+                                          currentUserId: currentUserId,
+                                          reelId: widget.reelId,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                      ),
+                    ),
+
+                    // Add comment section
+                    Container(
+                      padding: EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        top: 12,
+                        bottom: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        border: Border(
+                          top: BorderSide(
+                              color: Colors.grey.shade800, width: 0.5),
+                        ),
+                      ),
+                      child: SafeArea(
+                        child: Row(
+                          children: [
+                            // Current user profile image
+                            Consumer<ReelProvider>(
+                              builder: (context, reelProvider, child) {
+                                return CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: Colors.grey.shade700,
+                                  child: Icon(
+                                    Icons.person,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                );
+                              },
+                            ),
+                            SizedBox(width: 12),
+
+                            // Comment text field
+                            Expanded(
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade900,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border:
+                                      Border.all(color: Colors.grey.shade800),
+                                ),
+                                child: TextField(
+                                  controller: _commentController,
+                                  style: TextStyle(color: Colors.white),
+                                  decoration: InputDecoration(
+                                    hintText: 'Add a comment...',
+                                    border: InputBorder.none,
+                                    hintStyle:
+                                        TextStyle(color: Colors.grey.shade600),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                  maxLines: null,
+                                  textInputAction: TextInputAction.send,
+                                  onSubmitted: (_) {
+                                    if (_canPost) _addComment();
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+
+                            // Post button
+                            GestureDetector(
+                              onTap: (_canPost && !_isPosting)
+                                  ? _addComment
+                                  : null,
+                              child: Container(
+                                padding: EdgeInsets.all(8),
+                                child: _isPosting
+                                    ? SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                            Colors.blue,
+                                          ),
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.send,
+                                        color: _canPost
+                                            ? Colors.blue
+                                            : Colors.grey.shade600,
+                                        size: 24,
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Enhanced Comment Tile Widget
+class ReelCommentTile extends StatefulWidget {
+  final Map<String, dynamic> comment;
+  final String currentUserId;
+  final String reelId;
+
+  const ReelCommentTile({
+    Key? key,
+    required this.comment,
+    required this.currentUserId,
+    required this.reelId,
+  }) : super(key: key);
+
+  @override
+  State<ReelCommentTile> createState() => _ReelCommentTileState();
+}
+
+class _ReelCommentTileState extends State<ReelCommentTile> {
+  bool _isExpanded = false;
+  bool _isLiked = false;
+  int _likeCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize like state (you can extend this to fetch actual like data)
+    _likeCount = widget.comment['likes'] ?? 0;
+  }
+
+  String _getTimeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inDays > 365) return '${(diff.inDays / 365).floor()}y';
+    if (diff.inDays > 30) return '${(diff.inDays / 30).floor()}mo';
+    if (diff.inDays > 0) return '${diff.inDays}d';
+    if (diff.inHours > 0) return '${diff.inHours}h';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m';
+    return 'just now';
+  }
+
+  void _toggleLike() {
+    setState(() {
+      _isLiked = !_isLiked;
+      _likeCount += _isLiked ? 1 : -1;
+    });
+    // Here you can add API call to like/unlike comment
+  }
+
+  void _deleteComment() async {
+
+    final provider = Provider.of<ReelProvider>(context, listen: false);
+    // Show confirmation dialog
+    final bool? confirmDelete = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[850],
+          title: const Text(
+            'Delete Comment?',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: const Text(
+            'Are you sure you want to delete this comment? This action cannot be undone.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.blueAccent),
+              ),
+            ),
+            TextButton(
+              onPressed: () async{
+                await provider.deleteCommentWithFeedback(
+                widget.reelId,
+                widget.comment,
+                onError: (message) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(message)),
+                  );
+                },
+                onSuccess: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Comment deleted successfully')),
+                  );
+                },
+                );
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmDelete != true) {
+      return;
+    }
+
+    try {
+      // Add delete comment logic here
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Comment deleted successfully')),
+      );
+      // You might want to refresh the comments list or remove this item
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete comment: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final comment = widget.comment;
+    final commentText = comment['comment'] as String;
+    final username = comment['username'] as String;
+    final userAvatar = comment['userAvatar'] as String;
+    final createdAt = comment['createdAt'] as DateTime;
+
+    final String contentPreview = commentText.length > 120
+        ? commentText.substring(0, 120) + '...'
+        : commentText;
+
+    final bool isTruncated = commentText.length > 120;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
+      child: GestureDetector(
+        onLongPress: _deleteComment,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Profile Avatar
+            CircleAvatar(
+              radius: 18,
+              backgroundImage:
+                  userAvatar.isNotEmpty ? NetworkImage(userAvatar) : null,
+              backgroundColor: Colors.grey.shade700,
+              child: userAvatar.isEmpty
+                  ? Icon(Icons.person, size: 18, color: Colors.white)
+                  : null,
+            ),
+            SizedBox(width: 12),
+
+            // Comment Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Username and comment text
+                  RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: username,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        TextSpan(
+                          text: ' ',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                        TextSpan(
+                          text: _isExpanded || !isTruncated
+                              ? commentText
+                              : contentPreview,
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Show more button
+                  if (isTruncated && !_isExpanded)
+                    GestureDetector(
+                      onTap: () => setState(() => _isExpanded = true),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text(
+                          'more',
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  SizedBox(height: 6),
+
+                  // Time, likes, and reply
+                  Row(
+                    children: [
+                      Text(
+                        _getTimeAgo(createdAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      SizedBox(width: 16),
+                      if (_likeCount > 0)
+                        Text(
+                          '$_likeCount ${_likeCount == 1 ? 'like' : 'likes'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      SizedBox(width: 16),
+                      InkWell(
+                        onTap: () {
+                          // TODO: Add reply functionality
+                        },
+                        child: Text(
+                          'Reply',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Like button
+            GestureDetector(
+              onTap: _toggleLike,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: AnimatedScale(
+                  scale: _isLiked ? 1.2 : 1.0,
+                  duration: Duration(milliseconds: 150),
+                  child: Icon(
+                    _isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: _isLiked ? Colors.red : Colors.grey.shade600,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

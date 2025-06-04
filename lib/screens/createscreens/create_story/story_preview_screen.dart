@@ -226,24 +226,27 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
   }
 
   // Function to show a more detailed share sheet (like Instagram's)
+  // Replace your _showShareSheet method with this fixed version
   void _showShareSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent, // Make background transparent to show content below
-      isScrollControlled: true, // Allow it to take up more height
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
         return DraggableScrollableSheet(
-          initialChildSize: 0.6, // Start at 60% of screen height
+          initialChildSize: 0.6,
           minChildSize: 0.3,
           maxChildSize: 0.9,
           expand: false,
           builder: (BuildContext context, ScrollController scrollController) {
             return Container(
               decoration: BoxDecoration(
-                color: Colors.grey[900], // Dark background for the sheet
+                color: Colors.grey[900],
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
               ),
+              // Remove the SizedBox wrapper and explicit height
               child: Column(
+                mainAxisSize: MainAxisSize.min, // Add this
                 children: [
                   // Handle for dragging the sheet
                   Padding(
@@ -273,7 +276,7 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
                       ],
                     ),
                   ),
-                  // Search bar (Optional, but Instagram has it)
+                  // Search bar
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                     child: TextField(
@@ -292,27 +295,29 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),
-                  Expanded(
+                  // Use Flexible instead of Expanded to allow the column to size itself
+                  Flexible(
                     child: ListView(
                       controller: scrollController,
+                      shrinkWrap: true, // Add this
                       padding: const EdgeInsets.only(top: 8),
                       children: [
-                        // Example: "Suggested" friends to share with
+                        // Suggested friends
                         _buildShareRecipientList('Suggested', [
-                          _buildShareRecipientItem('Alice',context, 'https://randomuser.me/api/portraits/women/1.jpg'),
-                          _buildShareRecipientItem('Bob', context,'https://randomuser.me/api/portraits/men/2.jpg'),
-                          _buildShareRecipientItem('Charlie', context,'https://randomuser.me/api/portraits/men/3.jpg'),
-                          _buildShareRecipientItem('Diana', context,'https://randomuser.me/api/portraits/women/4.jpg'),
-                        ], isHorizontal: true), // Horizontal scroll for suggested
+                          _buildShareRecipientItem('Alice', context, 'https://randomuser.me/api/portraits/women/1.jpg'),
+                          _buildShareRecipientItem('Bob', context, 'https://randomuser.me/api/portraits/men/2.jpg'),
+                          _buildShareRecipientItem('Charlie', context, 'https://randomuser.me/api/portraits/men/3.jpg'),
+                          _buildShareRecipientItem('Diana', context, 'https://randomuser.me/api/portraits/women/4.jpg'),
+                        ], isHorizontal: true),
 
-                        // Example: "Recent" chats/friends
+                        // Recent chats
                         _buildShareRecipientList('Recent', [
-                          _buildShareRecipientItem('Eve', context,'https://randomuser.me/api/portraits/women/5.jpg', message: 'Hello!'),
-                          _buildShareRecipientItem('Frank', context,'https://randomuser.me/api/portraits/men/6.jpg', message: 'Cool story!'),
-                          _buildShareRecipientItem('Grace', context,'https://randomuser.me/api/portraits/women/7.jpg'),
-                        ]), // Vertical list for recent
+                          _buildShareRecipientItem('Eve', context, 'https://randomuser.me/api/portraits/women/5.jpg', message: 'Hello!'),
+                          _buildShareRecipientItem('Frank', context, 'https://randomuser.me/api/portraits/men/6.jpg', message: 'Cool story!'),
+                          _buildShareRecipientItem('Grace', context, 'https://randomuser.me/api/portraits/women/7.jpg'),
+                        ]),
 
-                        // Example: Other share options (e.g., share to other apps)
+                        // Other options
                         ListTile(
                           leading: Icon(Icons.download_for_offline_outlined, color: Colors.white),
                           title: Text('Save Story', style: TextStyle(color: Colors.white)),
@@ -326,25 +331,24 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
                           title: Text('Share to other apps', style: TextStyle(color: Colors.white)),
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Opening Share Dialog!')));
-                            // Implement actual sharing to other apps using share_plus package
                             Navigator.pop(context);
                           },
                         ),
                       ],
                     ),
                   ),
-                  // Send button at the bottom of the share sheet
+                  // Send button
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16.0),
                     child: ElevatedButton(
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Story Sent!')));
-                        Navigator.pop(context); // Close share sheet
-                        Navigator.pop(context); // Go back to main feed
+                        Navigator.pop(context);
+                        Navigator.pop(context);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue, // Instagram blue
+                        backgroundColor: Colors.blue,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -368,6 +372,7 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
   Widget _buildShareRecipientList(String title, List<Widget> items, {bool isHorizontal = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min, // Add this
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -377,8 +382,8 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
           ),
         ),
         isHorizontal
-            ? Container(
-          height: 100, // Fixed height for horizontal list
+            ? SizedBox( // Use SizedBox instead of Container
+          height: 100,
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -386,6 +391,7 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
           ),
         )
             : Column(
+          mainAxisSize: MainAxisSize.min, // Add this
           children: items,
         ),
       ],
@@ -393,27 +399,30 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
   }
 
   Widget _buildShareRecipientItem(String name,BuildContext context, String avatarUrl, {String? message}) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundImage: NetworkImage(avatarUrl),
-      ),
-      title: Text(name, style: const TextStyle(color: Colors.white)),
-      subtitle: message != null ? Text(message, style: TextStyle(color: Colors.grey[500])) : null,
-      trailing: Container(
-        width: 24, // Checkbox size
-        height: 24,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.blue, width: 2),
+    return SizedBox(
+      height: 70, // Fixed height for each item
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundImage: NetworkImage(avatarUrl),
         ),
-        child: const Icon(Icons.check, color: Colors.blue, size: 16), // Or an empty circle if not selected
+        title: Text(name, style: const TextStyle(color: Colors.white)),
+        subtitle: message != null ? Text(message, style: TextStyle(color: Colors.grey[500])) : null,
+        trailing: Container(
+          width: 24, // Checkbox size
+          height: 24,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.blue, width: 2),
+          ),
+          child: const Icon(Icons.check, color: Colors.blue, size: 16), // Or an empty circle if not selected
+        ),
+        onTap: () {
+          // Handle selection for sharing
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Selected $name for sharing!')));
+          // In a real app, you'd manage a list of selected recipients
+        },
       ),
-      onTap: () {
-        // Handle selection for sharing
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Selected $name for sharing!')));
-        // In a real app, you'd manage a list of selected recipients
-      },
     );
   }
 }

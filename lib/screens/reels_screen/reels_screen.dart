@@ -3,6 +3,7 @@ import 'package:Instagram/screens/reels_screen/reel_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../createscreens/create_post/create_post_screen.dart';
 import '/screens/reels_screen/reel_provider.dart';
 
 class ReelsScreen extends StatefulWidget {
@@ -12,8 +13,8 @@ class ReelsScreen extends StatefulWidget {
   State<ReelsScreen> createState() => _ReelsScreenState();
 }
 
-class _ReelsScreenState extends State<ReelsScreen> with TickerProviderStateMixin {
-
+class _ReelsScreenState extends State<ReelsScreen>
+    with TickerProviderStateMixin {
 // Add these variables to your ReelScreen class
   AnimationController? _appBarController;
   Animation<double>? _appBarAnimation;
@@ -97,17 +98,21 @@ class _ReelsScreenState extends State<ReelsScreen> with TickerProviderStateMixin
                 left: 0,
                 right: 0,
                 child: AnimatedBuilder(
-                  animation: _appBarAnimation ?? const AlwaysStoppedAnimation(1.0),
+                  animation:
+                      _appBarAnimation ?? const AlwaysStoppedAnimation(1.0),
                   builder: (context, child) {
                     return Container(
-                      height: MediaQuery.of(context).padding.top + kToolbarHeight,
+                      height:
+                          MediaQuery.of(context).padding.top + kToolbarHeight,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withOpacity(0.8 * (_appBarAnimation?.value ?? 1.0)),
-                            Colors.black.withOpacity(0.4 * (_appBarAnimation?.value ?? 1.0)),
+                            Colors.black.withOpacity(
+                                0.8 * (_appBarAnimation?.value ?? 1.0)),
+                            Colors.black.withOpacity(
+                                0.4 * (_appBarAnimation?.value ?? 1.0)),
                             Colors.transparent,
                           ],
                           stops: const [0.0, 0.6, 1.0],
@@ -136,7 +141,16 @@ class _ReelsScreenState extends State<ReelsScreen> with TickerProviderStateMixin
                                   color: Colors.white,
                                   size: 28,
                                 ),
-                                onPressed: () => HapticFeedback.mediumImpact(),
+                                onPressed: () {
+                                  HapticFeedback.heavyImpact();
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const CreatePostScreen(initialTabIndex: 2,),
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ),

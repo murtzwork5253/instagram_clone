@@ -95,7 +95,7 @@ class _HomePageState extends State<HomeDashboard> {
   late final List<Widget> _pages = [
     InstagramHomeScreen(refreshNotifier: homeRefreshNotifier),
     InstagramSearchScreen(refreshNotifier: searchRefreshNotifier,),
-    ReelsScreen(),
+    Container(),
     ProfileScreen(refreshNotifier: profileRefreshNotifier),
   ];
 
@@ -225,7 +225,12 @@ class _HomePageState extends State<HomeDashboard> {
         ),
         body: IndexedStack(
           index: _selectedBodyIndex,
-          children: _pages,
+          children: [
+            _pages[0], // Home
+            _pages[1], // Search
+            _selectedBodyIndex == 2 ? const ReelsScreen() : Container(), // Only create ReelsScreen when selected
+            _pages[3], // Profile
+          ],
         ),
       ),
     );

@@ -14,9 +14,6 @@ List<CameraDescription> cameras = [];
 
 Future<void> testEnvLoad() async {
   await dotenv.load(fileName: ".env");
-
-  print("API_KEY: ${dotenv.env['API_KEY']}");
-  print("BASE_URL: ${dotenv.env['BASE_URL']}");
 }
 
 void main() async {

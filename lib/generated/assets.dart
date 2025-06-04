@@ -18,6 +18,9 @@ class Assets {
   static const String createPostCreatePostScreen = 'lib/screens/createscreens/create_post/create_post_screen.dart';
   static const String createPostPostProvider = 'lib/screens/createscreens/create_post/post_provider.dart';
   static const String createReelsCreateReelScreen = 'lib/screens/createscreens/create_reels/create_reel_screen.dart';
+  static const String createReelsReelCaptionScreen = 'lib/screens/createscreens/create_reels/reel_caption_screen.dart';
+  static const String createReelsReelPreviewScreen = 'lib/screens/createscreens/create_reels/reel_preview_screen.dart';
+  static const String createReelsTagUsersScreen = 'lib/screens/createscreens/create_reels/tag_users_screen.dart';
   static const String createStoryCreateStoryScreen = 'lib/screens/createscreens/create_story/create_story_screen.dart';
   static const String createStoryStoryPreviewScreen = 'lib/screens/createscreens/create_story/story_preview_screen.dart';
   static const String createscreensCameraService = 'lib/screens/createscreens/camera_service.dart';

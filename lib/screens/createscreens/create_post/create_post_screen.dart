@@ -10,6 +10,8 @@ import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../camera_service.dart';
+
 // Define an enum to manage the different stages of post creation
 enum PostCreationStage {
   gallerySelection,
@@ -39,6 +41,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   bool _isUploading = false;
   bool _isLoadingGallery = true;
   bool _hasRequestedPermission = false;
+  late CameraService _cameraService;
 
   // Replaced TabController with PageController and ScrollController for custom tabs
   PageController _pageController = PageController();
@@ -55,7 +58,8 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     _selectedIndex = widget.initialTabIndex;
     _pageController = PageController(initialPage: _selectedIndex);
 
-
+    _cameraService = CameraService();
+    _initializeCamera();
     _pageController.addListener(() {
       if (_pageController.page?.round() != _selectedIndex) {
         setState(() {
@@ -69,34 +73,34 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     requestPermissionAndFetchMedia();
   }
 
+  Future<void> _initializeCamera() async {
+    // Initialize camera with audio enabled (for reels)
+    await _cameraService.initializeCamera(enableAudio: true);
+  }
+
   @override
   void dispose() {
     _pageController.dispose();
     _scrollController.dispose(); // Dispose scroll controller
     _captionController.dispose();
+    _cameraService.dispose();
     super.dispose();
   }
 
+  // In your create_post_screen.dart, modify _onTabTap method
   void _onTabTap(int index) {
-    setState(() => _selectedIndex = index);
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-    _centerTab(index);
-    // If the tab changes, we should reset the stage to gallery selection
-    // for the new content type (Story/Reel) if that's how they'll work.
-    // For now, only 'Post' tab is fully implemented through stages.
-    if (index == 0) { // Only reset stage if we're on the 'Post' tab
-      setState(() {
-        _currentStage = PostCreationStage.gallerySelection;
+    // Dispose current camera resources before switching
+    if (_selectedIndex == 1 || _selectedIndex == 2) {
+      // Coming from Story or Reel - give time for cleanup
+      Future.delayed(const Duration(milliseconds: 300), () {
+        setState(() => _selectedIndex = index);
+        _pageController.animateToPage(index, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        _centerTab(index);
       });
     } else {
-      // For other tabs, ensure we are in gallery selection for consistency if they also handle media selection
-      setState(() {
-        _currentStage = PostCreationStage.gallerySelection;
-      });
+      setState(() => _selectedIndex = index);
+      _pageController.animateToPage(index, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      _centerTab(index);
     }
   }
 
@@ -702,6 +706,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
         ? const PageScrollPhysics() // Enable scrolling in gallery selection
         : const NeverScrollableScrollPhysics(); // Disable scrolling in post details
 
+
     return Scaffold(
       appBar: _selectedIndex == 0 // Conditionally render the entire AppBar
           ? AppBar(
@@ -787,9 +792,9 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
                       ? _buildGallerySelectionUI()
                       : SingleChildScrollView(child: _buildPostDetailsUI());
                 } else if (index == 1) { // STORY tab content
-                  return const CreateStoryContent();
+                  return CreateStoryContent(cameraService: _cameraService);
                 } else if (index == 2) { // REEL tab content
-                  return const CreateReelContent();
+                  return CreateReelContent(cameraService: _cameraService);
                 } else { // LIVE tab content (Placeholder)
                   return const Center(
                     child: Text(

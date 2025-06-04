@@ -1,3 +1,4 @@
+import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -398,7 +399,7 @@ class _ChatScreenState extends State<ChatScreen>
           ? GestureDetector(
         onTap: () {
           // TODO: Navigate to user profile
-          print('Navigate to ${_selectedChatUsername}\'s profile');
+          Navigator.push(context, MaterialPageRoute(builder: (_) => OtherUserProfileScreen(userId: _selectedChatUserId!)));
         },
         child: Row(
           mainAxisSize: MainAxisSize.min,
