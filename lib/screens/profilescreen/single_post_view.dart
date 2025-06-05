@@ -42,11 +42,37 @@ class SinglePostView extends StatelessWidget {
       profileUrl='https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${Url}';
     }
 
+    // Replace the Consumer<InstaDataProvider> section in single_post_view.dart (around line 46-60) with this:
+
     return Consumer<InstaDataProvider>(
       builder: (context, provider, _) {
-        final updatedPost = provider.posts.firstWhere(
-              (p) => p.id == post.id,
-          orElse: () => post,
+        // Try to get updated post from provider, but fallback to original post if not found
+        PostData updatedPost;
+        try {
+          updatedPost = provider.posts.firstWhere((p) => p.id == post.id);
+        } catch (e) {
+          // If post not found in provider, use the original post passed from explore screen
+          updatedPost = post;
+        }
+
+        // For explore posts, ensure we show the original counts if provider doesn't have updated data
+        final displayPost = PostData(
+          id: updatedPost.id,
+          userId: updatedPost.userId,
+          username: updatedPost.username,
+          profileImageUrl: updatedPost.profileImageUrl,
+          imageUrl: updatedPost.imageUrl,
+          caption: updatedPost.caption,
+          location: updatedPost.location,
+          createdAt: updatedPost.createdAt,
+          // Use provider counts if available and greater than 0, otherwise use original
+          likeCount: (updatedPost.likeCount > 0 || post.likeCount == 0)
+              ? updatedPost.likeCount
+              : post.likeCount,
+          commentCount: (updatedPost.commentCount > 0 || post.commentCount == 0)
+              ? updatedPost.commentCount
+              : post.commentCount,
+          isLiked: updatedPost.isLiked,
         );
 
         return Scaffold(
@@ -75,7 +101,7 @@ class SinglePostView extends StatelessWidget {
                       }
                     },
                     child: Text(
-                      updatedPost.username,
+                      displayPost.username,
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -87,18 +113,17 @@ class SinglePostView extends StatelessWidget {
                 GestureDetector(
                   onDoubleTap: () {
                     Provider.of<InstaDataProvider>(context, listen: false)
-                        .likePost(updatedPost.id);
+                        .likePost(displayPost.id);
                   },
                   child: Image.network(
-                    updatedPost.imageUrl,
+                    displayPost.imageUrl,
                     width: double.infinity,
                     height: MediaQuery.of(context).size.width,
                     fit: BoxFit.cover,
                   ),
                 ),
                 Padding(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -106,27 +131,25 @@ class SinglePostView extends StatelessWidget {
                         children: [
                           GestureDetector(
                             onTap: () {
-                              Provider.of<InstaDataProvider>(context,
-                                  listen: false)
-                                  .likePost(updatedPost.id);
+                              Provider.of<InstaDataProvider>(context, listen: false)
+                                  .likePost(displayPost.id);
                             },
                             child: Icon(
-                              updatedPost.isLiked
+                              displayPost.isLiked
                                   ? Icons.favorite
                                   : Icons.favorite_border,
-                              color: updatedPost.isLiked
+                              color: displayPost.isLiked
                                   ? Colors.red
                                   : Colors.white,
                               size: 27,
                             ),
                           ),
                           SizedBox(width: 3),
-                          Text('${updatedPost.likeCount}',
+                          Text('${displayPost.likeCount}',
                               style: TextStyle(color: Colors.white)),
                           SizedBox(width: 12),
                           GestureDetector(
                             onTap: () {
-                              // Navigate to comments screen
                               showCommentSection(context, post.id);
                             },
                             child: Icon(
@@ -136,15 +159,14 @@ class SinglePostView extends StatelessWidget {
                             ),
                           ),
                           SizedBox(width: 3),
-                          Text('${updatedPost.commentCount}',
+                          Text('${displayPost.commentCount}',
                               style: TextStyle(color: Colors.white)),
                           SizedBox(width: 12),
                           GestureDetector(
-                            onTap: () {
-                              // Navigate to comments screen
-                              _showShareOptions(post,context);
-                            },
-                            child: Image.asset("assets/icon/shareicon.png",color: Colors.white,width: 26,height: 26,)
+                              onTap: () {
+                                _showShareOptions(post,context);
+                              },
+                              child: Image.asset("assets/icon/shareicon.png",color: Colors.white,width: 26,height: 26,)
                           ),
                           Spacer(),
                           Icon(Icons.bookmark_border,
@@ -156,13 +178,13 @@ class SinglePostView extends StatelessWidget {
                         text: TextSpan(
                           children: [
                             TextSpan(
-                              text: '${updatedPost.username} ',
+                              text: '${displayPost.username} ',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white),
                             ),
                             TextSpan(
-                              text: updatedPost.caption ?? '',
+                              text: displayPost.caption ?? '',
                               style: TextStyle(color: Colors.white),
                             ),
                           ],
@@ -170,7 +192,7 @@ class SinglePostView extends StatelessWidget {
                       ),
                       SizedBox(height: 5),
                       Text(
-                        _formatTime(updatedPost.createdAt),
+                        _formatTime(displayPost.createdAt),
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                     ],

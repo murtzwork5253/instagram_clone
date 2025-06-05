@@ -167,8 +167,11 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
                       child: IconButton(
                         icon: const Icon(Icons.arrow_forward_ios, color: Colors.black, size: 20), // Forward arrow
                         onPressed: () {
-                          // Logic to open share sheet
-                          _showShareSheet(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Working On It.',style: TextStyle(fontSize: 16),)),
+                          );
+                          // // Logic to open share sheet
+                          // _showShareSheet(context);
                         },
                       ),
                     ),

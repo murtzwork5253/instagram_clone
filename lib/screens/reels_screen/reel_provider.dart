@@ -450,4 +450,148 @@ class ReelProvider extends ChangeNotifier {
       onError?.call('Failed to delete comment. Please try again.');
     }
   }
+
+  // Refactored updateReelMuteState method - Local audio control for viewer
+  Future<void> updateReelMuteState(String reelId, bool isMuted) async {
+    try {
+      // Find the reel index
+      final reelIndex = reels.indexWhere((reel) => reel.id == reelId);
+      if (reelIndex == -1) {
+        print('Reel not found with ID: $reelId');
+        return;
+      }
+
+      // Update local state only (no database update needed)
+      // This is for viewer's audio preference, not permanent reel property
+      final originalReel = reels[reelIndex];
+      reels[reelIndex] = originalReel.copyWith(isVideoMuted: isMuted);
+      notifyListeners();
+
+      print('Successfully ${isMuted ? 'muted' : 'unmuted'} reel audio locally: $reelId');
+
+    } catch (e) {
+      print('Error updating reel mute state: $e');
+      throw Exception('Failed to update audio state: ${e.toString()}');
+    }
+  }
+
+// Refactored deleteReel method
+  Future<void> deleteReel(String reelId, {
+    Function(String)? onError,
+    Function()? onSuccess
+  }) async {
+    // print('DEBUG PROVIDER: deleteReel method called for reel: $reelId');
+    // print('DEBUG PROVIDER: _currentUserId at start: $_currentUserId'); // <--- ADD THIS LINE
+    // print('Starting delete process for reel: $reelId');
+
+    if (_currentUserId == null) {
+      // print('Error: User not authenticated');
+      throw Exception('User not authenticated');
+    }
+
+    // print('Current user ID: $_currentUserId');
+
+    try {
+      // Find the reel to delete
+      final reelIndex = reels.indexWhere((reel) => reel.id == reelId);
+      if (reelIndex == -1) {
+        // print('Error: Reel not found in local list');
+        throw Exception('Reel not found');
+      }
+
+      final reelToDelete = reels[reelIndex];
+      // print('Found reel to delete: ${reelToDelete.id}, owner: ${reelToDelete.userId}');
+
+      // Check if current user owns the reel
+      if (reelToDelete.userId != _currentUserId) {
+        // print('Error: Permission denied - user ${_currentUserId} trying to delete reel owned by ${reelToDelete.userId}');
+        throw Exception('You can only delete your own reels');
+      }
+
+      // Store original state for potential rollback
+      final originalReels = List<Reel>.from(reels);
+
+      // Optimistic update - remove from local list
+      reels.removeAt(reelIndex);
+      notifyListeners();
+      // print('Optimistically removed reel from local list');
+
+      // Delete associated data first (comments, likes)
+      // print('Deleting associated comments and likes...');
+      final deleteResults = await Future.wait([
+        // Delete all comments for this reel
+        supabase
+            .from('comments')
+            .delete()
+            .eq('reel_id', reelId),
+
+        // Delete all likes for this reel
+        supabase
+            .from('reel_likes')
+            .delete()
+            .eq('reel_id', reelId),
+      ]);
+
+      // print('Comments deletion result: ${deleteResults[0]}');
+      // print('Likes deletion result: ${deleteResults[1]}');
+
+      // Delete the reel from database
+      // print('Deleting reel from database...');
+      final response = await supabase
+          .from('reels')
+          .delete()
+          .eq('id', reelId);
+          // .eq('user_id', reels[reelIndex].userId);
+
+      // print('Database delete response: $response');
+
+      // Check if any rows were actually deleted
+      // Note: Supabase returns the deleted rows, empty list means nothing was deleted
+      if (response is List && response.isEmpty) {
+        // print('Warning: No rows were deleted from database. This might indicate the reel was already deleted or permission issues.');
+        // You might want to throw an error here or handle it differently
+        // throw Exception('Reel could not be deleted from database');
+      }
+
+      // Delete video file from storage if exists
+      if (reelToDelete.videoUrl.isNotEmpty &&
+          !reelToDelete.videoUrl.startsWith('http')) {
+        try {
+          // print('Attempting to delete video file: ${reelToDelete.videoUrl}');
+          final storageResponse = await supabase.storage
+              .from('reels')
+              .remove([reelToDelete.videoUrl]);
+          // print('Storage deletion response: $storageResponse');
+          // print('Successfully deleted video file from storage');
+        } catch (storageError) {
+          // print('Warning: Failed to delete video file from storage: $storageError');
+          // Continue execution as the main deletion was successful
+        }
+      } else {
+        // print('Skipping video file deletion - URL is empty or external: ${reelToDelete.videoUrl}');
+      }
+
+      // print('Successfully deleted reel: $reelId');
+      await fetchReels();
+      onSuccess?.call();
+
+    } catch (e) {
+      // print('Error deleting reel: $e');
+      // print('Error type: ${e.runtimeType}');
+      // print('Stack trace: ${StackTrace.current}');
+
+      // Revert optimistic update on error
+      try {
+        print('Reverting optimistic update by refreshing reels...');
+        await fetchReels(); // Refresh the entire list to ensure consistency
+        print('Successfully refreshed reels after delete failure');
+      } catch (fetchError) {
+        print('Error refreshing reels after delete failure: $fetchError');
+      }
+
+      final errorMessage = 'Failed to delete reel: ${e.toString()}';
+      onError?.call(errorMessage);
+      throw Exception(errorMessage);
+    }
+  }
 }

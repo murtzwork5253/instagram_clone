@@ -13,13 +13,120 @@ class SignUpWithEmail extends StatefulWidget {
 class SignUpWithEmailState extends State<StatefulWidget> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController emailController = TextEditingController();
+  bool _isValidatingEmail = false;
+
+  // List of allowed legitimate email providers
+  final Set<String> _allowedDomains = {
+    // Google
+    'gmail.com',
+    'googlemail.com',
+
+    // Microsoft
+    'outlook.com',
+    'hotmail.com',
+    'live.com',
+    'msn.com',
+
+    // Yahoo
+    'yahoo.com',
+    'yahoo.co.uk',
+    'yahoo.co.in',
+    'yahoo.ca',
+    'yahoo.com.au',
+    'ymail.com',
+    'rocketmail.com',
+
+    // Apple
+    'icloud.com',
+    'me.com',
+    'mac.com',
+
+    // Other major providers
+    'protonmail.com',
+    'proton.me',
+    'aol.com',
+    'zoho.com',
+    'mail.com',
+    'gmx.com',
+    'tutanota.com',
+    'fastmail.com',
+    'yandex.com',
+    'mail.ru',
+    'qq.com',
+    '163.com',
+    '126.com',
+    'sina.com',
+    'rediffmail.com',
+
+    // Educational domains (common ones)
+    'edu',
+    'ac.uk',
+    'edu.au',
+    'edu.in',
+
+    // Add more legitimate providers as needed
+  };
+
+  // Validate email domain against whitelist
+  bool _validateEmailDomain(String email) {
+    try {
+      final domain = email.split('@').last.toLowerCase();
+
+      // Check if domain is in allowed list
+      if (_allowedDomains.contains(domain)) {
+        return true;
+      }
+
+      // Check for educational domains (ends with .edu, .ac.uk, etc.)
+      if (domain.endsWith('.edu') ||
+          domain.endsWith('.ac.uk') ||
+          domain.endsWith('.edu.au') ||
+          domain.endsWith('.edu.in') ||
+          domain.endsWith('.ac.in')) {
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      print('Email domain validation error: $e');
+      return false;
+    }
+  }
+
+  // Basic email format validation
+  bool _isValidEmailFormat(String email) {
+    final emailRegExp = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+    return emailRegExp.hasMatch(email);
+  }
 
   void _goToPasswordScreen() async {
     final email = emailController.text.trim();
 
     if (_formKey.currentState!.validate()) {
-      if (email.isNotEmpty && email.contains('@')) {
+      if (email.isNotEmpty && _isValidEmailFormat(email)) {
+        setState(() {
+          _isValidatingEmail = true;
+        });
+
         try {
+          // First, validate email domain against whitelist
+          final isValidDomain = _validateEmailDomain(email);
+
+          if (!isValidDomain) {
+            setState(() {
+              _isValidatingEmail = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Please use an email from a recognized provider (Gmail, Yahoo, Outlook, etc.).'),
+                backgroundColor: Colors.red,
+              ),
+            );
+            return;
+          }
+
           // Query the Supabase 'users' table for the given email
           final response = await Supabase.instance.client
               .from('users')
@@ -27,12 +134,17 @@ class SignUpWithEmailState extends State<StatefulWidget> {
               .eq('email', email)
               .maybeSingle(); // returns null if not found
 
+          setState(() {
+            _isValidatingEmail = false;
+          });
+
           if (response != null) {
             // Email already exists
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content: Text(
-                      'This email is already registered. Please sign in.')),
+                content: Text('This email is already registered. Please sign in.'),
+                backgroundColor: Colors.orange,
+              ),
             );
           } else {
             // Email not found — proceed to password creation screen
@@ -42,13 +154,22 @@ class SignUpWithEmailState extends State<StatefulWidget> {
             );
           }
         } catch (e) {
+          setState(() {
+            _isValidatingEmail = false;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error checking email: $e')),
+            SnackBar(
+              content: Text('Error validating email: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Please enter a valid email address')),
+          SnackBar(
+            content: Text('Please enter a valid email address'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -95,9 +216,7 @@ class SignUpWithEmailState extends State<StatefulWidget> {
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your email address';
-                      } else if (!value.contains('@') ||
-                          !value.contains('.') ||
-                          !value.contains('com')) {
+                      } else if (!_isValidEmailFormat(value)) {
                         return 'Please enter a valid email address';
                       }
                       return null;
@@ -132,7 +251,7 @@ class SignUpWithEmailState extends State<StatefulWidget> {
                   child: Padding(
                     padding: const EdgeInsets.only(left: 20, right: 20),
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: _isValidatingEmail ? null : () {
                         _goToPasswordScreen();
                       },
                       style: ElevatedButton.styleFrom(
@@ -142,7 +261,16 @@ class SignUpWithEmailState extends State<StatefulWidget> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      child: const Text("Next", style: TextStyle(fontSize: 16)),
+                      child: _isValidatingEmail
+                          ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                          : const Text("Next", style: TextStyle(fontSize: 16)),
                     ),
                   ),
                 ),
@@ -165,7 +293,7 @@ class SignUpWithEmailState extends State<StatefulWidget> {
                     child: Text(
                       "I already have an account",
                       style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),

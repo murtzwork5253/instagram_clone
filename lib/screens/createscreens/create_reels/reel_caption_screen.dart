@@ -559,12 +559,12 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
 
                             const SizedBox(height: 16),
 
-                            // Quick actions (remove location and music buttons)
-                            Row(
-                              children: [
-                                _buildQuickAction(Icons.tag, 'Tag people'),
-                              ],
-                            ),
+                            // // Quick actions (remove location and music buttons)
+                            // Row(
+                            //   children: [
+                            //     _buildQuickAction(Icons.tag, 'Tag people'),
+                            //   ],
+                            // ),
 
                             const SizedBox(height: 24),
 
@@ -622,11 +622,10 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
                               alignment: Alignment.center,
                               child: TextButton(
                                 onPressed: _isUploading ? null : () {
-                                  Navigator.pop(context);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Reel saved as draft'),
-                                      backgroundColor: Colors.green,
+                                      content: Text('Reel saved as draft Coming soon'),
+                                      // backgroundColor: Colors.green,
                                     ),
                                   );
                                 },
@@ -705,14 +704,6 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
             context,
             MaterialPageRoute(
               builder: (context) => TagUsersScreen(), // This will be your new screen
-            ),
-          );
-        }
-        else{
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$label feature coming soon!'),
-              duration: const Duration(seconds: 2),
             ),
           );
         }

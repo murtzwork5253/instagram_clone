@@ -12,11 +12,13 @@ import 'new_chat_dialog.dart'; // NEW: Import the new chat dialog file
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
   final String? initialChatUserId;
+  final bool? cameFromProfile; // NEW: Track if came from profile
 
   const ChatScreen({
     Key? key,
     required this.currentUserId,
-    this.initialChatUserId
+    this.initialChatUserId,
+    this.cameFromProfile
   }) : super(key: key);
 
   @override
@@ -41,6 +43,8 @@ class _ChatScreenState extends State<ChatScreen>
   bool _isLoadingChatRooms = true;
   bool _isLoadingMessages = false;
   RealtimeChannel? _messagesSubscription;
+  bool _cameFromProfile = false; // NEW: Track navigation source
+
 
   // For smooth message animations
   final GlobalKey<AnimatedListState> _messageListKey = GlobalKey<AnimatedListState>();
@@ -57,6 +61,8 @@ class _ChatScreenState extends State<ChatScreen>
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
+
+    _cameFromProfile = widget.cameFromProfile ?? false; // NEW: Initialize the flag
 
     _loadCurrentUserUsername();
     _loadChatRooms();
@@ -361,7 +367,14 @@ class _ChatScreenState extends State<ChatScreen>
         if (didPop) return;
 
         if (_selectedChatUserId != null) {
-          _exitChat(); // Don't pop route, just change UI state
+          // If in chat mode, check if we came from profile
+          if (_cameFromProfile) {
+            // Go back to the previous screen (profile)
+            Navigator.of(context).pop();
+          } else {
+            // Just exit chat mode, stay in ChatScreen
+            _exitChat();
+          }
         } else {
           Navigator.of(context).pop(); // Pop the whole route
         }
@@ -393,7 +406,15 @@ class _ChatScreenState extends State<ChatScreen>
       ),
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-        onPressed: inChatMode ? _exitChat : () => Navigator.of(context).pop(),
+        onPressed: (){
+          if(inChatMode == true)
+              if (_cameFromProfile)
+                Navigator.of(context).pop();
+              else
+                _exitChat();
+          else
+            Navigator.of(context).pop();
+        },
       ),
       title: inChatMode
           ? GestureDetector(

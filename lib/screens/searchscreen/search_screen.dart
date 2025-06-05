@@ -43,37 +43,62 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
   }
 
   // Refactored function to fetch full PostData objects for the explore feed
+  // Replace the _fetchExplorePosts() method in search_screen.dart with this:
   Future<List<PostData>> _fetchExplorePosts() async {
     final supabase = Supabase.instance.client;
-    final userId = supabase.auth.currentUser?.id; // Current user ID if logged in
+    final userId = supabase.auth.currentUser?.id;
 
     try {
       final postsResponse = await supabase
           .from('posts')
           .select('''
-            id,
-            user_id,
-            caption,
-            location,
-            image_url,
-            created_at,
-            users (
-              username,
-              profile_image_url
-            ),
-            post_likes (
-              user_id
-            ),
-            comments (
-              id
-            )
-          ''')
+          id,
+          user_id,
+          caption,
+          location,
+          image_url,
+          created_at,
+          users (
+            username,
+            profile_image_url
+          )
+        ''')
           .order('created_at', ascending: false);
 
-      return (postsResponse as List).map((post) {
+      // Get all post IDs to fetch likes and comments separately
+      final postIds = (postsResponse as List).map((post) => post['id']).toList();
+
+      // Fetch all likes for these posts
+      final likesResponse = await supabase
+          .from('post_likes')
+          .select('post_id, user_id')
+          .inFilter('post_id', postIds);
+
+      // Fetch all comments for these posts
+      final commentsResponse = await supabase
+          .from('comments')
+          .select('id, post_id')
+          .inFilter('post_id', postIds);
+
+      // Group likes and comments by post_id
+      final Map<String, List<dynamic>> likesByPost = {};
+      final Map<String, List<dynamic>> commentsByPost = {};
+
+      for (final like in likesResponse as List) {
+        final postId = like['post_id'].toString();
+        likesByPost[postId] = (likesByPost[postId] ?? [])..add(like);
+      }
+
+      for (final comment in commentsResponse as List) {
+        final postId = comment['post_id'].toString();
+        commentsByPost[postId] = (commentsByPost[postId] ?? [])..add(comment);
+      }
+
+      return (postsResponse).map((post) {
         final user = post['users'];
-        final likes = post['post_likes'] as List<dynamic>? ?? [];
-        final comments = post['comments'] as List<dynamic>? ?? [];
+        final postId = post['id'].toString();
+        final likes = likesByPost[postId] ?? [];
+        final comments = commentsByPost[postId] ?? [];
 
         final bool isLiked = userId != null
             ? likes.any((like) => like['user_id'] == userId)

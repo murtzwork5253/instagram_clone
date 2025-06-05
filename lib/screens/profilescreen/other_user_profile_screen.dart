@@ -1,4 +1,5 @@
 // other_user_profile_screen.dart
+import 'package:Instagram/screens/chatscreen/chat_screen.dart';
 import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,6 +28,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   int followingCount = 0;
   int postsCount = 0;
   late TabController _tabController;
+  bool _showSuggestedAccounts = false;
 
   @override
   void initState() {
@@ -54,12 +56,36 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           .eq('id', widget.userId)
           .single();
 
-      // Load posts
+      // Load posts with like and comment counts
       final postRes = await supabase
           .from('posts')
-          .select()
+          .select('''
+          *,
+          post_likes(count),
+          comments(count)
+        ''')
           .eq('user_id', widget.userId)
           .order('created_at', ascending: false);
+
+      // Process posts to extract counts and check if current user liked each post
+      final currentUserId = supabase.auth.currentUser!.id;
+      for (var post in postRes) {
+        // Get like count
+        final likeCount = post['post_likes']?.length ?? 0;
+        print("Like count $likeCount");
+        post['like_count'] = likeCount;
+
+        // Get comment count
+        final commentCount = post['comments']?.length ?? 0;
+        post['comment_count'] = commentCount;
+
+        // Check if current user liked this post
+        final userLikedRes = await supabase
+            .from('post_likes')
+            .select()
+            .match({'post_id': post['id'], 'user_id': currentUserId});
+        post['is_liked'] = userLikedRes.isNotEmpty;
+      }
 
       // Check if current user is following this profile
       final followRes = await supabase.from('followers').select().match({
@@ -373,7 +399,9 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
               // Message button
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(currentUserId: supabase.auth.currentUser!.id, initialChatUserId: widget.userId,cameFromProfile: true,)));
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.grey[800],
                     foregroundColor: Colors.white,
@@ -394,27 +422,38 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
               // More options icon button
               const SizedBox(width: 8),
               Container(
+                width: 38,
+                height: 41,
                 decoration: BoxDecoration(
                   color: Colors.grey[800],
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: IconButton(
                   padding: const EdgeInsets.all(0),
                   constraints: const BoxConstraints(
-                    minWidth: 40,
-                    minHeight: 36,
+                    minWidth: 38,
+                    minHeight: 34,
                   ),
-                  icon: const Icon(Icons.keyboard_arrow_down,
+                  icon: Icon( _showSuggestedAccounts
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
                       color: Colors.white),
-                  onPressed: () {},
+                  onPressed: () {
+                    setState(() {
+                      _showSuggestedAccounts = !_showSuggestedAccounts;
+                    });
+                  },
                 ),
               ),
             ],
           ),
-
-          // Similar accounts
           const SizedBox(height: 16),
-          _buildSuggestedAccounts(),
+          AnimatedSwitcher(
+            duration: Duration(milliseconds: 300),
+            child: _showSuggestedAccounts
+                ? _buildSuggestedAccounts()
+                : SizedBox.shrink(),
+          )
         ],
       ),
     );
@@ -496,6 +535,44 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   }
 
   Widget _buildPostsGrid() {
+    // Check if user is following or if it's their own profile
+    final currentUserId = supabase.auth.currentUser!.id;
+    final isOwnProfile = widget.userId == currentUserId;
+
+    // If it's not their own profile and they're not following, show private message
+    if (!isOwnProfile && !isFollowing) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.lock_outline,
+              color: Colors.white,
+              size: 70,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'This Account is Private',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Follow this account to see their posts',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Original posts grid logic for followed users or own profile
     if (posts.isEmpty) {
       return Center(
         child: Column(
@@ -537,26 +614,26 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
         return GestureDetector(
           onTap: () {
             // Navigate to post detail
-            // Navigator.push(
-            //   context,
-            //   MaterialPageRoute(
-            //     builder: (context) => SinglePostView(
-            //       post: PostData(
-            //         id: posts[index]['id'],
-            //         userId: posts[index]['user_id'],
-            //         username: profile!['username'],
-            //         imageUrl: mediaUrl,
-            //         caption: posts[index]['caption'],
-            //         createdAt: DateTime.parse(posts[index]['created_at']),
-            //         likeCount: posts[index]['like_count'],
-            //         commentCount: posts[index]['comment_count'],
-            //         isLiked: posts[index]['is_liked'],
-            //       ),
-            //       Url: mediaUrl,
-            //
-            //     ),
-            //   ),
-            // );
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SinglePostView(
+                  post: PostData(
+                    id: posts[index]['id'],
+                    userId: posts[index]['user_id'],
+                    username: profile!['username'],
+                    imageUrl: mediaUrl,
+                    caption: posts[index]['caption'],
+                    createdAt: DateTime.parse(posts[index]['created_at']),
+                    likeCount: posts[index]['like_count'] ?? 0,
+                    commentCount: posts[index]['comment_count']?? 0,
+                    isLiked: posts[index]['is_liked'] ?? false,
+                  ),
+                  Url: mediaUrl,
+
+                ),
+              ),
+            );
           },
           child: Container(
             decoration: BoxDecoration(

@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:Instagram/screens/reels_screen/reel_modal.dart';
+import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../auth/service/auth_service.dart';
 import '../profilescreen/other_user_profile_screen.dart';
@@ -84,6 +85,31 @@ class _ReelPlayerState extends State<ReelPlayer>
     if (_isAppBarVisible) {
       setState(() => _isAppBarVisible = false);
       _appBarAnimationController.reverse();
+    }
+  }
+
+  void _toggleMute() {
+    if (_videoController.value.isInitialized) {
+      final currentVolume = _videoController.value.volume;
+      final newVolume = currentVolume > 0 ? 0.0 : 1.0;
+      _videoController.setVolume(newVolume);
+
+      // Update reel's mute state in provider if needed
+      Provider.of<ReelProvider>(context, listen: false)
+          .updateReelMuteState(widget.reel.id, newVolume == 0.0);
+
+      HapticFeedback.lightImpact();
+
+
+      // // Show feedback to user
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   SnackBar(
+      //     content: Text(newVolume == 0.0 ? 'Sound muted' : 'Sound unmuted'),
+      //     duration: Duration(milliseconds: 800),
+      //     behavior: SnackBarBehavior.floating,
+      //     margin: EdgeInsets.only(bottom: 100),
+      //   ),
+      // );
     }
   }
 
@@ -263,6 +289,7 @@ class _ReelPlayerState extends State<ReelPlayer>
           child: GestureDetector(
             onDoubleTap: _handleDoubleTapLike,
             onPanUpdate: _handleVerticalDrag,
+            onTap: _toggleMute,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -294,6 +321,37 @@ class _ReelPlayerState extends State<ReelPlayer>
                       size: 100,
                     ),
                   ),
+
+                Consumer<ReelProvider>(
+                  builder: (context, reelProvider, child) {
+                    final currentReel = reelProvider.reels.firstWhere(
+                          (r) => r.id == widget.reel.id,
+                      orElse: () => widget.reel,
+                    );
+
+                    return AnimatedPositioned(
+                      duration: Duration(milliseconds: 300),
+                      top: currentReel.isVideoMuted ? 50 : -50,
+                      right: 20,
+                      child: AnimatedOpacity(
+                        duration: Duration(milliseconds: 300),
+                        opacity: currentReel.isVideoMuted ? 1.0 : 0.0,
+                        child: Container(
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Icon(
+                            Icons.volume_off,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
 
                 _buildUserInfoSection(currentReel),
                 _buildRightControls(currentReel),
@@ -566,7 +624,7 @@ class ReelPlayerEnhancements {
 
               // Comment button
               IconButton(
-                icon: const Icon(Icons.comment, color: Colors.white, size: 30),
+                icon: const Icon(OIcons.EvaIcons.message_circle_outline, color: Colors.white, size: 30),
                 onPressed: () =>
                     showCommentBottomSheet(context, currentReel.id),
               ),
@@ -579,7 +637,7 @@ class ReelPlayerEnhancements {
 
               // Share button
               IconButton(
-                icon: const Icon(Icons.share, color: Colors.white, size: 28),
+                icon: Image.asset("assets/icon/shareicon.png",color: Colors.white,width: 30,height: 40,),
                 onPressed: () => handleShare(
                     context,
                     currentReel.id,
@@ -639,6 +697,9 @@ class ReelPlayerEnhancements {
 
   // Show more options bottom sheet
   void _showMoreOptions(BuildContext context, Reel reel) {
+    final currentUserId = AuthService.client().auth.currentUser?.id;
+    final isOwnReel = currentUserId == reel.userId;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
@@ -647,24 +708,49 @@ class ReelPlayerEnhancements {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.report, color: Colors.white),
-              title:
-                  const Text('Report', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                // Handle report
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.block, color: Colors.white),
-              title: const Text('Block User',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                // Handle block user
-              },
-            ),
+            // Show delete option only for reel owner
+            if (isOwnReel) ...[
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Delete Reel',
+                    style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _deleteReel(context, reel);
+                },
+              ),
+              Divider(color: Colors.grey.shade800),
+            ],
+
+            // Show report and block options only for other users' reels
+            if (!isOwnReel) ...[
+              ListTile(
+                leading: const Icon(Icons.report, color: Colors.white),
+                title: const Text('Report',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Handle report
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Report submitted')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.block, color: Colors.white),
+                title: const Text('Block User',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Handle block user
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('User blocked')),
+                  );
+                },
+              ),
+            ],
+
+            // Common options for all users
             ListTile(
               leading: const Icon(Icons.copy, color: Colors.white),
               title: const Text('Copy Link',
@@ -677,10 +763,147 @@ class ReelPlayerEnhancements {
                 );
               },
             ),
+
+            // Mute/Unmute option
+            ListTile(
+              leading: Icon(
+                  reel.isVideoMuted ? Icons.volume_up : Icons.volume_off,
+                  color: Colors.white
+              ),
+              title: Text(
+                  reel.isVideoMuted ? 'Unmute Video' : 'Mute Video',
+                  style: TextStyle(color: Colors.white)
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                // Toggle mute state
+                Provider.of<ReelProvider>(context, listen: false)
+                    .updateReelMuteState(reel.id, !reel.isVideoMuted);
+              },
+            ),
           ],
         ),
       ),
     );
+  }
+
+  // NEW CODE - Replace the above section with this:
+  Future<void> _deleteReel(BuildContext context, Reel reel) async {
+    print('DEBUG: _deleteReel method called.');
+
+    try {
+      // Ensure providers are accessible here
+      final reelProvider = Provider.of<ReelProvider>(context, listen: false);
+      // final authService = Provider.of<AuthService>(context, listen: false);
+
+      print('DEBUG: ReelProvider and AuthService accessed successfully.');
+      print('DEBUG: Reel ID to delete: ${reel.id}');
+      print('DEBUG: Reel owner ID: ${reel.userId}');
+
+      final currentUserId = AuthService.client().auth.currentUser?.id;
+      // Ownership check (good to have explicitly here too, though provider does it)
+      if ( currentUserId != reel.userId) {
+        print('DEBUG: Ownership mismatch detected in ReelPlayer. Current user is NOT the owner.');
+        if(!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('You can only delete your own reels!'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return; // Exit early if not owner
+      }
+
+      final bool confirmDelete = await showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Delete Reel'),
+            content: Text('Are you sure you want to delete this reel? This action cannot be undone.'),
+            actions: <Widget>[
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () {
+                  Navigator.of(context).pop(false);
+                },
+              ),
+              TextButton(
+                child: Text('Delete', style: TextStyle(color: Colors.red)),
+                onPressed: () {
+                  Navigator.of(context).pop(true);
+                },
+              ),
+            ],
+          );
+        },
+      ) ?? false;
+
+      if (confirmDelete) {
+        print('DEBUG: User confirmed deletion for reel ID: ${reel.id}');
+        // if(!context.mounted) return;
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   SnackBar(content: Text('Deleting reel...')),
+        // );
+
+        print('DEBUG: Preparing to call reelProvider.deleteReel...'); // <-- NEW LINE
+        print('DEBUG: ReelProvider instance hashCode: ${reelProvider.hashCode}'); // <-- NEW LINE
+
+        print('DEBUG: Calling reelProvider.deleteReel...');
+        await reelProvider.deleteReel(
+          reel.id,
+          onSuccess: () {
+            if(!context.mounted) return;
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Reel deleted successfully!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            print('DEBUG: Reel deleted successfully via provider callback.');
+            // You might want to navigate back or update the UI more explicitly here.
+            // For example, if this reel is part of a list, you'd want to remove it from the list view.
+            // Navigator.of(context).pop(); // Example to pop the screen if it's a detail view
+          },
+          onError: (errorMessage) {
+            if(!context.mounted) return;
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error deleting reel: $errorMessage'),
+                backgroundColor: Colors.red,
+              ),
+            );
+            print('DEBUG: Error from provider onError callback: $errorMessage');
+          },
+        );
+        print('DEBUG: reelProvider.deleteReel call finished (await completed).');
+
+      } else {
+        print('DEBUG: User cancelled deletion.');
+      }
+    } on ProviderNotFoundException catch (e) {
+      print('ERROR: ProviderNotFoundException in _deleteReel: $e');
+      if(!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ReelProvider not found in widget tree.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e, s) {
+      if(!context.mounted) return;
+      // Catch any other unexpected errors that might occur during the process
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('An unexpected error occurred during deletion: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      print('ERROR: Caught unexpected error in _deleteReel: $e');
+      print('STACK TRACE: $s');
+    }
   }
 }
 
