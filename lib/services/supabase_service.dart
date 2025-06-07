@@ -554,6 +554,7 @@ class PostData {
   final int likeCount;
   final int commentCount;
   final bool isLiked;
+  final bool isSaved;
 
   PostData({
     required this.id,
@@ -567,6 +568,7 @@ class PostData {
     required this.likeCount,
     required this.commentCount,
     required this.isLiked,
+    this.isSaved = false,
   });
 
   factory PostData.fromJson(Map<String, dynamic> json,
@@ -586,6 +588,7 @@ class PostData {
       likeCount: likeCount,
       commentCount: commentCount,
       isLiked: isLiked,
+      isSaved: false,
     );
   }
 }

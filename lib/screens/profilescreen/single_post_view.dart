@@ -73,6 +73,7 @@ class SinglePostView extends StatelessWidget {
               ? updatedPost.commentCount
               : post.commentCount,
           isLiked: updatedPost.isLiked,
+          isSaved: updatedPost.isSaved,
         );
 
         return Scaffold(
@@ -169,8 +170,17 @@ class SinglePostView extends StatelessWidget {
                               child: Image.asset("assets/icon/shareicon.png",color: Colors.white,width: 26,height: 26,)
                           ),
                           Spacer(),
-                          Icon(Icons.bookmark_border,
-                              color: Colors.white, size: 27),
+                          GestureDetector(
+                            onTap: () {
+                              Provider.of<InstaDataProvider>(context, listen: false)
+                                  .toggleSavePost(post.id);
+                            },
+                            child: Icon(
+                              displayPost.isSaved ? Icons.bookmark : Icons.bookmark_border,
+                              color: Colors.white,
+                              size: 27,
+                            ),
+                          ),
                         ],
                       ),
                       SizedBox(height: 10),

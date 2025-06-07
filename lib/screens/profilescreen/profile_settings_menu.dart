@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/insta_data_provider.dart';
 import '../auth/login_page.dart';
+import '../auth/password_change_screen.dart';
 import '../auth/service/auth_service.dart';
 
 // Import all the new screens
@@ -583,6 +584,11 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 }
 
 // screens/security_screen.dart
+// Updated security_screen.dart section
+// Add this import at the top of your profile_settings_menu.dart file:
+// import 'password_change_screen.dart';
+
+// Replace the existing SecurityScreen class with this updated version:
 class SecurityScreen extends StatelessWidget {
   const SecurityScreen({super.key});
 
@@ -598,29 +604,68 @@ class SecurityScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          _buildSecurityOption('Password', Icons.lock_outline, 'Change your password'),
-          _buildSecurityOption('Two-Factor Authentication', Icons.security, 'Add extra security'),
-          _buildSecurityOption('Login Activity', Icons.history, 'See where you\'re logged in'),
-          _buildSecurityOption('Apps and Websites', Icons.apps, 'Manage connected apps'),
-          _buildSecurityOption('Download Data', Icons.download, 'Get a copy of your data'),
+          _buildSecurityOption(
+            context,
+            'Password',
+            Icons.lock_outline,
+            'Change your password',
+                () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const PasswordChangeScreen()),
+            ),
+          ),
+          _buildSecurityOption(
+            context,
+            'Two-Factor Authentication',
+            Icons.security,
+            'Add extra security',
+                () => _showComingSoon(context, 'Two-Factor Authentication'),
+          ),
+          _buildSecurityOption(
+            context,
+            'Login Activity',
+            Icons.history,
+            'See where you\'re logged in',
+                () => _showComingSoon(context, 'Login Activity'),
+          ),
+          _buildSecurityOption(
+            context,
+            'Apps and Websites',
+            Icons.apps,
+            'Manage connected apps',
+                () => _showComingSoon(context, 'Apps and Websites'),
+          ),
+          _buildSecurityOption(
+            context,
+            'Download Data',
+            Icons.download,
+            'Get a copy of your data',
+                () => _showComingSoon(context, 'Download Data'),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSecurityOption(String title, IconData icon, String subtitle) {
-    return Builder(
-      builder: (context) => ListTile(
-        leading: Icon(icon, color: Colors.white, size: 28),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
-        subtitle: Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
-        onTap: () {
-          // ScaffoldMessenger.of(context).showSnackBar(
-          //   SnackBar(content: Text('$title tapped')),
-          // );
-        },
-      ),
+  Widget _buildSecurityOption(
+      BuildContext context,
+      String title,
+      IconData icon,
+      String subtitle,
+      VoidCallback onTap,
+      ) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white, size: 28),
+      title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
+      subtitle: Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+      trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+      onTap: onTap,
+    );
+  }
+
+  void _showComingSoon(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$feature - Coming Soon')),
     );
   }
 }
@@ -756,7 +801,7 @@ class AboutScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             Text(
-              '© 2024 Instagram Clone. All rights reserved.',
+              '© 2025 Instagram Clone. All rights reserved.',
               style: TextStyle(color: Colors.grey, fontSize: 14),
             ),
           ],

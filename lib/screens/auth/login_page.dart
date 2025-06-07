@@ -12,7 +12,9 @@ import 'package:Instagram/screens/auth/signup_with_email_screen.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';
 import 'package:Instagram/config/constants.dart';
 
-import '../../services/insta_data_provider.dart'; // Create this file for storing API keys
+import '../../services/account_manager.dart';
+import '../../services/insta_data_provider.dart';
+import 'forgot_password_screen.dart'; // Create this file for storing API keys
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -189,6 +191,7 @@ class _LoginPageState extends State<LoginPage> {
       }
       else{
         _showSuccessMessage("Login Successful");
+        await AccountManager.instance.storeCurrentAccount(); // Add this line
         final provider = Provider.of<InstaDataProvider>(context, listen: false);
         await provider.refreshFeed();
 
@@ -320,6 +323,7 @@ class _LoginPageState extends State<LoginPage> {
       } else {
         final provider = Provider.of<InstaDataProvider>(context, listen: false);
         await provider.refreshFeed();
+        await AccountManager.instance.storeCurrentAccount(); // Add this line
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),
@@ -543,6 +547,7 @@ class _LoginPageState extends State<LoginPage> {
     return TextButton(
       onPressed: () {
         // Navigate to password reset screen
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()));
       },
       child: const Text(
         "Forgotten Password?",

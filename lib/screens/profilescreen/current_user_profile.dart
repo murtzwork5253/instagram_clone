@@ -21,15 +21,41 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+
+  VoidCallback? _refreshListener;
+  String? _cacheKey;
+
   void initState() {
     super.initState();
 
-    // Listen to notifier updates to refresh data in provider
-    widget.refreshNotifier?.addListener(() {
-      final provider = Provider.of<InstaDataProvider>(context, listen: false);
-      provider
-          .refreshFeed(); // Implement reloadData in your provider to fetch fresh data
-    });
+    _cacheKey = DateTime.now().millisecondsSinceEpoch.toString();
+
+    // Create a separate listener function
+    _refreshListener = () {
+      if (mounted) {
+        // Update cache key to force FutureBuilder to rebuild
+        _cacheKey = DateTime.now().millisecondsSinceEpoch.toString();
+
+        // Reload profile-specific data in provider (if needed)
+        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+        provider.reloadProfileData(); // Use the new profile-specific method
+
+        // Trigger setState to refresh FutureBuilder
+        setState(() {});
+      }
+    };
+
+    // Add the listener
+    widget.refreshNotifier?.addListener(_refreshListener!);
+  }
+
+  @override
+  void dispose() {
+    // Remove the listener to prevent memory leaks
+    if (_refreshListener != null) {
+      widget.refreshNotifier?.removeListener(_refreshListener!);
+    }
+    super.dispose();
   }
 
   @override
@@ -43,7 +69,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
 
+    // Use cache key to force fresh data fetch
+    final futureKey = '${user!.id}_$_cacheKey';
+
     return FutureBuilder<Map<String, dynamic>>(
+      key: ValueKey(futureKey), // This forces rebuild when cache key changes
       future: _fetchMyProfileData(user!.id),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {

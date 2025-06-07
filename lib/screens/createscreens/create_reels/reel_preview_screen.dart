@@ -671,7 +671,7 @@ class _ReelPreviewScreenState extends State<ReelPreviewScreen>
                   'x': overlay.position.dx,
                   'y': overlay.position.dy
                 },
-                'color': overlay.color.toARGB32(),
+                'color': overlay.color,
                 'fontSize': overlay.fontSize,
                 'fontWeight': overlay.fontWeight.index,
                 'textAlign': overlay.textAlign.index,

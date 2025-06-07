@@ -246,8 +246,46 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               // --- END MODIFIED STORIES SECTION ---
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildPost(posts[index]),
-                  childCount: posts.length,
+                      (context, index) {
+                    final posts = provider.posts;
+                    final suggestedPosts = provider.suggestedPosts;
+
+                    // Get IDs of users we're already following (from regular posts)
+                    final followingUserIds = posts.map((post) => post.userId).toSet();
+
+                    // Filter suggested posts to exclude users we're already following
+                    final filteredSuggestedPosts = suggestedPosts
+                        .where((post) => !followingUserIds.contains(post.userId))
+                        .toList();
+
+                    final totalPosts = posts.length + filteredSuggestedPosts.length;
+
+                    if (index < posts.length) {
+                      // Regular posts from following users
+                      return _buildPost(posts[index], isFollowing: true);
+                    } else {
+                      // Suggested posts from non-following users
+                      final suggestedIndex = index - posts.length;
+                      if (suggestedIndex < filteredSuggestedPosts.length) {
+                        return Column(
+                          children: [
+                            if (suggestedIndex == 0) _buildSuggestedPostsHeader(),
+                            _buildPost(filteredSuggestedPosts[suggestedIndex], isFollowing: false),
+                          ],
+                        );
+                      }
+                    }
+                    return SizedBox.shrink();
+                  },
+                  childCount: () {
+                    final posts = provider.posts;
+                    final suggestedPosts = provider.suggestedPosts;
+                    final followingUserIds = posts.map((post) => post.userId).toSet();
+                    final filteredSuggestedPosts = suggestedPosts
+                        .where((post) => !followingUserIds.contains(post.userId))
+                        .toList();
+                    return posts.length + filteredSuggestedPosts.length;
+                  }(),
                 ),
               ),
               SliverToBoxAdapter(child: SizedBox(height: 10)),
@@ -447,15 +485,42 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
       ),
     );
   }
+
+  Widget _buildSuggestedPostsHeader() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Text(
+            'Suggested posts',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Spacer(),
+          Text(
+            'See All',
+            style: TextStyle(
+              color: Colors.blue,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   // --- END MODIFIED _buildStoryItem METHOD ---
 
-  Widget _buildPost(PostData post) {
+  Widget _buildPost(PostData post, {bool isFollowing = true}) {
     final imageUrl = (post.profileImageUrl != null &&
-            post.profileImageUrl!.startsWith('http'))
+        post.profileImageUrl!.startsWith('http'))
         ? post.profileImageUrl!
         : post.profileImageUrl != null
-            ? 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${post.profileImageUrl}'
-            : 'https://your-app.com/default-avatar.png'; // <-- Replace with your fallback avatar
+        ? 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${post.profileImageUrl}'
+        : 'https://your-app.com/default-avatar.png';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,13 +533,11 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               final currentUserId = user?.id;
 
               if (post.userId == currentUserId) {
-                // Navigate to current user's profile
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => ProfileScreen()),
                 );
               } else {
-                // Navigate to other user's profile
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -485,9 +548,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
             },
             leading: CircleAvatar(
               radius: 16,
-              backgroundImage: NetworkImage(
-                imageUrl,
-              ),
+              backgroundImage: NetworkImage(imageUrl),
+              child: imageUrl == null ? Icon(Icons.person) : null,
             ),
             title: Text(
               post.username,
@@ -499,22 +561,89 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
             ),
             subtitle: post.location != null && post.location!.isNotEmpty
                 ? Text(
-                    post.location!,
-                    style: TextStyle(color: Colors.white),
-                  )
+              post.location!,
+              style: TextStyle(color: Colors.white),
+            )
                 : null,
-            trailing: IconButton(
-              icon: Icon(Icons.more_vert, color: Colors.white),
-              onPressed: () {
-                // Show post options
-                _showPostOptions(post);
-              },
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Show follow/unfollow button for suggested posts
+                if (!isFollowing) ...[
+                  FutureBuilder<bool>(
+                    future: Provider.of<InstaDataProvider>(context, listen: false)
+                        .isFollowingUser(
+                        AuthService.client().auth.currentUser!.id,
+                        post.userId
+                    ),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.blue,
+                          ),
+                        );
+                      }
+
+                      final bool isCurrentlyFollowing = snapshot.data ?? false;
+
+                      return TextButton(
+                        onPressed: () async {
+                          try {
+                            final provider = Provider.of<InstaDataProvider>(context, listen: false);
+                            final currentUserId = AuthService.client().auth.currentUser!.id;
+
+                            if (isCurrentlyFollowing) {
+                              await provider.unfollowUser(currentUserId, post.userId);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Unfollowed ${post.username}')),
+                              );
+                            } else {
+                              await provider.followUser(currentUserId, post.userId);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Following ${post.username}')),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to ${isCurrentlyFollowing ? 'unfollow' : 'follow'} user')),
+                            );
+                          }
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: isCurrentlyFollowing ? Colors.grey[800] : Colors.blue,
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          minimumSize: Size(0, 0),
+                        ),
+                        child: Text(
+                          isCurrentlyFollowing ? 'Following' : 'Follow',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  SizedBox(width: 8),
+                ],
+                IconButton(
+                  icon: Icon(Icons.more_vert, color: Colors.white),
+                  onPressed: () {
+                    _showPostOptions(post);
+                  },
+                ),
+              ],
             ),
           ),
         ),
+        // Rest of the post content remains the same...
         GestureDetector(
           onDoubleTap: () {
-            // Like post on double tap
             Provider.of<InstaDataProvider>(context, listen: false)
                 .likePost(post.id);
           },
@@ -533,7 +662,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   child: CircularProgressIndicator(
                     value: loadingProgress.expectedTotalBytes != null
                         ? loadingProgress.cumulativeBytesLoaded /
-                            loadingProgress.expectedTotalBytes!
+                        loadingProgress.expectedTotalBytes!
                         : null,
                   ),
                 ),
@@ -560,7 +689,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                 children: [
                   GestureDetector(
                     onTap: () {
-                      // Toggle like
                       Provider.of<InstaDataProvider>(context, listen: false)
                           .likePost(post.id);
                     },
@@ -581,7 +709,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   SizedBox(width: 12),
                   GestureDetector(
                     onTap: () {
-                      // Navigate to comments screen
                       showCommentSection(context, post.id);
                     },
                     child: Icon(
@@ -601,7 +728,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   SizedBox(width: 12),
                   GestureDetector(
                       onTap: () {
-                        // Show share options
                         _showShareOptions(post);
                       },
                       child: Image.asset(
@@ -611,10 +737,16 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                         height: 25,
                       )),
                   Spacer(),
-                  Icon(
-                    Icons.bookmark_border,
-                    color: Colors.white,
-                    size: 27,
+                  GestureDetector(
+                    onTap: () {
+                      Provider.of<InstaDataProvider>(context, listen: false)
+                          .toggleSavePost(post.id);
+                    },
+                    child: Icon(
+                      post.isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      color: Colors.white,
+                      size: 27,
+                    ),
                   ),
                 ],
               ),

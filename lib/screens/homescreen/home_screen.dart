@@ -3,8 +3,11 @@ import 'package:Instagram/screens/reels_screen/reels_screen.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/searchscreen/search_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/insta_data_provider.dart';
+import 'account_switcher.dart';
 import 'home_screen_feed.dart';
 
 class HomeDashboard extends StatefulWidget {
@@ -53,41 +56,41 @@ class _HomePageState extends State<HomeDashboard> {
     }
   }
 
-  List<String> recentSearches = [
-    'Flutter',
-    'Drake',
-    'Lo-Fi',
-    'Coding',
-    'Taylor'
-  ];
-  List<String> allItems = [
-    'Flutter',
-    'React Native',
-    'Drake',
-    'Eminem',
-    'Lo-Fi Beats',
-    'Code Music',
-    'Taylor Swift',
-    'Kendrick',
-    'Dark Mode',
-    'AI Tools',
-  ];
-  List<String> searchResults = [];
+  // List<String> recentSearches = [
+  //   'Flutter',
+  //   'Drake',
+  //   'Lo-Fi',
+  //   'Coding',
+  //   'Taylor'
+  // ];
+  // List<String> allItems = [
+  //   'Flutter',
+  //   'React Native',
+  //   'Drake',
+  //   'Eminem',
+  //   'Lo-Fi Beats',
+  //   'Code Music',
+  //   'Taylor Swift',
+  //   'Kendrick',
+  //   'Dark Mode',
+  //   'AI Tools',
+  // ];
+  // List<String> searchResults = [];
 
-  void _selectChanged(String query) {
-    print("Searching for: $query");
-    setState(() {
-      searchResults = allItems
-          .where((item) => item.toLowerCase().contains(query.toLowerCase()))
-          .toList();
-    });
-  }
+  // void _selectChanged(String query) {
+  //   print("Searching for: $query");
+  //   // setState(() {
+  //   //   searchResults = allItems
+  //   //       .where((item) => item.toLowerCase().contains(query.toLowerCase()))
+  //   //       .toList();
+  //   // });
+  // }
 
   @override
   void dispose() {
-    _searchController.removeListener(() {
-      _selectChanged(_searchController.text);
-    });
+    // _searchController.removeListener(() {
+    //   _selectChanged(_searchController.text);
+    // });
     _searchController.dispose();
     super.dispose();
   }
@@ -100,7 +103,8 @@ class _HomePageState extends State<HomeDashboard> {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context){
+
     return SafeArea(
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -180,7 +184,8 @@ class _HomePageState extends State<HomeDashboard> {
             if (_currentIndex == index) {
               // Same tab tapped again - trigger refresh
               _refreshCurrentTab(index);
-            } else {
+            }
+            else {
               // Handle "Create Post" tab differently
               if (index == 2) { // Assuming Create Post is index 2
                 Navigator.of(context).push(
@@ -239,19 +244,29 @@ class _HomePageState extends State<HomeDashboard> {
   Widget _buildProfileIcon({required bool isActive}) {
     final double size = 26;
 
-    return Container(
-      padding: EdgeInsets.all(1), // border thickness
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: isActive ? Border.all(color: Colors.white, width: 2) : null,
-      ),
-      child: CircleAvatar(
-        radius: size / 2,
-        backgroundColor: Colors.grey[800],
-        backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
-        child: _avatarUrl == null
-            ? Icon(Icons.person, size: 18, color: Colors.white)
-            : null,
+    return GestureDetector(
+      onLongPress: () {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          isScrollControlled: true,
+          builder: (context) => const AccountSwitcherModal(),
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.all(1), // border thickness
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: isActive ? Border.all(color: Colors.white, width: 2) : null,
+        ),
+        child: CircleAvatar(
+          radius: size / 2,
+          backgroundColor: Colors.grey[800],
+          backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+          child: _avatarUrl == null
+              ? Icon(Icons.person, size: 18, color: Colors.white)
+              : null,
+        ),
       ),
     );
   }

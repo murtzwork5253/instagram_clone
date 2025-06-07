@@ -12,6 +12,8 @@ class InstaDataProvider extends ChangeNotifier {
   // NEW: Map to store all individual stories, grouped by user ID
   // This will be used when navigating to StoryViewScreen
   Map<String, List<StoryData>> _allIndividualStoriesGrouped = {};
+  List<PostData> _suggestedPosts = [];
+  List<PostData> get suggestedPosts => _suggestedPosts;
 
   bool get isLoading => _isLoading;
 
@@ -54,9 +56,35 @@ class InstaDataProvider extends ChangeNotifier {
         _fetchPosts(),
         _fetchStories(),
       ]);
+      await fetchSuggestedPosts();
     } catch (e) {
       _error = e.toString();
       print('Error loading data: $_error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Add this method to InstaDataProvider class
+
+  Future<void> reloadProfileData() async {
+    setLoading(true);
+    _error = null;
+
+    try {
+      // Only reload current user data since profile screen shows current user's data
+      await _fetchCurrentUser();
+
+      if (_currentUser == null) {
+        _error = "User not authenticated";
+        setLoading(false);
+        return;
+      }
+
+      print('Profile data reloaded for user: ${_currentUser!.username}');
+    } catch (e) {
+      _error = e.toString();
+      print('Error reloading profile data: $_error');
     } finally {
       setLoading(false);
     }
@@ -81,12 +109,235 @@ class InstaDataProvider extends ChangeNotifier {
   Future<void> _fetchPosts() async {
     try {
       final posts = await SupabaseService.getFeedPosts();
-      _posts = posts;
+
+      // Get current user ID
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+
+      if (currentUserId != null) {
+        // Get all saved post IDs for current user
+        final savedPostsResponse = await Supabase.instance.client
+            .from('saved_posts')
+            .select('post_id')
+            .eq('user_id', currentUserId);
+
+        final savedPostIds = savedPostsResponse
+            .map((item) => item['post_id'] as String)
+            .toSet();
+
+        // Update posts with saved status
+        _posts = posts.map((post) => PostData(
+          id: post.id,
+          userId: post.userId,
+          username: post.username,
+          profileImageUrl: post.profileImageUrl,
+          imageUrl: post.imageUrl,
+          caption: post.caption,
+          location: post.location,
+          createdAt: post.createdAt,
+          likeCount: post.likeCount,
+          commentCount: post.commentCount,
+          isLiked: post.isLiked,
+          isSaved: savedPostIds.contains(post.id),
+        )).toList();
+      } else {
+        _posts = posts;
+      }
+
       notifyListeners();
     } catch (e) {
       print('Error fetching posts: $e');
       _error = 'Failed to load posts';
       notifyListeners();
+    }
+  }
+
+  // Method to fetch suggested posts
+  Future<void> fetchSuggestedPosts() async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return;
+
+      // First, get the list of users that current user is following
+      final followingResponse = await Supabase.instance.client
+          .from('followers')
+          .select('following_id')
+          .eq('follower_id', currentUserId);
+
+      // Extract the following IDs
+      final followingIds = followingResponse
+          .map((row) => row['following_id'] as String)
+          .toList();
+
+      // Add current user ID to exclude their own posts
+      followingIds.add(currentUserId);
+
+      // Get posts with user profile data
+      final response = await Supabase.instance.client
+          .from('posts')
+          .select('''
+        *,
+        users:user_id(username, profile_image_url)
+      ''')
+          .not('user_id', 'in', '(${followingIds.join(',')})')
+          .order('created_at', ascending: false)
+          .limit(10);
+
+      _suggestedPosts = [];
+
+      // Get all post IDs for batch operations
+      final postIds = (response as List).map((json) => json['id'] as String).toList();
+
+      if (postIds.isEmpty) {
+        notifyListeners();
+        return;
+      }
+
+      // Get like counts for all posts in batch
+      final allLikesResponse = await Supabase.instance.client
+          .from('post_likes')
+          .select('post_id')
+          .inFilter('post_id', postIds);
+
+      // Get comment counts for all posts in batch
+      final allCommentsResponse = await Supabase.instance.client
+          .from('comments')
+          .select('post_id')
+          .inFilter('post_id', postIds);
+
+      // Check which posts current user has liked
+      final userLikesResponse = await Supabase.instance.client
+          .from('post_likes')
+          .select('post_id')
+          .eq('user_id', currentUserId)
+          .inFilter('post_id', postIds);
+
+      // Create maps for quick lookup
+      final likeCounts = <String, int>{};
+      final commentCounts = <String, int>{};
+      final likedPostIds = <String>{};
+
+      // Count likes per post
+      for (final like in allLikesResponse) {
+        final postId = like['post_id'].toString();
+        likeCounts[postId] = (likeCounts[postId] ?? 0) + 1;
+      }
+
+      // Count comments per post
+      for (final comment in allCommentsResponse) {
+        final postId = comment['post_id'].toString();
+        commentCounts[postId] = (commentCounts[postId] ?? 0) + 1;
+      }
+
+      // Track user's liked posts
+      for (final like in userLikesResponse) {
+        likedPostIds.add(like['post_id'].toString());
+      }
+
+      for (final json in response) {
+        final postId = json['id'].toString();
+        final likeCount = likeCounts[postId] ?? 0;
+        final commentCount = commentCounts[postId] ?? 0;
+        final isLiked = likedPostIds.contains(postId);
+
+        // Create PostData with all required parameters
+        final post = PostData(
+          id: json['id'],
+          userId: json['user_id'],
+          username: json['users']?['username'] ?? 'Unknown',
+          profileImageUrl: json['users']?['profile_image_url'],
+          imageUrl: json['image_url'],
+          caption: json['caption'],
+          location: json['location'],
+          createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+          likeCount: likeCount,
+          isLiked: isLiked,
+          commentCount: commentCount,
+        );
+
+        _suggestedPosts.add(post);
+      }
+
+      if (_suggestedPosts.isNotEmpty) {
+        final postIds = _suggestedPosts.map((post) => post.id).toList();
+
+        final savedPostsResponse = await Supabase.instance.client
+            .from('saved_posts')
+            .select('post_id')
+            .eq('user_id', currentUserId)
+            .inFilter('post_id', postIds);
+
+        final savedPostIds = savedPostsResponse
+            .map((item) => item['post_id'] as String)
+            .toSet();
+
+        // Update suggested posts with saved status
+        _suggestedPosts = _suggestedPosts.map((post) => PostData(
+          id: post.id,
+          userId: post.userId,
+          username: post.username,
+          profileImageUrl: post.profileImageUrl,
+          imageUrl: post.imageUrl,
+          caption: post.caption,
+          location: post.location,
+          createdAt: post.createdAt,
+          likeCount: post.likeCount,
+          commentCount: post.commentCount,
+          isLiked: post.isLiked,
+          isSaved: savedPostIds.contains(post.id),
+        )).toList();
+      }
+
+      notifyListeners();
+    } catch (e) {
+      print('Error fetching suggested posts: $e');
+    }
+  }
+
+  // In your provider or service class
+  Future<void> followUser1(String userIdToFollow) async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return;
+
+      // Add the follow relationship
+      await Supabase.instance.client.from('followers').insert({
+        'follower_id': currentUserId,
+        'following_id': userIdToFollow,
+      });
+
+      // Refresh both regular posts and suggested posts
+      await Future.wait([
+        _fetchPosts(), // Refresh regular posts to include new followed user
+        fetchSuggestedPosts(), // Refresh suggested posts to exclude the followed user
+      ]);
+
+      notifyListeners();
+    } catch (e) {
+      print('Error following user: $e');
+    }
+  }
+
+  Future<void> unfollowUser1(String userIdToUnfollow) async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return;
+
+      // Remove the follow relationship
+      await Supabase.instance.client
+          .from('followers')
+          .delete()
+          .eq('follower_id', currentUserId)
+          .eq('following_id', userIdToUnfollow);
+
+      // Refresh both regular posts and suggested posts
+      await Future.wait([
+        _fetchPosts(), // Refresh regular posts to exclude unfollowed user
+        fetchSuggestedPosts(), // Refresh suggested posts to include the unfollowed user
+      ]);
+
+      notifyListeners();
+    } catch (e) {
+      print('Error unfollowing user: $e');
     }
   }
 
@@ -303,6 +554,195 @@ class InstaDataProvider extends ChangeNotifier {
     }
   }
 
+  // Add these methods to your InstaDataProvider class
+
+// Method to check if a post is saved by current user
+  Future<bool> isPostSaved(String postId) async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return false;
+
+      final response = await Supabase.instance.client
+          .from('saved_posts')
+          .select('id')
+          .eq('user_id', currentUserId)
+          .eq('post_id', postId)
+          .maybeSingle();
+
+      return response != null;
+    } catch (e) {
+      print('Error checking if post is saved: $e');
+      return false;
+    }
+  }
+
+// Method to save a post
+  Future<void> savePost(String postId) async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) {
+        Fluttertoast.showToast(msg: "User not authenticated");
+        return;
+      }
+
+      // Check if post is already saved
+      final isAlreadySaved = await isPostSaved(postId);
+      if (isAlreadySaved) {
+        Fluttertoast.showToast(msg: "Post already saved");
+        return;
+      }
+
+      // Save the post
+      await Supabase.instance.client.from('saved_posts').insert({
+        'user_id': currentUserId,
+        'post_id': postId,
+      });
+
+      // Update local state - find the post and update its saved status
+      _updatePostSavedStatus(postId, true);
+
+      Fluttertoast.showToast(msg: "Post saved successfully");
+      notifyListeners();
+    } catch (e) {
+      print('Error saving post: $e');
+      Fluttertoast.showToast(msg: "Error saving post");
+    }
+  }
+
+// Method to unsave a post
+  Future<void> unsavePost(String postId) async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) {
+        Fluttertoast.showToast(msg: "User not authenticated");
+        return;
+      }
+
+      // Remove the saved post
+      await Supabase.instance.client
+          .from('saved_posts')
+          .delete()
+          .eq('user_id', currentUserId)
+          .eq('post_id', postId);
+
+      // Update local state
+      _updatePostSavedStatus(postId, false);
+
+      Fluttertoast.showToast(msg: "Post removed from saved");
+      notifyListeners();
+    } catch (e) {
+      print('Error unsaving post: $e');
+      Fluttertoast.showToast(msg: "Error removing post from saved");
+    }
+  }
+
+// Method to toggle save/unsave
+  Future<void> toggleSavePost(String postId) async {
+    try {
+      final isSaved = await isPostSaved(postId);
+      if (isSaved) {
+        await unsavePost(postId);
+      } else {
+        await savePost(postId);
+      }
+    } catch (e) {
+      print('Error toggling save post: $e');
+      Fluttertoast.showToast(msg: "Error updating post save status");
+    }
+  }
+
+// Helper method to update post saved status in local state
+  void _updatePostSavedStatus(String postId, bool isSaved) {
+    // Update in main posts list
+    final index = _posts.indexWhere((post) => post.id == postId);
+    if (index != -1) {
+      final post = _posts[index];
+      _posts[index] = PostData(
+        id: post.id,
+        userId: post.userId,
+        username: post.username,
+        profileImageUrl: post.profileImageUrl,
+        imageUrl: post.imageUrl,
+        caption: post.caption,
+        location: post.location,
+        createdAt: post.createdAt,
+        likeCount: post.likeCount,
+        commentCount: post.commentCount,
+        isLiked: post.isLiked,
+        isSaved: isSaved, // Add this field
+      );
+    }
+
+    // Update in suggested posts list
+    final suggestedIndex = _suggestedPosts.indexWhere((post) => post.id == postId);
+    if (suggestedIndex != -1) {
+      final post = _suggestedPosts[suggestedIndex];
+      _suggestedPosts[suggestedIndex] = PostData(
+        id: post.id,
+        userId: post.userId,
+        username: post.username,
+        profileImageUrl: post.profileImageUrl,
+        imageUrl: post.imageUrl,
+        caption: post.caption,
+        location: post.location,
+        createdAt: post.createdAt,
+        likeCount: post.likeCount,
+        commentCount: post.commentCount,
+        isLiked: post.isLiked,
+        isSaved: isSaved, // Add this field
+      );
+    }
+  }
+
+// Method to get saved posts for current user
+  Future<List<PostData>> getSavedPosts() async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return [];
+
+      // Get saved posts with post details and user profile
+      final response = await Supabase.instance.client
+          .from('saved_posts')
+          .select('''
+          created_at,
+          posts:post_id(
+            *,
+            users:user_id(username, profile_image_url)
+          )
+        ''')
+          .eq('user_id', currentUserId)
+          .order('created_at', ascending: false);
+
+      final List<PostData> savedPosts = [];
+
+      for (final item in response) {
+        final postData = item['posts'];
+        if (postData != null) {
+          final post = PostData(
+            id: postData['id'],
+            userId: postData['user_id'],
+            username: postData['users']?['username'] ?? 'Unknown',
+            profileImageUrl: postData['users']?['profile_image_url'],
+            imageUrl: postData['image_url'],
+            caption: postData['caption'],
+            location: postData['location'],
+            createdAt: DateTime.tryParse(postData['created_at'] ?? '') ?? DateTime.now(),
+            likeCount: 0, // You might want to fetch this separately
+            commentCount: 0, // You might want to fetch this separately
+            isLiked: false, // You might want to fetch this separately
+            isSaved: true, // Always true for saved posts
+          );
+          savedPosts.add(post);
+        }
+      }
+
+      return savedPosts;
+    } catch (e) {
+      print('Error fetching saved posts: $e');
+      return [];
+    }
+  }
+
   Future<void> addComment(String postId, String content) async {
     try {
       await SupabaseService.addComment(postId, content);
@@ -397,7 +837,6 @@ class InstaDataProvider extends ChangeNotifier {
 
     return likesMap;
   }
-
 
   Future<bool> isFollowingUser(String currentUserId, String targetUserId) async {
     try {

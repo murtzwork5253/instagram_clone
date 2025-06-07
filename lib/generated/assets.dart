@@ -4,8 +4,10 @@ class Assets {
 
   static const String authBirthdateScreen = 'lib/screens/auth/birthdate_screen.dart';
   static const String authCreatePasswordScreen = 'lib/screens/auth/create_password_screen.dart';
+  static const String authForgotPasswordScreen = 'lib/screens/auth/forgot_password_screen.dart';
   static const String authLoginPage = 'lib/screens/auth/login_page.dart';
   static const String authOtpVerifyScreen = 'lib/screens/auth/otp_verify_screen.dart';
+  static const String authPasswordChangeScreen = 'lib/screens/auth/password_change_screen.dart';
   static const String authProfileCompletionScreen = 'lib/screens/auth/profile_completion_screen.dart';
   static const String authSetUsernameScreen = 'lib/screens/auth/set_username_screen.dart';
   static const String authSignupWithEmailScreen = 'lib/screens/auth/signup_with_email_screen.dart';
@@ -28,6 +30,7 @@ class Assets {
   static const String fontsGrandHotelRegular = 'assets/fonts/GrandHotel-Regular.ttf';
   static const String fontsInter18ptRegular = 'assets/fonts/Inter_18pt-Regular.ttf';
   static const String generatedAssets = 'lib/generated/assets.dart';
+  static const String homescreenAccountSwitcher = 'lib/screens/homescreen/account_switcher.dart';
   static const String homescreenHomeScreen = 'lib/screens/homescreen/home_screen.dart';
   static const String homescreenHomeScreenFeed = 'lib/screens/homescreen/home_screen_feed.dart';
   static const String homescreenStoryViewScreen = 'lib/screens/homescreen/story_view_screen.dart';
@@ -70,6 +73,7 @@ class Assets {
   static const String searchscreenSearchScreen = 'lib/screens/searchscreen/search_screen.dart';
   static const String searchscreenSearchScreenState = 'lib/screens/searchscreen/search_screen_state.dart';
   static const String serviceAuthService = 'lib/screens/auth/service/auth_service.dart';
+  static const String servicesAccountManager = 'lib/services/account_manager.dart';
   static const String servicesInstaDataProvider = 'lib/services/insta_data_provider.dart';
   static const String servicesSupabaseService = 'lib/services/supabase_service.dart';
   static const String servicesSupabaseStorageService = 'lib/services/supabase_storage_service.dart';
