@@ -8,6 +8,13 @@ class MessageService {
   // Search users method - you can replace this with your existing method
   Future<List<models.User>> searchUsers(String query, String currentUserId) async {
     try {
+      // Fetch blocked users
+      final blocked = await _supabaseClient
+        .from('blocked_users')
+        .select('blocked_id')
+        .eq('blocker_id', currentUserId);
+      final blockedIds = blocked.map((b) => b['blocked_id'] as String).toSet();
+
       var queryBuilder = _supabaseClient
           .from('users')
           .select('id, username, profile_image_url, email')
@@ -19,7 +26,9 @@ class MessageService {
 
       final response = await queryBuilder.limit(20);
 
-      return response.map((json) => models.User.fromJson(json)).toList();
+      // Filter out blocked users
+      final filtered = response.where((json) => !blockedIds.contains(json['id'])).toList();
+      return filtered.map((json) => models.User.fromJson(json)).toList();
     } catch (e) {
       print('Error searching users: $e');
       return [];

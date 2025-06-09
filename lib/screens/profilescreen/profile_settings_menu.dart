@@ -1,12 +1,15 @@
 // profile_settings_menu.dart
+import 'package:Instagram/screens/saved-psots/saved_post_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
+import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../../services/insta_data_provider.dart';
 import '../auth/login_page.dart';
 import '../auth/password_change_screen.dart';
 import '../auth/service/auth_service.dart';
+import '../profilescreen/blocked_users_screen.dart';
 
 // Import all the new screens
 // import 'screens/account_screen.dart';
@@ -137,6 +140,12 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
               endIndent: 6,
             ),
 
+            _buildMenuItem(
+              OIcons.Iconsax.save_2_bold,
+              "Saved Posts",
+                  () => _navigateToScreen(SavedPostsScreen()),
+              false,
+            ),
             // Main Settings Section
             _buildMenuItem(
               Icons.person_add_alt_1_outlined,
@@ -526,7 +535,19 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
             const Divider(color: Colors.grey),
 
-            _buildPrivacyOption('Blocked Accounts', Icons.block),
+            ListTile(
+              leading: const Icon(Icons.block, color: Colors.white),
+              title: const Text('Blocked Accounts', style: TextStyle(color: Colors.white)),
+              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const BlockedUsersScreen(),
+                  ),
+                );
+              },
+            ),
             _buildPrivacyOption('Muted Accounts', Icons.volume_off),
             _buildPrivacyOption('Hidden Words', Icons.visibility_off),
             _buildPrivacyOption('Data Download', Icons.download),

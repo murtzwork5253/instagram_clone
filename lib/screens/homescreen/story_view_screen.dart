@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/supabase_service.dart';
 import '../../services/insta_data_provider.dart';
+import '../common/report_dialog.dart';
 
 class StoryViewScreen extends StatefulWidget {
   final List<StoryData> stories;
@@ -155,25 +156,44 @@ class _StoryViewScreenState extends State<StoryViewScreen>
               ListTile(
                 leading: const Icon(Icons.delete, color: Colors.red),
                 title: const Text('Delete Story'),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(context);
                   // Implement delete functionality here
+                  try {
+                    await SupabaseService().deleteStory(currentStory.id!);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Story deleted')),
+                    );
+                    // Optionally, close the story view if deleted
+                    Navigator.of(context).pop();
+                    await Provider.of<InstaDataProvider>(context, listen: false).refreshFeed();
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to delete story: $e')),
+                    );
+                  }
                 },
               ),
+            ListTile(
+              leading: const Icon(Icons.report, color: Colors.red),
+              title: const Text('Report Story', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                Navigator.pop(context);
+                await showDialog(
+                  context: context,
+                  builder: (context) => ReportDialog(
+                    targetType: 'story',
+                    targetId: currentStory.id!,
+                  ),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.share),
               title: const Text('Share Story'),
               onTap: () {
                 Navigator.pop(context);
                 // Implement share functionality here
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.report),
-              title: const Text('Report Story'),
-              onTap: () {
-                Navigator.pop(context);
-                // Implement report functionality here
               },
             ),
           ],

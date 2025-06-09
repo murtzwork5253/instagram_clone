@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../auth/service/auth_service.dart';
+import '../../services/blocked_users_service.dart';
 
 class ReelProvider extends ChangeNotifier {
   final SupabaseClient supabase = Supabase.instance.client;
@@ -118,6 +119,11 @@ class ReelProvider extends ChangeNotifier {
       // First load following users to ensure we have current follow status
       await _loadFollowingUsers();
 
+      // Fetch blocked users
+      final blockedService = BlockedUsersService();
+      final blockedUsers = await blockedService.getBlockedUsers();
+      final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+
       final response = await supabase
           .from('reels')
           .select('''
@@ -127,7 +133,9 @@ class ReelProvider extends ChangeNotifier {
           ''')
           .order('created_at', ascending: false);
 
-      reels = (response as List).map((map) {
+      reels = (response as List)
+        .where((map) => !blockedIds.contains(map['user_id']))
+        .map((map) {
         final userId = map['user_id'] as String;
         final username = (map['users'] as Map?)?['username'] as String? ?? 'Unknown';
         final userAvatar = (map['users'] as Map?)?['profile_image_url'] as String? ?? '';

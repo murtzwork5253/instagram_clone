@@ -993,4 +993,136 @@ class InstaDataProvider extends ChangeNotifier {
       // Do NOT update local state if DB write failed
     }
   }
+
+  // Add these methods to your InstaDataProvider class:
+
+// Helper method to handle like updates for explore posts
+  void updateExplorePostLike(String postId, bool isLiked) {
+    // Try to find and update the post in the current posts list
+    final postIndex = _posts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = _posts[postIndex];
+      _posts[postIndex] = PostData(
+        id: post.id,
+        userId: post.userId,
+        username: post.username,
+        profileImageUrl: post.profileImageUrl,
+        imageUrl: post.imageUrl,
+        caption: post.caption,
+        location: post.location,
+        createdAt: post.createdAt,
+        likeCount: isLiked ? post.likeCount + 1 : post.likeCount - 1,
+        commentCount: post.commentCount,
+        isLiked: isLiked,
+        isSaved: post.isSaved,
+      );
+      notifyListeners();
+    }
+  }
+
+// Helper method to handle save updates for explore posts
+  void updateExplorePostSave(String postId, bool isSaved) {
+    // Try to find and update the post in the current posts list
+    final postIndex = _posts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = _posts[postIndex];
+      _posts[postIndex] = PostData(
+        id: post.id,
+        userId: post.userId,
+        username: post.username,
+        profileImageUrl: post.profileImageUrl,
+        imageUrl: post.imageUrl,
+        caption: post.caption,
+        location: post.location,
+        createdAt: post.createdAt,
+        likeCount: post.likeCount,
+        commentCount: post.commentCount,
+        isLiked: post.isLiked,
+        isSaved: isSaved,
+      );
+      notifyListeners();
+    }
+  }
+
+// Enhanced like method that works for both feed and explore posts
+  Future<void> searchLikePost(String postId) async {
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser?.id;
+
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      // Check if already liked
+      final existingLike = await supabase
+          .from('post_likes')
+          .select()
+          .eq('post_id', postId)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (existingLike != null) {
+        // Unlike the post
+        await supabase
+            .from('post_likes')
+            .delete()
+            .eq('post_id', postId)
+            .eq('user_id', userId);
+
+        // Update local post if it exists in the feed
+        final postIndex = _posts.indexWhere((post) => post.id == postId);
+        if (postIndex != -1) {
+          final post = _posts[postIndex];
+          _posts[postIndex] = PostData(
+            id: post.id,
+            userId: post.userId,
+            username: post.username,
+            profileImageUrl: post.profileImageUrl,
+            imageUrl: post.imageUrl,
+            caption: post.caption,
+            location: post.location,
+            createdAt: post.createdAt,
+            likeCount: post.likeCount - 1,
+            commentCount: post.commentCount,
+            isLiked: false,
+            isSaved: post.isSaved,
+          );
+        }
+      } else {
+        // Like the post
+        await supabase
+            .from('post_likes')
+            .insert({
+          'post_id': postId,
+          'user_id': userId,
+        });
+
+        // Update local post if it exists in the feed
+        final postIndex = _posts.indexWhere((post) => post.id == postId);
+        if (postIndex != -1) {
+          final post = _posts[postIndex];
+          _posts[postIndex] = PostData(
+            id: post.id,
+            userId: post.userId,
+            username: post.username,
+            profileImageUrl: post.profileImageUrl,
+            imageUrl: post.imageUrl,
+            caption: post.caption,
+            location: post.location,
+            createdAt: post.createdAt,
+            likeCount: post.likeCount + 1,
+            commentCount: post.commentCount,
+            isLiked: true,
+            isSaved: post.isSaved,
+          );
+        }
+      }
+
+      notifyListeners();
+    } catch (e) {
+      print('Error liking/unliking post: $e');
+      throw e;
+    }
+  }
 }

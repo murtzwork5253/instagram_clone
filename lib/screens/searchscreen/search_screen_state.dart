@@ -3,6 +3,7 @@ import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
+import '../../services/blocked_users_service.dart';
 
 class SearchScreen extends StatefulWidget {
   @override
@@ -34,6 +35,9 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     final supabase = Supabase.instance.client;
+    final blockedService = BlockedUsersService();
+    final blockedUsers = await blockedService.getBlockedUsers();
+    final blockedIds = blockedUsers.map((u) => u['id']).toSet();
 
     try {
       // Add some debug prints
@@ -53,14 +57,11 @@ class _SearchScreenState extends State<SearchScreen> {
 
       print("Username matches: ${usernameMatches.length}");
 
-      // Merge results and remove duplicates
-      final Set<String> seen = {};
-      final profiles = [...fullNameMatches, ...usernameMatches]
-          .where((user) => seen.add(user['id'].toString()))
-          .map((p) => {'type': 'users', 'data': p})
-          .toList();
+      // Merge and filter out blocked users
+      final allMatches = [...fullNameMatches, ...usernameMatches];
+      final filtered = allMatches.where((u) => !blockedIds.contains(u['id'])).toList();
 
-      print("Combined profiles: ${profiles.length}");
+      print("Combined profiles: ${filtered.length}");
 
       final keywordResponse = await supabase
           .from('keywords')
@@ -74,7 +75,7 @@ class _SearchScreenState extends State<SearchScreen> {
           keywordResponse.map((k) => {'type': 'keyword', 'data': k}).toList();
 
       setState(() {
-        searchResults = [...profiles, ...keywords];
+        searchResults = [...filtered, ...keywords];
         print("Total search results: ${searchResults.length}");
       });
     } catch (e) {

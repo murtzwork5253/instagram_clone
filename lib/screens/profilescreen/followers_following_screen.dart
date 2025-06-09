@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart'; // Adjust path if necessary
 // Import your other user profile screen
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart'; // Make sure this path is correct
+import '../../services/blocked_users_service.dart';
 
 class FollowersList extends StatefulWidget {
   final String userId;
@@ -269,24 +270,26 @@ class _FollowersListState extends State<FollowersList>
         .select('id, username, profile_image_url')
         .inFilter('id', followerIds);
 
-    // If _currentUserId is null, we can't determine follow status for logged-out state
+    // Filter out blocked users
+    final blockedService = BlockedUsersService();
+    final blockedUsers = await blockedService.getBlockedUsers();
+    final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+    final filtered = userData.where((u) => !blockedIds.contains(u['id'])).toList();
+
     if (_currentUserId == null) {
-      // In this case, is_following will always be false by default in UI
-      // No need to set it in the map as it's not being used.
-      return userData;
+      return filtered;
     }
 
-    for (var user in userData) {
-      // Check if the current user is following this specific user in the list
+    for (var user in filtered) {
       final followingCheck = await supabase
           .from('followers')
           .select()
           .eq('follower_id', _currentUserId!)
           .eq('following_id', user['id']);
-      user['is_following'] = followingCheck.isNotEmpty; // Dynamically add is_following key
+      user['is_following'] = followingCheck.isNotEmpty;
     }
 
-    return userData;
+    return filtered;
   }
 
   Future<List<Map<String, dynamic>>> _fetchFollowing(String userId) async {
@@ -306,32 +309,32 @@ class _FollowersListState extends State<FollowersList>
         .select('id, username, profile_image_url')
         .inFilter('id', followingIds);
 
-    // If _currentUserId is null, we can't determine follow status
+    // Filter out blocked users
+    final blockedService = BlockedUsersService();
+    final blockedUsers = await blockedService.getBlockedUsers();
+    final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+    final filtered = userData.where((u) => !blockedIds.contains(u['id'])).toList();
+
     if (_currentUserId == null) {
-      // In this case, is_following will always be false by default in UI
-      // No need to set it in the map as it's not being used.
-      return userData;
+      return filtered;
     }
 
-    // If the current user is viewing their own following list, all listed are "following" by definition
     if (_currentUserId == widget.userId) {
-      for (var user in userData) {
+      for (var user in filtered) {
         user['is_following'] = true;
       }
     } else {
-      // If viewing another user's following list, check follow status against current user
-      for (var user in userData) {
+      for (var user in filtered) {
         final followingCheck = await supabase
             .from('followers')
             .select()
             .eq('follower_id', _currentUserId!)
             .eq('following_id', user['id']);
-
-        user['is_following'] = followingCheck.isNotEmpty; // Dynamically add is_following key
+        user['is_following'] = followingCheck.isNotEmpty;
       }
     }
 
-    return userData;
+    return filtered;
   }
 
   Future<void> _toggleFollow(String userId, bool isCurrentlyFollowing) async {

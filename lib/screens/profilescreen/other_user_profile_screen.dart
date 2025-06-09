@@ -4,6 +4,8 @@ import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:Instagram/screens/profilescreen/followers_following_screen.dart';
+import '../../services/blocked_users_service.dart';
+import 'report_user_dialog.dart';
 
 import '../../services/supabase_service.dart'; // Import FollowersList
 
@@ -29,12 +31,15 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   int postsCount = 0;
   late TabController _tabController;
   bool _showSuggestedAccounts = false;
+  final BlockedUsersService _blockedUsersService = BlockedUsersService();
+  bool _isBlocked = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadOtherProfile();
+    _checkIfBlocked();
   }
 
   @override
@@ -56,71 +61,85 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           .eq('id', widget.userId)
           .single();
 
-      // Load posts with like and comment counts
-      final postRes = await supabase
+      // Load posts
+      final postsRes = await supabase
           .from('posts')
-          .select('''
-          *,
-          post_likes(count),
-          comments(count)
-        ''')
+          .select()
           .eq('user_id', widget.userId)
           .order('created_at', ascending: false);
 
-      // Process posts to extract counts and check if current user liked each post
-      final currentUserId = supabase.auth.currentUser!.id;
-      for (var post in postRes) {
-        // Get like count
-        final likeCount = post['post_likes']?.length ?? 0;
-        print("Like count $likeCount");
-        post['like_count'] = likeCount;
-
-        // Get comment count
-        final commentCount = post['comments']?.length ?? 0;
-        post['comment_count'] = commentCount;
-
-        // Check if current user liked this post
-        final userLikedRes = await supabase
-            .from('post_likes')
-            .select()
-            .match({'post_id': post['id'], 'user_id': currentUserId});
-        post['is_liked'] = userLikedRes.isNotEmpty;
-      }
-
-      // Check if current user is following this profile
-      final followRes = await supabase.from('followers').select().match({
-        'follower_id': supabase.auth.currentUser!.id,
-        'following_id': widget.userId
-      });
-
-      // Count followers
+      // Load followers and following
       final followersRes = await supabase
           .from('followers')
-          .select('count')
+          .select('follower_id')
           .eq('following_id', widget.userId);
-      final followersCountData = followersRes[0]['count'];
-
-      // Count following
       final followingRes = await supabase
           .from('followers')
-          .select('count')
+          .select('following_id')
           .eq('follower_id', widget.userId);
-      final followingCountData = followingRes[0]['count'];
+
+      // Filter out blocked users from followers and following
+      final blockedService = BlockedUsersService();
+      final blockedUsers = await blockedService.getBlockedUsers();
+      final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+
+      final filteredFollowers = (followersRes as List)
+        .where((f) => !blockedIds.contains(f['follower_id']))
+        .toList();
+      final filteredFollowing = (followingRes as List)
+        .where((f) => !blockedIds.contains(f['following_id']))
+        .toList();
 
       setState(() {
         profile = profileRes;
-        posts = postRes;
-        postsCount = posts.length;
-        isFollowing = followRes.isNotEmpty;
-        followersCount = followersCountData;
-        followingCount = followingCountData;
+        posts = postsRes;
+        followersCount = filteredFollowers.length;
+        followingCount = filteredFollowing.length;
+        postsCount = postsRes.length;
         isLoading = false;
       });
     } catch (e) {
-      print('Error loading profile: $e');
       setState(() {
         isLoading = false;
       });
+      print('Error loading profile: $e');
+    }
+  }
+
+  Future<void> _checkIfBlocked() async {
+    try {
+      final isBlocked = await _blockedUsersService.isUserBlocked(widget.userId);
+      setState(() => _isBlocked = isBlocked);
+    } catch (e) {
+      print('Error checking block status: $e');
+    }
+  }
+
+  Future<void> _toggleBlock() async {
+    try {
+      if (_isBlocked) {
+        await _blockedUsersService.unblockUser(widget.userId);
+        setState(() => _isBlocked = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User unblocked')),
+          );
+        }
+      } else {
+        await _blockedUsersService.blockUser(widget.userId);
+        setState(() => _isBlocked = true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User blocked')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     }
   }
 
@@ -210,7 +229,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           IconButton(
             icon: const Icon(Icons.more_vert, color: Colors.white),
             onPressed: () {
-              _showBottomSheet(context);
+              _showOptions();
             },
           ),
         ],
@@ -673,28 +692,41 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     );
   }
 
-  void _showBottomSheet(BuildContext context) {
+  void _showOptions() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
-      ),
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: const Icon(Icons.block, color: Colors.white),
-            title: const Text('Block', style: TextStyle(color: Colors.white)),
+            leading: Icon(
+              _isBlocked ? Icons.block_flipped : Icons.block,
+              color: Colors.red,
+            ),
+            title: Text(
+              _isBlocked ? 'Unblock' : 'Block',
+              style: const TextStyle(color: Colors.red),
+            ),
             onTap: () {
               Navigator.pop(context);
+              _toggleBlock();
             },
           ),
           ListTile(
-            leading: const Icon(Icons.report, color: Colors.white),
-            title: const Text('Report', style: TextStyle(color: Colors.white)),
-            onTap: () {
+            leading: const Icon(Icons.report, color: Colors.red),
+            title: const Text('Report', style: TextStyle(color: Colors.red)),
+            onTap: () async {
               Navigator.pop(context);
+              final result = await showDialog(
+                context: context,
+                builder: (context) => ReportUserDialog(reportedUserId: widget.userId),
+              );
+              if (result == true && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Report submitted. Thank you!')),
+                );
+              }
             },
           ),
           ListTile(
@@ -707,8 +739,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           ),
           ListTile(
             leading: const Icon(Icons.person_add_disabled, color: Colors.white),
-            title:
-            const Text('Restrict', style: TextStyle(color: Colors.white)),
+            title: const Text('Restrict', style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
             },

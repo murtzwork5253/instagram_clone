@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
+import '../common/report_dialog.dart';
 
 // Function to show comment section as modal sheet
 void showCommentSection(BuildContext context, String postId) {
@@ -511,7 +512,45 @@ class _CommentTileState extends State<CommentTile> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
       child: GestureDetector(
-        onLongPress: _deleteComment,
+        onLongPress: () async {
+          final isOwner = widget.currentUserId == comment.userId;
+          final result = await showModalBottomSheet<String>(
+            context: context,
+            backgroundColor: Colors.grey[900],
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            builder: (context) => SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isOwner)
+                    ListTile(
+                      leading: const Icon(Icons.delete, color: Colors.red),
+                      title: const Text('Delete', style: TextStyle(color: Colors.red)),
+                      onTap: () => Navigator.pop(context, 'delete'),
+                    ),
+                  ListTile(
+                    leading: const Icon(Icons.report, color: Colors.red),
+                    title: const Text('Report', style: TextStyle(color: Colors.red)),
+                    onTap: () => Navigator.pop(context, 'report'),
+                  ),
+                ],
+              ),
+            ),
+          );
+          if (result == 'delete') {
+            _deleteComment();
+          } else if (result == 'report') {
+            await showDialog(
+              context: context,
+              builder: (context) => ReportDialog(
+                targetType: 'comment',
+                targetId: comment.id,
+              ),
+            );
+          }
+        },
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

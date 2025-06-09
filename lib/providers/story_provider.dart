@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/blocked_users_service.dart';
 
 // Data model for a single story item
 class StoryItem {
@@ -56,6 +57,10 @@ final storyProvider = FutureProvider<List<UserStoryBundle>>((ref) async {
       .gte('expires_at', DateTime.now().toIso8601String())
       .order('created_at', ascending: false);
 
+  // Filter out blocked users
+  final blockedService = BlockedUsersService();
+  final blockedUsers = await blockedService.getBlockedUsers();
+  final blockedIds = blockedUsers.map((u) => u['id']).toSet();
 
   // Group stories by user
   final Map<String, UserStoryBundle> storyBundles = {};
@@ -63,6 +68,7 @@ final storyProvider = FutureProvider<List<UserStoryBundle>>((ref) async {
   for (final record in response) {
     final storyUserId = record['user_id'];
     if (storyUserId == null) continue;
+    if (blockedIds.contains(storyUserId)) continue;
 
     final user = record['user'];
     if (user == null) continue;

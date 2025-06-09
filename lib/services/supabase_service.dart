@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart'; // Assuming you use uuid for unique file names
 import 'package:path/path.dart' as path;
 import 'dart:typed_data';
 import 'dart:io';
+import 'blocked_users_service.dart';
 
 // Data models are included below the class definition
 class SupabaseService {
@@ -31,6 +32,13 @@ class SupabaseService {
   // -------------------- USER SEARCH --------------------
   static Future<List<UserData>> searchUsers(String query) async {
     try {
+      final currentUserId = _client.auth.currentUser?.id;
+      if (currentUserId == null) return [];
+      // Fetch blocked users
+      final blockedService = BlockedUsersService();
+      final blockedUsers = await blockedService.getBlockedUsers();
+      final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+
       final response = await _client
           .from('users')
           .select()
@@ -38,7 +46,10 @@ class SupabaseService {
           .order('username')
           .limit(20);
 
-      return (response as List).map((e) => UserData.fromJson(e)).toList();
+      return (response as List)
+          .where((e) => !blockedIds.contains(e['id']))
+          .map((e) => UserData.fromJson(e))
+          .toList();
     } catch (e) {
       print('Error searching users: $e');
       return [];
@@ -61,6 +72,11 @@ class SupabaseService {
 
     // Always include own ID
     followedUserIds.add(userId);
+
+    // Fetch blocked users
+    final blockedService = BlockedUsersService();
+    final blockedUsers = await blockedService.getBlockedUsers();
+    final blockedIds = blockedUsers.map((u) => u['id']).toSet();
 
     // Step 2: Fetch posts and join related data
     final postsResponse = await Supabase.instance.client
@@ -86,7 +102,9 @@ class SupabaseService {
         .inFilter('user_id', followedUserIds)
         .order('created_at', ascending: false);
 
-    return (postsResponse as List).map((post) {
+    return (postsResponse as List)
+        .where((post) => !blockedIds.contains(post['user_id']))
+        .map((post) {
       final user = post['users'];
       final likes = post['post_likes'] as List<dynamic>? ?? [];
       final comments = post['comments'] as List<dynamic>? ?? [];
@@ -517,6 +535,15 @@ class SupabaseService {
     return _client.storage.from(folder).getPublicUrl(filePath);
   }
 
+  Future<void> deleteStory(String storyId) async {
+    final user = _client.auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
+
+    // Delete the story (and optionally, its media from storage if needed)
+    await _client.from('stories').delete().eq('id', storyId);
+    // Optionally, delete associated story views, etc.
+  }
+
 }
 
 class UserData {
@@ -591,6 +618,9 @@ class PostData {
       isSaved: false,
     );
   }
+
+
+
 }
 
 class StoryData {

@@ -11,7 +11,8 @@ class Message {
   final String? imageUrl;
   final bool isRead;
   final DateTime createdAt;
-  final DateTime? seenAt; // NEW FIELD
+  final DateTime? seenAt;// NEW FIELD
+  final Map<String, dynamic>? sharedPost;
 
   Message({
     required this.id,
@@ -19,6 +20,7 @@ class Message {
     this.receiverId,
     this.content,
     this.imageUrl,
+    this.sharedPost,
     required this.isRead,
     required this.createdAt,
     this.seenAt, // NEW FIELD

@@ -69,6 +69,7 @@ class Assets {
   static const String reelsScreenReelPlayer = 'lib/screens/reels_screen/reel_player.dart';
   static const String reelsScreenReelProvider = 'lib/screens/reels_screen/reel_provider.dart';
   static const String reelsScreenReelsScreen = 'lib/screens/reels_screen/reels_screen.dart';
+  static const String savedPsotsSavedPostScreen = 'lib/screens/saved-psots/saved_post_screen.dart';
   static const String screensRegisterPage = 'lib/screens/register_page.dart';
   static const String searchscreenSearchScreen = 'lib/screens/searchscreen/search_screen.dart';
   static const String searchscreenSearchScreenState = 'lib/screens/searchscreen/search_screen_state.dart';

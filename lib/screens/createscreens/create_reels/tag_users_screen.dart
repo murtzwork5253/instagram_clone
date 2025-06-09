@@ -1,6 +1,8 @@
 // lib/tag_users_screen.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../services/blocked_users_service.dart';
+// import '../../services/blocked_users_service.dart';
 
 class TagUsersScreen extends StatefulWidget {
   const TagUsersScreen({Key? key}) : super(key: key);
@@ -31,10 +33,17 @@ class _TagUsersScreenState extends State<TagUsersScreen> {
       final response = await _supabase
           .from('users')
           .select('id, username, profile_image_url')
-          .order('username', ascending: true); // Order users by username
+          .order('username', ascending: true);
+
+      // Filter out blocked users
+      final blockedService = BlockedUsersService();
+      final blockedUsers = await blockedService.getBlockedUsers();
+      final blockedIds = blockedUsers.map((u) => u['id']).toSet();
 
       setState(() {
-        _users = List<Map<String, dynamic>>.from(response);
+        _users = List<Map<String, dynamic>>.from(response)
+            .where((u) => !blockedIds.contains(u['id']))
+            .toList();
       });
     } catch (e) {
       setState(() {

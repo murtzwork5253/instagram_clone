@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
+import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart'; // Update this path if needed
 
 class SinglePostView extends StatelessWidget {
@@ -44,19 +45,21 @@ class SinglePostView extends StatelessWidget {
 
     // Replace the Consumer<InstaDataProvider> section in single_post_view.dart (around line 46-60) with this:
 
+    // Replace the Consumer<InstaDataProvider> section in single_post_view.dart (around line 46-60) with this:
+
     return Consumer<InstaDataProvider>(
       builder: (context, provider, _) {
-        // Try to get updated post from provider, but fallback to original post if not found
-        PostData updatedPost;
+        // Try to get updated post from provider first
+        PostData? updatedPost;
         try {
           updatedPost = provider.posts.firstWhere((p) => p.id == post.id);
         } catch (e) {
-          // If post not found in provider, use the original post passed from explore screen
-          updatedPost = post;
+          // Post not found in provider, which is normal for explore posts
+          updatedPost = null;
         }
 
-        // For explore posts, ensure we show the original counts if provider doesn't have updated data
-        final displayPost = PostData(
+        // Create display post with proper fallback logic
+        final displayPost = updatedPost != null ? PostData(
           id: updatedPost.id,
           userId: updatedPost.userId,
           username: updatedPost.username,
@@ -65,16 +68,11 @@ class SinglePostView extends StatelessWidget {
           caption: updatedPost.caption,
           location: updatedPost.location,
           createdAt: updatedPost.createdAt,
-          // Use provider counts if available and greater than 0, otherwise use original
-          likeCount: (updatedPost.likeCount > 0 || post.likeCount == 0)
-              ? updatedPost.likeCount
-              : post.likeCount,
-          commentCount: (updatedPost.commentCount > 0 || post.commentCount == 0)
-              ? updatedPost.commentCount
-              : post.commentCount,
+          likeCount: updatedPost.likeCount,
+          commentCount: updatedPost.commentCount,
           isLiked: updatedPost.isLiked,
           isSaved: updatedPost.isSaved,
-        );
+        ) : post; // Use original post if not found in provider
 
         return Scaffold(
           backgroundColor: Colors.black,
@@ -112,9 +110,22 @@ class SinglePostView extends StatelessWidget {
                   trailing: IconButton(onPressed: (){_showPostOptions(post, context);}, icon: Icon(Icons.more_vert, color: Colors.white)),
                 ),
                 GestureDetector(
-                  onDoubleTap: () {
-                    Provider.of<InstaDataProvider>(context, listen: false)
-                        .likePost(displayPost.id);
+                  onDoubleTap: () async {
+                    // Enhanced like functionality for explore posts
+                    try {
+                      await Provider.of<InstaDataProvider>(context, listen: false)
+                          .searchLikePost(displayPost.id);
+
+                      // If this post is not in provider's posts list, add it temporarily
+                      if (updatedPost == null) {
+                        provider.updateExplorePostLike(displayPost.id, !displayPost.isLiked);
+                      }
+                    } catch (e) {
+                      print('Error liking post: $e');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to like post')),
+                      );
+                    }
                   },
                   child: Image.network(
                     displayPost.imageUrl,
@@ -131,9 +142,22 @@ class SinglePostView extends StatelessWidget {
                       Row(
                         children: [
                           GestureDetector(
-                            onTap: () {
-                              Provider.of<InstaDataProvider>(context, listen: false)
-                                  .likePost(displayPost.id);
+                            onTap: () async {
+                              // Enhanced like functionality for explore posts
+                              try {
+                                await Provider.of<InstaDataProvider>(context, listen: false)
+                                    .searchLikePost(displayPost.id);
+
+                                // If this post is not in provider's posts list, handle locally
+                                if (updatedPost == null) {
+                                  provider.updateExplorePostLike(displayPost.id, !displayPost.isLiked);
+                                }
+                              } catch (e) {
+                                print('Error liking post: $e');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to like post')),
+                                );
+                              }
                             },
                             child: Icon(
                               displayPost.isLiked
@@ -171,9 +195,21 @@ class SinglePostView extends StatelessWidget {
                           ),
                           Spacer(),
                           GestureDetector(
-                            onTap: () {
-                              Provider.of<InstaDataProvider>(context, listen: false)
-                                  .toggleSavePost(post.id);
+                            onTap: () async {
+                              try {
+                                await Provider.of<InstaDataProvider>(context, listen: false)
+                                    .toggleSavePost(post.id);
+
+                                // Handle save for explore posts
+                                if (updatedPost == null) {
+                                  provider.updateExplorePostSave(displayPost.id, !displayPost.isSaved);
+                                }
+                              } catch (e) {
+                                print('Error saving post: $e');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to save post')),
+                                );
+                              }
                             },
                             child: Icon(
                               displayPost.isSaved ? Icons.bookmark : Icons.bookmark_border,
@@ -340,9 +376,12 @@ class SinglePostView extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.report_outlined, color: Colors.red),
                 title: Text('Report', style: TextStyle(color: Colors.red)),
-                onTap: () {
+                onTap: () async{
                   Navigator.pop(context);
-                  // Report post implementation
+                  await showDialog(
+                  context: context,
+                  builder: (context) => ReportDialog(targetType: 'post', targetId: post.id),
+                  );
                 },
               ),
           ],

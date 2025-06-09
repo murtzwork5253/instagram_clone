@@ -12,6 +12,7 @@ import 'package:Instagram/screens/reels_screen/reel_modal.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../auth/service/auth_service.dart';
+import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart';
 
 class ReelPlayer extends StatefulWidget {
@@ -725,21 +726,21 @@ class ReelPlayerEnhancements {
             // Show report and block options only for other users' reels
             if (!isOwnReel) ...[
               ListTile(
-                leading: const Icon(Icons.report, color: Colors.white),
+                leading: const Icon(Icons.report, color: Colors.red),
                 title: const Text('Report',
-                    style: TextStyle(color: Colors.white)),
-                onTap: () {
+                    style: TextStyle(color: Colors.red)),
+                onTap: () async {
                   Navigator.pop(context);
-                  // Handle report
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Report submitted')),
+                  await showDialog(
+                  context: context,
+                  builder: (context) => ReportDialog(targetType: 'reel', targetId: reel.id),
                   );
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.block, color: Colors.white),
+                leading: const Icon(Icons.block, color: Colors.red),
                 title: const Text('Block User',
-                    style: TextStyle(color: Colors.white)),
+                    style: TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(context);
                   // Handle block user

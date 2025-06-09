@@ -10,6 +10,7 @@ import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import 'edit_profile_screen.dart';
 import 'followers_following_screen.dart';
+import '../../services/blocked_users_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   final ValueNotifier<int>? refreshNotifier;
@@ -272,15 +273,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .eq('user_id', userId)
         .order('created_at', ascending: false);
     final followersRes =
-        await supabase.from('followers').select().eq('following_id', userId);
+        await supabase.from('followers').select('follower_id').eq('following_id', userId);
     final followingRes =
-        await supabase.from('followers').select().eq('follower_id', userId);
+        await supabase.from('followers').select('following_id').eq('follower_id', userId);
+
+    // Filter out blocked users
+    final blockedService = BlockedUsersService();
+    final blockedUsers = await blockedService.getBlockedUsers();
+    final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+
+    final filteredFollowers = (followersRes as List)
+        .where((f) => !blockedIds.contains(f['follower_id']))
+        .toList();
+    final filteredFollowing = (followingRes as List)
+        .where((f) => !blockedIds.contains(f['following_id']))
+        .toList();
 
     return {
       'users': profileRes,
       'posts': postsRes,
-      'followers': followersRes,
-      'following': followingRes,
+      'followers': filteredFollowers,
+      'following': filteredFollowing,
     };
   }
 
