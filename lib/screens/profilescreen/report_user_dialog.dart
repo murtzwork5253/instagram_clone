@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
-import '../../services/report_service.dart';
+import '../../services/report_user_service.dart';
 
-class ReportDialog extends StatefulWidget {
-  final String targetType; // 'user', 'post', 'comment', 'reel', 'story'
-  final String targetId;
+class ReportUserDialog extends StatefulWidget {
+  final String reportedUserId;
 
-  const ReportDialog({Key? key, required this.targetType, required this.targetId}) : super(key: key);
+  const ReportUserDialog({Key? key, required this.reportedUserId}) : super(key: key);
 
   @override
-  State<ReportDialog> createState() => _ReportDialogState();
+  State<ReportUserDialog> createState() => _ReportUserDialogState();
 }
 
-class _ReportDialogState extends State<ReportDialog> {
-  final ReportService _reportService = ReportService();
+class _ReportUserDialogState extends State<ReportUserDialog> {
+  final ReportUserService _reportUserService = ReportUserService();
   final List<String> _reasons = [
     'Spam',
     'Harassment or bullying',
@@ -33,9 +32,8 @@ class _ReportDialogState extends State<ReportDialog> {
     if (_selectedReason == null) return;
     setState(() => _isSubmitting = true);
     try {
-      await _reportService.report(
-        targetType: widget.targetType,
-        targetId: widget.targetId,
+      await _reportUserService.reportUser(
+        reportedUserId: widget.reportedUserId,
         reason: _selectedReason!,
         details: _selectedReason == 'Other' ? _customReason : null,
       );
@@ -67,9 +65,9 @@ class _ReportDialogState extends State<ReportDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Report ${widget.targetType[0].toUpperCase()}${widget.targetType.substring(1)}',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+            const Text(
+              'Report User',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             const SizedBox(height: 16),
             ..._reasons.map((reason) => RadioListTile<String>(

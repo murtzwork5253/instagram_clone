@@ -1,7 +1,10 @@
+import 'package:Instagram/l10n/app_localizations_en.dart';
+import 'package:Instagram/main.dart';
 import 'package:Instagram/screens/auth/service/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../common/report_dialog.dart';
@@ -198,6 +201,7 @@ class _CommentSectionState extends State<CommentSection> {
                 .getPublicUrl(imageUrl)
             : null);
 
+    final loc = AppLocalizations.of(context)!;
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         final bottomInset = MediaQuery.of(context).viewInsets.bottom;
@@ -241,7 +245,7 @@ class _CommentSectionState extends State<CommentSection> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Comments',
+                          loc.comments,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: Colors.white,
@@ -296,7 +300,7 @@ class _CommentSectionState extends State<CommentSection> {
                                             ),
                                             SizedBox(height: 16),
                                             Text(
-                                              'No comments yet',
+                                              loc.noComments,
                                               style: TextStyle(
                                                 color: Colors.grey.shade600,
                                                 fontSize: 18,

@@ -14,10 +14,11 @@ class CameraService extends ChangeNotifier {
   ResolutionPreset _currentResolutionPreset = ResolutionPreset.high;
   List<CameraDescription> _cameras = [];
   bool _enableAudio = false;
+  bool _isDisposed = false; // Add this flag
 
   // Getters
   CameraController? get controller => _controller;
-  bool get isCameraInitialized => _isCameraInitialized;
+  bool get isCameraInitialized => _isCameraInitialized && !_isDisposed;
   bool get isFlashOn => _isFlashOn;
   bool get isFrontCamera => _isFrontCamera;
   List<CameraDescription> get cameras => _cameras;
@@ -35,6 +36,8 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<void> initializeCamera({bool enableAudio = false}) async {
+    if (_isDisposed) return; // Don't initialize if disposed
+
     _enableAudio = enableAudio;
 
     if (_cameras.isEmpty) {
@@ -75,6 +78,7 @@ class CameraService extends ChangeNotifier {
         await _controller!.initialize();
         _isCameraInitialized = true;
         _isFlashOn = false;
+        _isDisposed = false; // Reset disposed flag
         await _controller!.setFlashMode(FlashMode.off);
         notifyListeners();
       } on CameraException catch (e) {
@@ -89,7 +93,7 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<void> toggleCamera() async {
-    if (!_isCameraInitialized || _cameras.length < 2) {
+    if (!_isCameraInitialized || _cameras.length < 2 || _isDisposed) {
       throw CameraException('Cannot toggle camera', 'Only one camera found or not initialized');
     }
 
@@ -129,7 +133,7 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<void> toggleFlash() async {
-    if (!_isCameraInitialized || _isFrontCamera || _controller == null) {
+    if (!_isCameraInitialized || _isFrontCamera || _controller == null || _isDisposed) {
       throw CameraException('Flash not available', 'Flash not available for front camera or not initialized');
     }
 
@@ -145,7 +149,7 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<void> setFocusPoint(Offset offset) async {
-    if (_controller != null && _controller!.value.isInitialized) {
+    if (_controller != null && _controller!.value.isInitialized && !_isDisposed) {
       try {
         await _controller!.setFocusPoint(offset);
         await _controller!.setExposurePoint(offset);
@@ -156,7 +160,7 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<void> setZoomLevel(double zoom) async {
-    if (_controller != null && _controller!.value.isInitialized) {
+    if (_controller != null && _controller!.value.isInitialized && !_isDisposed) {
       try {
         final minZoom = await _controller!.getMinZoomLevel();
         final maxZoom = await _controller!.getMaxZoomLevel();
@@ -169,17 +173,34 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<double> getMinZoomLevel() async {
-    if (_controller != null && _controller!.value.isInitialized) {
+    if (_controller != null && _controller!.value.isInitialized && !_isDisposed) {
       return await _controller!.getMinZoomLevel();
     }
     return 1.0;
   }
 
   Future<double> getMaxZoomLevel() async {
-    if (_controller != null && _controller!.value.isInitialized) {
+    if (_controller != null && _controller!.value.isInitialized && !_isDisposed) {
       return await _controller!.getMaxZoomLevel();
     }
     return 1.0;
+  }
+
+  // New method to properly dispose camera when leaving creation screens
+  Future<void> stopCamera() async {
+    if (_controller != null) {
+      await _controller!.dispose();
+      _controller = null;
+    }
+    _isCameraInitialized = false;
+    _isDisposed = true;
+    notifyListeners();
+  }
+
+  // New method to restart camera when returning to creation screens
+  Future<void> restartCamera({bool enableAudio = false}) async {
+    _isDisposed = false;
+    await initializeCamera(enableAudio: enableAudio);
   }
 
   @override
@@ -189,22 +210,9 @@ class CameraService extends ChangeNotifier {
       _controller = null;
     }
     _isCameraInitialized = false;
+    _isDisposed = true;
 
     // Only call super.dispose() if this is the final disposal
-    if (hasListeners) {
-      super.dispose();
-    }
-  }
-
-// Modify disposeService method:
-  void disposeService() {
-    if (_controller != null) {
-      _controller!.dispose();
-      _controller = null;
-    }
-    _isCameraInitialized = false;
-
-    // This should be the final disposal
     if (hasListeners) {
       super.dispose();
     }

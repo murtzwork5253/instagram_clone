@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart'; // Assuming you use uuid for unique file names
@@ -88,6 +90,10 @@ class SupabaseService {
         location,
         image_url,
         created_at,
+        disable_comments,
+        use_original_ratio,
+        image_transformation,
+        original_aspect_ratio,
         users (
           username,
           profile_image_url
@@ -123,6 +129,10 @@ class SupabaseService {
         likeCount: likes.length,
         commentCount: comments.length,
         isLiked: isLiked,
+        disableComments: post['disable_comments'] ?? false,
+        use_original_ratio: post['use_original_ratio'],
+        image_transformation: post['image_transformation'],
+        original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
       );
     }).toList();
   }
@@ -582,6 +592,10 @@ class PostData {
   final int commentCount;
   final bool isLiked;
   final bool isSaved;
+  final bool disableComments;
+  final bool? use_original_ratio;
+  final String? image_transformation;
+  final double? original_aspect_ratio;
 
   PostData({
     required this.id,
@@ -596,6 +610,10 @@ class PostData {
     required this.commentCount,
     required this.isLiked,
     this.isSaved = false,
+    this.disableComments = false,
+    this.use_original_ratio,
+    this.image_transformation,
+    this.original_aspect_ratio,
   });
 
   factory PostData.fromJson(Map<String, dynamic> json,
@@ -616,6 +634,10 @@ class PostData {
       commentCount: commentCount,
       isLiked: isLiked,
       isSaved: false,
+      disableComments: json['disable_comments'] ?? false,
+      use_original_ratio: json['use_original_ratio'],
+      image_transformation: json['image_transformation'],
+      original_aspect_ratio: (json['original_aspect_ratio'] as num?)?.toDouble(),
     );
   }
 

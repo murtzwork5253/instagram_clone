@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
+import 'providers/language_provider.dart';
 
 // Create a global navigator key that can be used throughout the app
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -37,7 +40,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => InstaDataProvider()),
         ChangeNotifierProvider(create: (_) => ReelProvider()),
-        // other providers...
+        ChangeNotifierProvider(create: (_) => LanguageProvider()),
       ],
       child: const App(),
     ),
@@ -49,24 +52,47 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navigatorKey, // Add the navigator key here
-      theme: ThemeData.dark().copyWith(
-        // Customize theme colors to match Instagram
-        primaryColor: Colors.black,
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.black,
-          elevation: 0,
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Colors.black,
-          selectedItemColor: Colors.white,
-          unselectedItemColor: Colors.white60,
-        ),
-      ),
-      home: const SplashScreen(),
-      debugShowCheckedModeBanner: false,
+    return Consumer<LanguageProvider>(
+      builder: (context, languageProvider, child) {
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          theme: ThemeData.dark().copyWith(
+            primaryColor: Colors.black,
+            scaffoldBackgroundColor: Colors.black,
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.black,
+              elevation: 0,
+            ),
+            bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+              backgroundColor: Colors.black,
+              selectedItemColor: Colors.white,
+              unselectedItemColor: Colors.white60,
+            ),
+          ),
+          locale: languageProvider.currentLocale,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('en'), // English
+            Locale('es'), // Spanish
+            Locale('gu'), // Gujarati
+            // Locale('fr'), // French
+            // Locale('de'), // German
+            // Locale('it'), // Italian
+            // Locale('pt'), // Portuguese
+            // Locale('ja'), // Japanese
+            // Locale('ko'), // Korean
+            // Locale('zh'), // Chinese
+            // Locale('hi'), // Hindi
+          ],
+          home: const SplashScreen(),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }

@@ -4,17 +4,39 @@ import 'package:flutter/material.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
 import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart'; // Update this path if needed
 
-class SinglePostView extends StatelessWidget {
+// NEW CODE - Replace the above section with this:
+class SinglePostView extends StatefulWidget {
   final PostData post;
   final String Url;
 
   const SinglePostView({Key? key, required this.post, required this.Url}) : super(key: key);
+
+  @override
+  State<SinglePostView> createState() => _SinglePostViewState();
+}
+
+class _SinglePostViewState extends State<SinglePostView> {
+  late PostData displayPost;
+  late String profileUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    displayPost = widget.post;
+
+    if (widget.Url.isNotEmpty && widget.Url.startsWith('http')) {
+      profileUrl = widget.Url;
+    } else {
+      profileUrl = 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${widget.Url}';
+    }
+  }
 
   String _formatTime(DateTime? time) {
     if (time == null) return '';
@@ -32,223 +54,271 @@ class SinglePostView extends StatelessWidget {
     }
   }
 
+  void _handleLike() async {
+    final provider = Provider.of<InstaDataProvider>(context, listen: false);
+    final newLikedState = !displayPost.isLiked;
+    final newLikeCount = newLikedState ? displayPost.likeCount + 1: displayPost.likeCount - 1;
+
+    setState(() {
+      displayPost = PostData(
+          id: displayPost.id,
+          userId: displayPost.userId,
+          username: displayPost.username,
+          profileImageUrl: displayPost.profileImageUrl,
+          imageUrl: displayPost.imageUrl,
+          caption: displayPost.caption,
+          location: displayPost.location,
+          createdAt: displayPost.createdAt,
+          likeCount: newLikeCount,
+          commentCount: displayPost.commentCount,
+          isLiked: newLikedState,
+          isSaved: displayPost.isSaved,
+          disableComments: displayPost.disableComments,
+          use_original_ratio: displayPost.use_original_ratio,
+          image_transformation: displayPost.image_transformation,
+          original_aspect_ratio: displayPost.original_aspect_ratio);
+    });
+
+    try {
+      await provider.searchLikePost(displayPost.id);
+      provider.updateExplorePostLike(displayPost.id, newLikedState);
+    } catch (e) {
+      print('Error liking post: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to like post')),
+      );
+      setState(() {
+        displayPost = widget.post;
+      });
+    }
+  }
+
+  void _handleSave() async {
+    final provider = Provider.of<InstaDataProvider>(context, listen: false);
+    final newSavedState = !displayPost.isSaved;
+
+    setState(() {
+      displayPost = PostData(
+          id: displayPost.id,
+          userId: displayPost.userId,
+          username: displayPost.username,
+          profileImageUrl: displayPost.profileImageUrl,
+          imageUrl: displayPost.imageUrl,
+          caption: displayPost.caption,
+          location: displayPost.location,
+          createdAt: displayPost.createdAt,
+          likeCount: displayPost.likeCount,
+          commentCount: displayPost.commentCount,
+          isLiked: displayPost.isLiked,
+          isSaved: newSavedState,
+          disableComments: displayPost.disableComments,
+          use_original_ratio: displayPost.use_original_ratio,
+          image_transformation: displayPost.image_transformation,
+          original_aspect_ratio: displayPost.original_aspect_ratio);
+    });
+
+    try {
+      await provider.toggleSavePost(displayPost.id);
+      provider.updateExplorePostSave(displayPost.id, newSavedState);
+    } catch (e) {
+      print('Error saving post: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save post')),
+      );
+      setState(() {
+        displayPost = widget.post;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = AuthService.client().auth.currentUser;
-    final currentUserId = user?.id;
-    late final String profileUrl;
-    if (Url.isNotEmpty && Url.startsWith('http')){
-      profileUrl = Url;
-    }else{
-      profileUrl='https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${Url}';
+    final loc = AppLocalizations.of(context)!;
+    final currentUserId = AuthService.client().auth.currentUser?.id;
+
+    // This checks if the provider has a more up-to-date version of the post
+    // This is useful if the post is from the main feed and was updated in the background
+    final provider = Provider.of<InstaDataProvider>(context);
+    try {
+      final providerVersion = provider.posts.firstWhere((p) => p.id == widget.post.id);
+      // If the provider's version is different from our local state, update our local state
+      if (providerVersion.isLiked != displayPost.isLiked || providerVersion.isSaved != displayPost.isSaved) {
+        displayPost = providerVersion;
+      }
+    } catch (e) {
+      // Post is not in the main feed, which is expected for explore posts.
     }
 
-    // Replace the Consumer<InstaDataProvider> section in single_post_view.dart (around line 46-60) with this:
 
-    // Replace the Consumer<InstaDataProvider> section in single_post_view.dart (around line 46-60) with this:
-
-    return Consumer<InstaDataProvider>(
-      builder: (context, provider, _) {
-        // Try to get updated post from provider first
-        PostData? updatedPost;
-        try {
-          updatedPost = provider.posts.firstWhere((p) => p.id == post.id);
-        } catch (e) {
-          // Post not found in provider, which is normal for explore posts
-          updatedPost = null;
-        }
-
-        // Create display post with proper fallback logic
-        final displayPost = updatedPost != null ? PostData(
-          id: updatedPost.id,
-          userId: updatedPost.userId,
-          username: updatedPost.username,
-          profileImageUrl: updatedPost.profileImageUrl,
-          imageUrl: updatedPost.imageUrl,
-          caption: updatedPost.caption,
-          location: updatedPost.location,
-          createdAt: updatedPost.createdAt,
-          likeCount: updatedPost.likeCount,
-          commentCount: updatedPost.commentCount,
-          isLiked: updatedPost.isLiked,
-          isSaved: updatedPost.isSaved,
-        ) : post; // Use original post if not found in provider
-
-        return Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            title: Text('Post', style: TextStyle(color: Colors.white)),
-            iconTheme: IconThemeData(color: Colors.white),
-          ),
-          body: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: NetworkImage(profileUrl),
-                    radius: 16,
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: Text(loc.post, style: const TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: CircleAvatar(
+                backgroundImage: NetworkImage(profileUrl),
+                radius: 16,
+              ),
+              title: GestureDetector(
+                onTap: () {
+                  if (displayPost.userId == currentUserId) {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen()));
+                  } else {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => OtherUserProfileScreen(userId: displayPost.userId)));
+                  }
+                },
+                child: Text(
+                  displayPost.username,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
                   ),
-                  title: GestureDetector(
-                    onTap: () {
-                      if(post.userId == currentUserId){
-                        Navigator.push(context, MaterialPageRoute(builder: (_)=> ProfileScreen()));
-                      }
-                      else{
-                        Navigator.push(context, MaterialPageRoute(builder: (_)=> OtherUserProfileScreen(userId: post.userId)));
-                      }
-                    },
-                    child: Text(
-                      displayPost.username,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  trailing: IconButton(onPressed: (){_showPostOptions(post, context);}, icon: Icon(Icons.more_vert, color: Colors.white)),
                 ),
-                GestureDetector(
-                  onDoubleTap: () async {
-                    // Enhanced like functionality for explore posts
-                    try {
-                      await Provider.of<InstaDataProvider>(context, listen: false)
-                          .searchLikePost(displayPost.id);
+              ),
+              trailing: IconButton(onPressed: () { _showPostOptions(displayPost, context);}, icon: Icon(Icons.more_vert, color: Colors.white)),
+            ),
+            GestureDetector(
+              onDoubleTap: _handleLike,
+              child: AspectRatio(
+                aspectRatio: 1.0,
+                child: Container(
+                  color: Colors.black,
+                  child: () {
+                    final bool useOriginalRatio = displayPost.use_original_ratio ?? false;
+                    final String? transformationString = displayPost.image_transformation;
 
-                      // If this post is not in provider's posts list, add it temporarily
-                      if (updatedPost == null) {
-                        provider.updateExplorePostLike(displayPost.id, !displayPost.isLiked);
+                    Matrix4 transformation = Matrix4.identity();
+                    if (transformationString != null && transformationString.isNotEmpty) {
+                      try {
+                        final values = transformationString.split(',').map((e) => double.parse(e)).toList();
+                        if (values.length == 16) {
+                          transformation = Matrix4.fromList(values);
+                        }
+                      } catch (e) {
+                        transformation = Matrix4.identity();
                       }
-                    } catch (e) {
-                      print('Error liking post: $e');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to like post')),
-                      );
                     }
-                  },
-                  child: Image.network(
-                    displayPost.imageUrl,
-                    width: double.infinity,
-                    height: MediaQuery.of(context).size.width,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () async {
-                              // Enhanced like functionality for explore posts
-                              try {
-                                await Provider.of<InstaDataProvider>(context, listen: false)
-                                    .searchLikePost(displayPost.id);
 
-                                // If this post is not in provider's posts list, handle locally
-                                if (updatedPost == null) {
-                                  provider.updateExplorePostLike(displayPost.id, !displayPost.isLiked);
-                                }
-                              } catch (e) {
-                                print('Error liking post: $e');
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to like post')),
-                                );
-                              }
-                            },
-                            child: Icon(
-                              displayPost.isLiked
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              color: displayPost.isLiked
-                                  ? Colors.red
-                                  : Colors.white,
-                              size: 27,
+                    return Transform(
+                      transform: transformation,
+                      child: Image.network(
+                        displayPost.imageUrl,
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: useOriginalRatio ? BoxFit.contain : BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            color: Colors.grey[900],
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: loadingProgress.expectedTotalBytes != null
+                                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                    : null,
+                              ),
                             ),
-                          ),
-                          SizedBox(width: 3),
-                          Text('${displayPost.likeCount}',
-                              style: TextStyle(color: Colors.white)),
-                          SizedBox(width: 12),
-                          GestureDetector(
-                            onTap: () {
-                              showCommentSection(context, post.id);
-                            },
-                            child: Icon(
-                              OIcons.EvaIcons.message_circle_outline,
-                              color: Colors.white,
-                              size: 27,
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            color: Colors.grey[900],
+                            child: const Center(
+                              child: Icon(Icons.error, color: Colors.white),
                             ),
-                          ),
-                          SizedBox(width: 3),
-                          Text('${displayPost.commentCount}',
-                              style: TextStyle(color: Colors.white)),
-                          SizedBox(width: 12),
-                          GestureDetector(
-                              onTap: () {
-                                _showShareOptions(post,context);
-                              },
-                              child: Image.asset("assets/icon/shareicon.png",color: Colors.white,width: 26,height: 26,)
-                          ),
-                          Spacer(),
-                          GestureDetector(
-                            onTap: () async {
-                              try {
-                                await Provider.of<InstaDataProvider>(context, listen: false)
-                                    .toggleSavePost(post.id);
-
-                                // Handle save for explore posts
-                                if (updatedPost == null) {
-                                  provider.updateExplorePostSave(displayPost.id, !displayPost.isSaved);
-                                }
-                              } catch (e) {
-                                print('Error saving post: $e');
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to save post')),
-                                );
-                              }
-                            },
-                            child: Icon(
-                              displayPost.isSaved ? Icons.bookmark : Icons.bookmark_border,
-                              color: Colors.white,
-                              size: 27,
-                            ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                      SizedBox(height: 10),
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '${displayPost.username} ',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white),
-                            ),
-                            TextSpan(
-                              text: displayPost.caption ?? '',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ],
+                    );
+                  }(),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: _handleLike,
+                        child: Icon(
+                          displayPost.isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: displayPost.isLiked ? Colors.red : Colors.white,
+                          size: 27,
                         ),
                       ),
-                      SizedBox(height: 5),
-                      Text(
-                        _formatTime(displayPost.createdAt),
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      SizedBox(width: 3),
+                      Text('${displayPost.likeCount}', style: TextStyle(color: Colors.white)),
+                      SizedBox(width: 12),
+                      if (!displayPost.disableComments) ...[
+                        GestureDetector(
+                          onTap: () {
+                            showCommentSection(context, displayPost.id);
+                          },
+                          child: Icon(
+                            OIcons.EvaIcons.message_circle_outline,
+                            color: Colors.white,
+                            size: 27,
+                          ),
+                        ),
+                        SizedBox(width: 3),
+                        Text('${displayPost.commentCount}', style: TextStyle(color: Colors.white)),
+                        SizedBox(width: 12),
+                      ],
+                      GestureDetector(
+                          onTap: () {
+                            _showShareOptions(displayPost, context);
+                          },
+                          child: Image.asset("assets/icon/shareicon.png", color: Colors.white, width: 26, height: 26)),
+                      Spacer(),
+                      GestureDetector(
+                        onTap: _handleSave,
+                        child: Icon(
+                          displayPost.isSaved ? Icons.bookmark : Icons.bookmark_border,
+                          color: Colors.white,
+                          size: 27,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  SizedBox(height: 10),
+                  RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '${displayPost.username} ',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        TextSpan(
+                          text: displayPost.caption ?? '',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 5),
+                  Text(
+                    _formatTime(displayPost.createdAt),
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 
@@ -379,8 +449,8 @@ class SinglePostView extends StatelessWidget {
                 onTap: () async{
                   Navigator.pop(context);
                   await showDialog(
-                  context: context,
-                  builder: (context) => ReportDialog(targetType: 'post', targetId: post.id),
+                    context: context,
+                    builder: (context) => ReportDialog(targetType: 'post', targetId: post.id),
                   );
                 },
               ),
@@ -465,5 +535,4 @@ class SinglePostView extends StatelessWidget {
       ),
     );
   }
-
 }

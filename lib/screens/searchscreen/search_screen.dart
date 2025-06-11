@@ -42,8 +42,7 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
     });
   }
 
-  // Refactored function to fetch full PostData objects for the explore feed
-  // Replace the _fetchExplorePosts() method in search_screen.dart with this:
+
   Future<List<PostData>> _fetchExplorePosts() async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
@@ -52,20 +51,24 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
       final postsResponse = await supabase
           .from('posts')
           .select('''
-          id,
-          user_id,
-          caption,
-          location,
-          image_url,
-          created_at,
-          users (
-            username,
-            profile_image_url
-          )
-        ''')
+        id,
+        user_id,
+        caption,
+        location,
+        image_url,
+        created_at,
+        disable_comments,
+        use_original_ratio,
+        image_transformation,
+        original_aspect_ratio,
+        users (
+          username,
+          profile_image_url
+        )
+      ''')
           .order('created_at', ascending: false);
 
-      // Get all post IDs to fetch likes and comments separately
+      // Get all post IDs to fetch likes, comments, and saves separately
       final postIds = (postsResponse as List).map((post) => post['id']).toList();
 
       // Fetch all likes for these posts
@@ -80,9 +83,22 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
           .select('id, post_id')
           .inFilter('post_id', postIds);
 
-      // Group likes and comments by post_id
+      // Fetch saved posts for current user
+      List<dynamic> savedResponse = [];
+      if (userId != null) {
+        savedResponse = await supabase
+            .from('saved_posts')
+            .select('post_id')
+            .eq('user_id', userId)
+            .inFilter('post_id', postIds);
+      }
+
+      // Group likes, comments, and saves by post_id
       final Map<String, List<dynamic>> likesByPost = {};
       final Map<String, List<dynamic>> commentsByPost = {};
+      final Set<String> savedPostIds = savedResponse
+          .map((save) => save['post_id'].toString())
+          .toSet();
 
       for (final like in likesResponse as List) {
         final postId = like['post_id'].toString();
@@ -116,6 +132,11 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
           likeCount: likes.length,
           commentCount: comments.length,
           isLiked: isLiked,
+          isSaved: savedPostIds.contains(postId),
+          disableComments: post['disable_comments'] ?? false,
+          use_original_ratio: post['use_original_ratio'],
+          image_transformation: post['image_transformation'],
+          original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
         );
       }).toList();
     } catch (e) {

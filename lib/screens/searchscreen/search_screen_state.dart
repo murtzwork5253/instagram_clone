@@ -30,7 +30,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) {
-      setState(() => searchResults.clear());
+      if (mounted) {
+        setState(() => searchResults.clear());
+      }
       return;
     }
 
@@ -43,23 +45,16 @@ class _SearchScreenState extends State<SearchScreen> {
       // Add some debug prints
       print("Searching for: $query");
 
-      final fullNameMatches = await supabase
+      // Single query to search both full_name and username
+      final userMatches = await supabase
           .from('users')
           .select('id, full_name, username, profile_image_url')
-          .ilike('full_name', '%$query%');
+          .or('full_name.ilike.%$query%,username.ilike.%$query%');
 
-      print("Full name matches: ${fullNameMatches.length}");
+      print("User matches: ${userMatches.length}");
 
-      final usernameMatches = await supabase
-          .from('users')
-          .select('id, full_name, username, profile_image_url')
-          .ilike('username', '%$query%');
-
-      print("Username matches: ${usernameMatches.length}");
-
-      // Merge and filter out blocked users
-      final allMatches = [...fullNameMatches, ...usernameMatches];
-      final filtered = allMatches.where((u) => !blockedIds.contains(u['id'])).toList();
+      // Filter out blocked users
+      final filtered = userMatches.where((u) => !blockedIds.contains(u['id'])).toList();
 
       print("Combined profiles: ${filtered.length}");
 
@@ -70,25 +65,33 @@ class _SearchScreenState extends State<SearchScreen> {
 
       print("Keywords found: ${keywordResponse.length}");
 
+      // Map users with proper type
+      final userResults = filtered.map((u) => {'type': 'users', 'data': u}).toList();
+
       // Don't cast the response, just map it directly
       final keywords =
-          keywordResponse.map((k) => {'type': 'keyword', 'data': k}).toList();
+      keywordResponse.map((k) => {'type': 'keyword', 'data': k}).toList();
 
-      setState(() {
-        searchResults = [...filtered, ...keywords];
-        print("Total search results: ${searchResults.length}");
-      });
+      // Check if widget is still mounted before calling setState
+      if (mounted) {
+        setState(() {
+          searchResults = [...userResults, ...keywords];
+          print("Total search results: ${searchResults.length}");
+        });
+      }
     } catch (e) {
       print("Search error: $e");
-      // Show error in UI
-      setState(() {
-        searchResults = [
-          {
-            'type': 'error',
-            'data': {'message': e.toString()}
-          }
-        ];
-      });
+      // Show error in UI - but only if widget is still mounted
+      if (mounted) {
+        setState(() {
+          searchResults = [
+            {
+              'type': 'error',
+              'data': {'message': e.toString()}
+            }
+          ];
+        });
+      }
     }
   }
 
@@ -126,9 +129,9 @@ class _SearchScreenState extends State<SearchScreen> {
       backgroundImage: url != null ? NetworkImage(url) : null,
       child: url == null
           ? Text(
-              fallbackText.isNotEmpty ? fallbackText[0].toUpperCase() : '?',
-              style: TextStyle(color: Colors.white),
-            )
+        fallbackText.isNotEmpty ? fallbackText[0].toUpperCase() : '?',
+        style: TextStyle(color: Colors.white),
+      )
           : null,
     );
   }
@@ -185,12 +188,14 @@ class _SearchScreenState extends State<SearchScreen> {
               prefixIcon: Icon(Icons.search, color: Colors.grey),
               suffixIcon: isSearching
                   ? IconButton(
-                      icon: Icon(Icons.clear, color: Colors.white),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => searchResults.clear());
-                      },
-                    )
+                icon: Icon(Icons.clear, color: Colors.white),
+                onPressed: () {
+                  _searchController.clear();
+                  if (mounted) {
+                    setState(() => searchResults.clear());
+                  }
+                },
+              )
                   : null,
             ),
             style: TextStyle(color: Colors.white),
@@ -200,53 +205,53 @@ class _SearchScreenState extends State<SearchScreen> {
           padding: const EdgeInsets.all(10),
           child: isSearching
               ? ListView.builder(
-                  itemCount: searchResults.length,
-                  itemBuilder: (context, index) {
-                    final result = searchResults[index];
-                    final type = result['type'];
-                    final data = result['data'];
+              itemCount: searchResults.length,
+              itemBuilder: (context, index) {
+                final result = searchResults[index];
+                final type = result['type'];
+                final data = result['data'];
 
-                    if (type == 'users') {
-                      final fullName = data['full_name'] ?? 'No Name';
-                      final username = data['username'] ?? 'unknown';
-                      final profileImageUrl = data['profile_image_url'];
-                      final userId = data['id'];
+                if (type == 'users') {
+                  final fullName = data['full_name'] ?? 'No Name';
+                  final username = data['username'] ?? 'unknown';
+                  final profileImageUrl = data['profile_image_url'];
+                  final userId = data['id'];
 
-                      return ListTile(
-                        leading: buildProfileImage(profileImageUrl, fullName),
-                        title: Text(fullName,
-                            style: TextStyle(color: Colors.white)),
-                        subtitle: Text('@$username',
-                            style: TextStyle(color: Colors.grey)),
-                        onTap: () {
-                          navigateToProfile(context, userId);
-                        },
-                      );
-                    } else if (type == 'keyword') {
-                      return ListTile(
-                        leading: Icon(Icons.tag, color: Colors.greenAccent),
-                        title: Text(data['term'] ?? 'Unknown',
-                            style: TextStyle(color: Colors.white)),
-                        onTap: () {
-                          print("Tapped on keyword: ${data['term']}");
-                        },
-                      );
-                    } else if (type == 'error') {
-                      return ListTile(
-                        leading: Icon(Icons.error, color: Colors.red),
-                        title: Text('Error searching',
-                            style: TextStyle(color: Colors.red)),
-                        subtitle: Text(data['message'],
-                            style: TextStyle(color: Colors.grey)),
-                      );
-                    }
+                  return ListTile(
+                    leading: buildProfileImage(profileImageUrl, fullName),
+                    title: Text(fullName,
+                        style: TextStyle(color: Colors.white)),
+                    subtitle: Text('@$username',
+                        style: TextStyle(color: Colors.grey)),
+                    onTap: () {
+                      navigateToProfile(context, userId);
+                    },
+                  );
+                } else if (type == 'keyword') {
+                  return ListTile(
+                    leading: Icon(Icons.tag, color: Colors.greenAccent),
+                    title: Text(data['term'] ?? 'Unknown',
+                        style: TextStyle(color: Colors.white)),
+                    onTap: () {
+                      print("Tapped on keyword: ${data['term']}");
+                    },
+                  );
+                } else if (type == 'error') {
+                  return ListTile(
+                    leading: Icon(Icons.error, color: Colors.red),
+                    title: Text('Error searching',
+                        style: TextStyle(color: Colors.red)),
+                    subtitle: Text(data['message'],
+                        style: TextStyle(color: Colors.grey)),
+                  );
+                }
 
-                    return SizedBox.shrink();
-                  })
+                return SizedBox.shrink();
+              })
               : Center(
-                  child: Text("Start typing to search...",
-                      style: TextStyle(color: Colors.white70)),
-                ),
+            child: Text("Start typing to search...",
+                style: TextStyle(color: Colors.white70)),
+          ),
         ),
       ),
     );

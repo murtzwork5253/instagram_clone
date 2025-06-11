@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import 'edit_profile_screen.dart';
@@ -69,13 +70,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildProfileScreen() {
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
+    final loc = AppLocalizations.of(context)!;
+
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Text(
+            loc.errorLoadingProfile,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+      );
+    }
 
     // Use cache key to force fresh data fetch
-    final futureKey = '${user!.id}_$_cacheKey';
+    final futureKey = '${user.id}_$_cacheKey';
 
     return FutureBuilder<Map<String, dynamic>>(
       key: ValueKey(futureKey), // This forces rebuild when cache key changes
-      future: _fetchMyProfileData(user!.id),
+      future: _fetchMyProfileData(user.id),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -86,8 +100,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (snapshot.hasError) {
           return Center(
             child: Text(
-              'Error loading profile data',
-              style: TextStyle(color: Colors.white),
+              loc.errorLoadingProfile,
+              style: const TextStyle(color: Colors.white),
             ),
           );
         }
@@ -95,8 +109,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (!snapshot.hasData || snapshot.data == null) {
           return Center(
             child: Text(
-              'No profile data available',
-              style: TextStyle(color: Colors.white),
+              loc.noProfileData,
+              style: const TextStyle(color: Colors.white),
             ),
           );
         }
@@ -226,10 +240,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildStatsSection(int postCount, int followers, int following) {
+    final loc = AppLocalizations.of(context)!;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildStatItem("Posts", postCount),
+        _buildStatItem(loc.posts, postCount),
         InkWell(
           onTap: () {
             Navigator.push(
@@ -242,7 +257,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             );
           },
-          child: _buildStatItem("Followers", followers),
+          child: _buildStatItem(loc.followers, followers),
         ),
         InkWell(
           onTap: () {
@@ -256,7 +271,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             );
           },
-          child: _buildStatItem("Following", following),
+          child: _buildStatItem(loc.following, following),
         ),
       ],
     );
@@ -337,6 +352,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       final picker = ImagePicker();
+      final loc = AppLocalizations.of(context)!;
       final ImageSource? source = await showModalBottomSheet<ImageSource>(
         context: context,
         backgroundColor: Colors.grey[900],
@@ -345,21 +361,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Text('Update Profile Picture',
+                  child: Text(loc.updateProfilePicture,
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                 ),
                 const Divider(),
                 ListTile(
                   leading: const Icon(Icons.photo_library, color: Colors.blue),
-                  title: const Text("Photo Gallery"),
+                  title: Text(loc.photoGallery),
                   onTap: () => Navigator.pop(ctx, ImageSource.gallery),
                 ),
                 ListTile(
                   leading: const Icon(Icons.camera_alt, color: Colors.blue),
-                  title: const Text("Camera"),
+                  title: Text(loc.camera),
                   onTap: () => Navigator.pop(ctx, ImageSource.camera),
                 ),
                 const SizedBox(height: 10),
@@ -506,6 +522,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildActionButtons() {
+    final loc = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
@@ -526,8 +543,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 side: const BorderSide(color: Colors.white24),
                 padding: const EdgeInsets.symmetric(vertical: 10),
               ),
-              child: const Text("Edit Profile",
-                  style: TextStyle(color: Colors.white)),
+              child: Text(loc.editProfile,
+                  style: const TextStyle(color: Colors.white)),
             ),
           ),
           const SizedBox(width: 8),
@@ -538,7 +555,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 side: const BorderSide(color: Colors.white24),
                 padding: const EdgeInsets.symmetric(vertical: 10),
               ),
-              child: const Text("Share Profile",
+              child: Text(loc.shareProfile,
                   style: TextStyle(color: Colors.white)),
             ),
           ),
@@ -616,8 +633,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildTaggedGrid() {
+    final loc = AppLocalizations.of(context)!;
     // In a real app, you would fetch tagged posts
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -628,7 +646,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           SizedBox(height: 16),
           Text(
-            'No Photos',
+            loc.noPhotos,
             style: TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -639,49 +657,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
-
-  // void showCreateSection(BuildContext context) {
-  //   showModalBottomSheet(
-  //     context: context,
-  //     enableDrag: true,
-  //     showDragHandle: true,
-  //     backgroundColor: Colors.black,
-  //     isDismissible: true,
-  //     builder: (context) {
-  //       return GestureDetector(
-  //         onTap: () {}, // Prevents tap-through dismiss
-  //         child: DraggableScrollableSheet(
-  //           initialChildSize: 0.95,
-  //           minChildSize: 0.2,
-  //           maxChildSize: 0.95,
-  //           expand: false,
-  //           builder: (_, controller){
-  //             return Column(
-  //               children: [
-  //                 Row(
-  //                   crossAxisAlignment: CrossAxisAlignment.center,
-  //                   mainAxisAlignment: MainAxisAlignment.center,
-  //                   children: [
-  //                     Text("Create",style: TextStyle(fontSize: 16),),
-  //                   ],
-  //                 ),
-  //                 Column(
-  //                   children: [
-  //                     _buildCreateOption(icon: Icons.video_collection, label: "Reel", onTap: (){
-  //                     }),
-  //                     _buildCreateOption(icon: Icons.grid_3x3_outlined, label: "Post", onTap: (){
-  //                       _showImagePicker(Supabase.instance.client.auth.currentUser?.id);
-  //                     }),
-  //                   ],
-  //                 ),
-  //               ],
-  //             );
-  //           }
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
 
   void showCreateSection(BuildContext context) {
     showModalBottomSheet(
@@ -749,15 +724,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const CreatePostScreen(initialTabIndex: 3,)));
                     },
                   ),
-                  // _buildCreateOption(
-                  //   iconWidget: Icon(Icons.highlight,color: Colors.white,),
-                  //   label: 'Highlight',
-                  //   onTap: () {
-                  //     // Handle Highlight tap
-                  //     Navigator.pop(context);
-                  //     print('Highlight tapped!');
-                  //   },
-                  // ),
                   SizedBox(height: MediaQuery.of(context).padding.bottom), // Spacing for safe area
                 ],
               );

@@ -1,6 +1,7 @@
 import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 
@@ -30,9 +31,10 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Saved Posts'),
+        title: Text(loc.savedPosts),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
       ),
@@ -51,7 +53,7 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
             ),
             SizedBox(height: 16),
             Text(
-              'No saved posts yet',
+              loc.noPostSavedYet,
               style: TextStyle(
                 color: Colors.grey,
                 fontSize: 18,

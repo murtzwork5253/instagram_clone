@@ -114,7 +114,6 @@ class _CreateReelContentState extends State<CreateReelContent> with WidgetsBindi
         !_cameraService.controller!.value.isRecordingVideo) return;
 
     try {
-
       await _stopBackgroundMusic();
 
       final XFile file = await _cameraService.controller!.stopVideoRecording();
@@ -122,10 +121,23 @@ class _CreateReelContentState extends State<CreateReelContent> with WidgetsBindi
       setState(() {
         _isRecording = false;
       });
-      Navigator.push(context, MaterialPageRoute(builder: (_) => ReelPreviewScreen(recordedVideoPath: _recordedVideoPath!,backgroundMusicPath: _selectedAudioPath,)));
-      // print('Video saved to: $_recordedVideoPath');
+
+      // Stop camera before navigating to preview
+      await _cameraService.stopCamera();
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReelPreviewScreen(
+            recordedVideoPath: _recordedVideoPath!,
+            backgroundMusicPath: _selectedAudioPath,
+          ),
+        ),
+      ).then((_) {
+        // Restart camera when returning from preview
+        _cameraService.restartCamera(enableAudio: true);
+      });
     } on CameraException catch (e) {
-      // print('Error stopping video recording: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error stopping recording: ${e.description}')),
@@ -138,32 +150,34 @@ class _CreateReelContentState extends State<CreateReelContent> with WidgetsBindi
   Future<void> _pickVideoFromGallery() async {
     final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
     if (file != null) {
-      // Show a loading indicator while compressing (optional but recommended)
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Compressing video...'),
-          duration: Duration(seconds: 5), // Adjust as needed
+          duration: Duration(seconds: 5),
         ),
       );
 
-      // Compress the video
       final MediaInfo? compressedVideo = await VideoCompress.compressVideo(
         file.path,
-        quality: VideoQuality.MediumQuality, // You can adjust quality (Low, Medium, Highest)
-        deleteOrigin: false, // Set to true if you want to delete the original after compression
+        quality: VideoQuality.MediumQuality,
+        deleteOrigin: false,
         includeAudio: true,
       );
 
       if (compressedVideo != null && compressedVideo.path != null) {
-        // Navigate to ReelPreviewScreen with the compressed video path
+        // Stop camera before navigating to preview
+        await _cameraService.stopCamera();
+
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ReelPreviewScreen(recordedVideoPath: compressedVideo.path!),
           ),
-        );
+        ).then((_) {
+          // Restart camera when returning from preview
+          _cameraService.restartCamera(enableAudio: true);
+        });
       } else {
-        // Handle compression failure
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to compress video.'),
@@ -560,8 +574,6 @@ class _CreateReelContentState extends State<CreateReelContent> with WidgetsBindi
     _videoPlayerController?.dispose();
     _audioPlayer?.dispose();
     WidgetsBinding.instance.removeObserver(this);
-    // Don't dispose the camera service here as it's shared
-    // Only dispose when the entire camera flow is complete
     super.dispose();
   }
 }

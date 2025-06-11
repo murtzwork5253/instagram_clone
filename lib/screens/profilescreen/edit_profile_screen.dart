@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../l10n/app_localizations.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({Key? key}) : super(key: key);
@@ -89,6 +90,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     // If data is still loading, show a progress indicator.
     if (_isLoading) {
       return const Scaffold(
@@ -106,10 +108,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         backgroundColor: Colors.black,
         appBar: AppBar(
           backgroundColor: Colors.black,
-          title: const Text("Edit Profile", style: TextStyle(color: Colors.white)),
+          title: Text(loc.editProfile, style: const TextStyle(color: Colors.white)),
         ),
-        body: const Center(
-          child: Text('Failed to load profile data.', style: TextStyle(color: Colors.white)),
+        body: Center(
+          child: Text(loc.failedToLoadProfile, style: const TextStyle(color: Colors.white)),
         ),
       );
     }
@@ -120,7 +122,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         title:
-        const Text("Edit Profile", style: TextStyle(color: Colors.white)),
+        Text(loc.editProfile, style: const TextStyle(color: Colors.white)),
         actions: [
           IconButton(
             icon: const Icon(Icons.check, color: Colors.white),
@@ -132,33 +134,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Pass the nullable profile to _buildAvatarSection, but then handle null inside it.
             _buildAvatarSection(avatarUrl, profile!),
             const SizedBox(height: 16),
-            const Text("Change profile picture", style: TextStyle(color: Colors.blue, fontSize: 16)),
+            Text(loc.changeProfilePhoto, style: const TextStyle(color: Colors.blue, fontSize: 16)),
             const SizedBox(height: 12),
             TextField(
               controller: _nameController,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                  labelText: "Full Name",
-                  labelStyle: TextStyle(color: Colors.white70)),
+              decoration: InputDecoration(
+                  labelText: loc.fullName,
+                  labelStyle: const TextStyle(color: Colors.white70)),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _bioController,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                  labelText: "Bio",
-                  labelStyle: TextStyle(color: Colors.white70)),
+              decoration: InputDecoration(
+                  labelText: loc.bio,
+                  labelStyle: const TextStyle(color: Colors.white70)),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _websiteController,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                  labelText: "Website",
-                  labelStyle: TextStyle(color: Colors.white70)),
+              decoration: InputDecoration(
+                  labelText: loc.website,
+                  labelStyle: const TextStyle(color: Colors.white70)),
             ),
           ],
         ),

@@ -1,21 +1,19 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class ReportService {
+class ReportUserService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  Future<void> report({
-    required String targetType, // 'user', 'post', 'comment', 'reel', 'story'
-    required String targetId,
+  Future<void> reportUser({
+    required String reportedUserId,
     required String reason,
     String? details,
   }) async {
     final currentUserId = _supabase.auth.currentUser?.id;
     if (currentUserId == null) throw Exception('User not logged in');
 
-    await _supabase.from('reports').insert({
+    await _supabase.from('user_reports').insert({
       'reporter_id': currentUserId,
-      'target_type': targetType,
-      'target_id': targetId,
+      'reported_id': reportedUserId,
       'reason': reason,
       'details': details,
       'status': 'pending',

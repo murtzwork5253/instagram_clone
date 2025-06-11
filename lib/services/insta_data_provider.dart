@@ -138,6 +138,10 @@ class InstaDataProvider extends ChangeNotifier {
           commentCount: post.commentCount,
           isLiked: post.isLiked,
           isSaved: savedPostIds.contains(post.id),
+          disableComments: post.disableComments,
+          use_original_ratio: post.use_original_ratio,
+          image_transformation: post.image_transformation,
+          original_aspect_ratio: post.original_aspect_ratio,
         )).toList();
       } else {
         _posts = posts;
@@ -252,6 +256,10 @@ class InstaDataProvider extends ChangeNotifier {
           likeCount: likeCount,
           isLiked: isLiked,
           commentCount: commentCount,
+          disableComments: json['disable_comments'] ?? false,
+          use_original_ratio: json['use_original_ratio'],
+          image_transformation: json['image_transformation'],
+          original_aspect_ratio: (json['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
         );
 
         _suggestedPosts.add(post);
@@ -284,6 +292,7 @@ class InstaDataProvider extends ChangeNotifier {
           commentCount: post.commentCount,
           isLiked: post.isLiked,
           isSaved: savedPostIds.contains(post.id),
+          disableComments: post.disableComments,
         )).toList();
       }
 
@@ -341,27 +350,6 @@ class InstaDataProvider extends ChangeNotifier {
     }
   }
 
-
-  // Future<void> _fetchStories() async {
-  //   try {
-  //     print('Fetching stories...');
-  //     final fetchedStories = await SupabaseService.getStories();
-  //     // ADD THIS PRINT STATEMENT:
-  //     final currentUserAggregatedStory = fetchedStories.firstWhere(
-  //             (story) => story.userId == _currentUser?.id,
-  //         orElse: () => StoryData(id: '', userId: '', username: 'N/A', profileImageUrl: '', mediaUrl: '', isMe: false, hasStory: false, isViewed: false, createdAt: DateTime.now()) // Default for safety
-  //     );
-  //     print('InstaDataProvider - Current User Aggregated Story isViewed: ${currentUserAggregatedStory.isViewed}');
-  //     _stories = fetchedStories;
-  //     notifyListeners();
-  //   } catch (e) {
-  //     print('Error fetching stories: $e');
-  //     // Don't set error for stories as it's not critical
-  //   }
-  // }
-
-  // --- MODIFIED _fetchStories() METHOD ---
-  // Optimized version of _fetchStories() with better performance and cleaner logic
   Future<void> _fetchStories() async {
     try {
       print('Fetching stories...');
@@ -498,52 +486,67 @@ class InstaDataProvider extends ChangeNotifier {
 
   Future<void> likePost(String postId) async {
     try {
-      // Optimistic update
+      // Check if it's a regular post first
       final index = _posts.indexWhere((post) => post.id == postId);
-      if (index != -1) {
-        final post = _posts[index];
+      // Check if it's a suggested post
+      final suggestedIndex = _suggestedPosts.indexWhere((post) => post.id == postId);
+
+      PostData? targetPost;
+      bool isRegularPost = index != -1;
+      bool isSuggestedPost = suggestedIndex != -1;
+
+      // Optimistic update for regular posts
+      if (isRegularPost) {
+        targetPost = _posts[index];
         final newPosts = List<PostData>.from(_posts);
-        newPosts[index] = PostData(
-          id: post.id,
-          userId: post.userId,
-          username: post.username,
-          profileImageUrl: post.profileImageUrl,
-          imageUrl: post.imageUrl,
-          caption: post.caption,
-          location: post.location,
-          createdAt: post.createdAt,
-          likeCount: post.isLiked ? post.likeCount - 1 : post.likeCount + 1,
-          commentCount: post.commentCount,
-          isLiked: !post.isLiked,
-        );
+        newPosts[index] = _createUpdatedPost(targetPost, !targetPost.isLiked);
         _posts = newPosts;
         notifyListeners();
+      }
+
+      // Optimistic update for suggested posts
+      if (isSuggestedPost) {
+        targetPost = _suggestedPosts[suggestedIndex];
+        final newSuggestedPosts = List<PostData>.from(_suggestedPosts);
+        newSuggestedPosts[suggestedIndex] = _createUpdatedPost(targetPost, !targetPost.isLiked);
+        _suggestedPosts = newSuggestedPosts;
+        notifyListeners();
+      }
+
+      // If post not found in either list, return early
+      if (!isRegularPost && !isSuggestedPost) {
+        print("Post not found in either regular or suggested posts");
+        return;
       }
 
       // Actual API call
       final isLiked = await SupabaseService.toggleLike(postId);
 
-      // Update UI with actual state if needed (usually not necessary if optimistic update worked)
-      final updatedIndex = _posts.indexWhere((post) => post.id == postId);
-      if (updatedIndex != -1) {
-        final post = _posts[updatedIndex];
-        if (post.isLiked != isLiked) {
-          final newPosts = List<PostData>.from(_posts);
-          newPosts[updatedIndex] = PostData(
-            id: post.id,
-            userId: post.userId,
-            username: post.username,
-            profileImageUrl: post.profileImageUrl,
-            imageUrl: post.imageUrl,
-            caption: post.caption,
-            location: post.location,
-            createdAt: post.createdAt,
-            likeCount: isLiked ? post.likeCount + 1 : post.likeCount - 1,
-            commentCount: post.commentCount,
-            isLiked: isLiked,
-          );
-          _posts = newPosts;
-          notifyListeners();
+      // Update regular posts with actual state if needed
+      if (isRegularPost) {
+        final updatedIndex = _posts.indexWhere((post) => post.id == postId);
+        if (updatedIndex != -1) {
+          final post = _posts[updatedIndex];
+          if (post.isLiked != isLiked) {
+            final newPosts = List<PostData>.from(_posts);
+            newPosts[updatedIndex] = _createUpdatedPost(post, isLiked);
+            _posts = newPosts;
+            notifyListeners();
+          }
+        }
+      }
+
+      // Update suggested posts with actual state if needed
+      if (isSuggestedPost) {
+        final updatedSuggestedIndex = _suggestedPosts.indexWhere((post) => post.id == postId);
+        if (updatedSuggestedIndex != -1) {
+          final post = _suggestedPosts[updatedSuggestedIndex];
+          if (post.isLiked != isLiked) {
+            final newSuggestedPosts = List<PostData>.from(_suggestedPosts);
+            newSuggestedPosts[updatedSuggestedIndex] = _createUpdatedPost(post, isLiked);
+            _suggestedPosts = newSuggestedPosts;
+            notifyListeners();
+          }
         }
       }
     } catch (e) {
@@ -552,6 +555,30 @@ class InstaDataProvider extends ChangeNotifier {
       // Refresh feed to get correct state
       refreshFeed();
     }
+  }
+
+  // Helper method to create updated post (add this method to your provider)
+  PostData _createUpdatedPost(PostData originalPost, bool isLiked) {
+    return PostData(
+      id: originalPost.id,
+      userId: originalPost.userId,
+      username: originalPost.username,
+      profileImageUrl: originalPost.profileImageUrl,
+      imageUrl: originalPost.imageUrl,
+      caption: originalPost.caption,
+      location: originalPost.location,
+      createdAt: originalPost.createdAt,
+      likeCount: isLiked
+          ? (originalPost.isLiked ? originalPost.likeCount : originalPost.likeCount + 1)
+          : (originalPost.isLiked ? originalPost.likeCount - 1 : originalPost.likeCount),
+      commentCount: originalPost.commentCount,
+      isLiked: isLiked,
+      isSaved: originalPost.isSaved,
+      disableComments: originalPost.disableComments,
+      use_original_ratio: originalPost.use_original_ratio,
+      image_transformation: originalPost.image_transformation,
+      original_aspect_ratio: originalPost.original_aspect_ratio,
+    );
   }
 
   // Add these methods to your InstaDataProvider class
@@ -670,6 +697,10 @@ class InstaDataProvider extends ChangeNotifier {
         commentCount: post.commentCount,
         isLiked: post.isLiked,
         isSaved: isSaved, // Add this field
+        disableComments: post.disableComments,
+        use_original_ratio: post.use_original_ratio,
+        image_transformation: post.image_transformation,
+        original_aspect_ratio: post.original_aspect_ratio,
       );
     }
 
@@ -994,9 +1025,6 @@ class InstaDataProvider extends ChangeNotifier {
     }
   }
 
-  // Add these methods to your InstaDataProvider class:
-
-// Helper method to handle like updates for explore posts
   void updateExplorePostLike(String postId, bool isLiked) {
     // Try to find and update the post in the current posts list
     final postIndex = _posts.indexWhere((post) => post.id == postId);
@@ -1011,16 +1039,44 @@ class InstaDataProvider extends ChangeNotifier {
         caption: post.caption,
         location: post.location,
         createdAt: post.createdAt,
+        likeCount: post.likeCount,
+        commentCount: post.commentCount,
+        isLiked: isLiked,
+        isSaved: post.isSaved,
+        disableComments: post.disableComments,
+        use_original_ratio: post.use_original_ratio,
+        image_transformation: post.image_transformation,
+        original_aspect_ratio: post.original_aspect_ratio,
+      );
+    }
+
+    // Also update in suggested posts list
+    final suggestedIndex = _suggestedPosts.indexWhere((post) => post.id == postId);
+    if (suggestedIndex != -1) {
+      final post = _suggestedPosts[suggestedIndex];
+      _suggestedPosts[suggestedIndex] = PostData(
+        id: post.id,
+        userId: post.userId,
+        username: post.username,
+        profileImageUrl: post.profileImageUrl,
+        imageUrl: post.imageUrl,
+        caption: post.caption,
+        location: post.location,
+        createdAt: post.createdAt,
         likeCount: isLiked ? post.likeCount + 1 : post.likeCount - 1,
         commentCount: post.commentCount,
         isLiked: isLiked,
         isSaved: post.isSaved,
+        disableComments: post.disableComments,
+        use_original_ratio: post.use_original_ratio,
+        image_transformation: post.image_transformation,
+        original_aspect_ratio: post.original_aspect_ratio,
       );
-      notifyListeners();
     }
+
+    notifyListeners();
   }
 
-// Helper method to handle save updates for explore posts
   void updateExplorePostSave(String postId, bool isSaved) {
     // Try to find and update the post in the current posts list
     final postIndex = _posts.indexWhere((post) => post.id == postId);
@@ -1039,9 +1095,38 @@ class InstaDataProvider extends ChangeNotifier {
         commentCount: post.commentCount,
         isLiked: post.isLiked,
         isSaved: isSaved,
+        disableComments: post.disableComments,
+        use_original_ratio: post.use_original_ratio,
+        image_transformation: post.image_transformation,
+        original_aspect_ratio: post.original_aspect_ratio,
       );
-      notifyListeners();
     }
+
+    // Also update in suggested posts list
+    final suggestedIndex = _suggestedPosts.indexWhere((post) => post.id == postId);
+    if (suggestedIndex != -1) {
+      final post = _suggestedPosts[suggestedIndex];
+      _suggestedPosts[suggestedIndex] = PostData(
+        id: post.id,
+        userId: post.userId,
+        username: post.username,
+        profileImageUrl: post.profileImageUrl,
+        imageUrl: post.imageUrl,
+        caption: post.caption,
+        location: post.location,
+        createdAt: post.createdAt,
+        likeCount: post.likeCount,
+        commentCount: post.commentCount,
+        isLiked: post.isLiked,
+        isSaved: isSaved,
+        disableComments: post.disableComments,
+        use_original_ratio: post.use_original_ratio,
+        image_transformation: post.image_transformation,
+        original_aspect_ratio: post.original_aspect_ratio,
+      );
+    }
+
+    notifyListeners();
   }
 
 // Enhanced like method that works for both feed and explore posts
@@ -1087,6 +1172,10 @@ class InstaDataProvider extends ChangeNotifier {
             commentCount: post.commentCount,
             isLiked: false,
             isSaved: post.isSaved,
+            disableComments: post.disableComments,
+            use_original_ratio: post.use_original_ratio,
+            image_transformation: post.image_transformation,
+            original_aspect_ratio: post.original_aspect_ratio,
           );
         }
       } else {
@@ -1115,6 +1204,10 @@ class InstaDataProvider extends ChangeNotifier {
             commentCount: post.commentCount,
             isLiked: true,
             isSaved: post.isSaved,
+            disableComments: post.disableComments,
+            use_original_ratio: post.use_original_ratio,
+            image_transformation: post.image_transformation,
+            original_aspect_ratio: post.original_aspect_ratio,
           );
         }
       }

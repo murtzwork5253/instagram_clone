@@ -5,6 +5,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
+import '../../l10n/app_localizations.dart';
+import '../../providers/language_provider.dart';
 import '../../services/insta_data_provider.dart';
 import '../auth/login_page.dart';
 import '../auth/password_change_screen.dart';
@@ -74,24 +76,25 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
   }
 
   Future<bool> _showLogoutConfirmation() async {
+    final loc = AppLocalizations.of(context)!;
     return await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.grey[900],
-          title: const Text('Log Out', style: TextStyle(color: Colors.white)),
-          content: const Text(
-            'Are you sure you want to log out?',
-            style: TextStyle(color: Colors.white70),
+          title: Text(loc.logout, style: const TextStyle(color: Colors.white)),
+          content: Text(
+            loc.logoutConfirmation,
+            style: const TextStyle(color: Colors.white70),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel', style: TextStyle(color: Colors.blue)),
+              child: Text(loc.cancel, style: const TextStyle(color: Colors.blue)),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Log Out', style: TextStyle(color: Colors.red)),
+              child: Text(loc.logout, style: const TextStyle(color: Colors.red)),
             ),
           ],
         );
@@ -108,15 +111,16 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          "Settings and activity",
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Text(
+          loc.settings,
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -128,7 +132,7 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
           children: [
             _buildMenuItem(
               Icons.account_circle_outlined,
-              "Account",
+              loc.account,
                   () => _navigateToScreen(const AccountScreen()),
               true,
             ),
@@ -142,68 +146,68 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
 
             _buildMenuItem(
               OIcons.Iconsax.save_2_bold,
-              "Saved Posts",
+              loc.savedPosts,
                   () => _navigateToScreen(SavedPostsScreen()),
               false,
             ),
             // Main Settings Section
             _buildMenuItem(
               Icons.person_add_alt_1_outlined,
-              "Follow and invite friends",
+              loc.followAndInvite,
                   () => _navigateToScreen(const FollowInviteScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.notifications_none,
-              "Notifications",
+              loc.notifications,
                   () => _navigateToScreen(const NotificationsScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.lock_outline,
-              "Privacy",
+              loc.privacy,
                   () => _navigateToScreen(const PrivacyScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.supervised_user_circle_outlined,
-              "Supervision",
+              loc.supervision,
                   () => _navigateToScreen(const SupervisionScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.security,
-              "Security",
+              loc.security,
                   () => _navigateToScreen(const SecurityScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.credit_card,
-              "Payments",
+              loc.payments,
                   () => _navigateToScreen(const PaymentsScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.add_alert_outlined,
-              "Ads",
+              loc.ads,
                   () => _navigateToScreen(const AdsScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.language_outlined,
-              "Language",
+              loc.language,
                   () => _navigateToScreen(const LanguageScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.help_outline,
-              "Help",
+              loc.help,
                   () => _navigateToScreen(const HelpScreen()),
               true,
             ),
             _buildMenuItem(
               Icons.info_outline,
-              "About",
+              loc.about,
                   () => _navigateToScreen(const AboutScreen()),
               true,
             ),
@@ -213,7 +217,7 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
             // Logout Section
             _buildMenuItem(
               Icons.logout,
-              "Log out",
+              loc.logout,
               _logout,
               false,
             ),
@@ -703,37 +707,53 @@ class LanguageScreen extends StatefulWidget {
 }
 
 class _LanguageScreenState extends State<LanguageScreen> {
-  String _selectedLanguage = 'English';
-
-  final List<String> _languages = [
-    'English', 'Spanish', 'French', 'German', 'Italian',
-    'Portuguese', 'Japanese', 'Korean', 'Chinese', 'Hindi'
-  ];
+  final Map<String, String> _languages = {
+    'en': 'English',
+    'es': 'Español',
+    'gu': 'Gujarati',
+    // 'fr': 'Français',
+    // 'de': 'Deutsch',
+    // 'it': 'Italiano',
+    // 'pt': 'Português',
+    // 'ja': '日本語',
+    // 'ko': '한국어',
+    // 'zh': '中文',
+    // 'hi': 'हिन्दी'
+  };
 
   @override
   Widget build(BuildContext context) {
+    final languageProvider = Provider.of<LanguageProvider>(context);
+    final currentLocale = languageProvider.currentLocale.languageCode;
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Language'),
+        title: Text(AppLocalizations.of(context)!.language),
         elevation: 0,
       ),
       body: ListView.builder(
         itemCount: _languages.length,
         itemBuilder: (context, index) {
-          final language = _languages[index];
+          final languageCode = _languages.keys.elementAt(index);
+          final languageName = _languages[languageCode];
           return ListTile(
-            title: Text(language, style: const TextStyle(color: Colors.white)),
-            trailing: _selectedLanguage == language
+            title: Text(languageName!, style: const TextStyle(color: Colors.white)),
+            trailing: currentLocale == languageCode
                 ? const Icon(Icons.check, color: Colors.blue)
                 : null,
-            onTap: () {
-              setState(() => _selectedLanguage = language);
-              // ScaffoldMessenger.of(context).showSnackBar(
-              //   SnackBar(content: Text('Language changed to $language')),
-              // );
+            onTap: () async {
+              await languageProvider.setLanguage(languageCode);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Language changed to $languageName'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
             },
           );
         },

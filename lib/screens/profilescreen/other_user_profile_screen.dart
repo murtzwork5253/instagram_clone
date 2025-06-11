@@ -4,6 +4,7 @@ import 'package:Instagram/screens/profilescreen/single_post_view.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:Instagram/screens/profilescreen/followers_following_screen.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/blocked_users_service.dart';
 import 'report_user_dialog.dart';
 
@@ -53,7 +54,10 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
       isLoading = true;
     });
 
+    print("The user id is: ${widget.userId}");
     try {
+      final currentUserId = supabase.auth.currentUser!.id;
+
       // Load profile details
       final profileRes = await supabase
           .from('users')
@@ -67,6 +71,14 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           .select()
           .eq('user_id', widget.userId)
           .order('created_at', ascending: false);
+
+      // Check if current user is following this profile
+      final followingCheck = await supabase
+          .from('followers')
+          .select('id')
+          .eq('follower_id', currentUserId)
+          .eq('following_id', widget.userId)
+          .maybeSingle();
 
       // Load followers and following
       final followersRes = await supabase
@@ -84,11 +96,11 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
       final blockedIds = blockedUsers.map((u) => u['id']).toSet();
 
       final filteredFollowers = (followersRes as List)
-        .where((f) => !blockedIds.contains(f['follower_id']))
-        .toList();
+          .where((f) => !blockedIds.contains(f['follower_id']))
+          .toList();
       final filteredFollowing = (followingRes as List)
-        .where((f) => !blockedIds.contains(f['following_id']))
-        .toList();
+          .where((f) => !blockedIds.contains(f['following_id']))
+          .toList();
 
       setState(() {
         profile = profileRes;
@@ -96,6 +108,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
         followersCount = filteredFollowers.length;
         followingCount = filteredFollowing.length;
         postsCount = postsRes.length;
+        isFollowing = followingCheck != null; // Set the follow status
         isLoading = false;
       });
     } catch (e) {
@@ -181,6 +194,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     if (isLoading) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -240,7 +254,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
               SliverToBoxAdapter(
-                child: _buildProfileHeader(),
+                child: _buildProfileHeader(loc),
               ),
               SliverPersistentHeader(
                 delegate: _SliverAppBarDelegate(
@@ -269,7 +283,8 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     );
   }
 
-  Widget _buildProfileHeader() {
+  Widget _buildProfileHeader(dynamic loc) {
+    final loc = AppLocalizations.of(context)!;
     final rawAvatar = profile!['profile_image_url'];
     final avatarUrl = rawAvatar != null
         ? (rawAvatar.toString().startsWith('http')
@@ -311,11 +326,11 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildStatColumn(postsCount, 'Posts', null), // Posts are always visible
+                    _buildStatColumn(postsCount, loc.posts, null), // Posts are always visible
                     // Conditional display for Followers and Following lists
                     _buildStatColumn(
                       followersCount,
-                      'Followers',
+                      loc.followers,
                       isFollowing // Only enable tap if following
                           ? () {
                         Navigator.push(
@@ -339,7 +354,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                     ),
                     _buildStatColumn(
                       followingCount,
-                      'Following',
+                      loc.following,
                       isFollowing // Only enable tap if following
                           ? () {
                         Navigator.push(
@@ -406,7 +421,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                     padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
                   child: Text(
-                    isFollowing ? 'Following' : 'Follow',
+                    isFollowing ? loc.following : loc.follow,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                     ),
@@ -429,9 +444,9 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
-                  child: const Text(
-                    'Message',
-                    style: TextStyle(
+                  child: Text(
+                    loc.message,
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -480,6 +495,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
 
   // Modified _buildStatColumn to accept an onTap callback
   Widget _buildStatColumn(int count, String label, VoidCallback? onTap) {
+    final loc = AppLocalizations.of(context)!;
     return GestureDetector(
       onTap: onTap, // Assign the onTap callback here
       child: Column(
@@ -554,6 +570,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   }
 
   Widget _buildPostsGrid() {
+    final loc = AppLocalizations.of(context)!;
     // Check if user is following or if it's their own profile
     final currentUserId = supabase.auth.currentUser!.id;
     final isOwnProfile = widget.userId == currentUserId;
@@ -570,18 +587,18 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
               size: 70,
             ),
             const SizedBox(height: 16),
-            const Text(
-              'This Account is Private',
-              style: TextStyle(
+            Text(
+              loc.accountPrivate,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Follow this account to see their posts',
-              style: TextStyle(
+            Text(
+              loc.followToSeePosts,
+              style: const TextStyle(
                 color: Colors.grey,
                 fontSize: 16,
               ),
@@ -603,9 +620,9 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
               size: 70,
             ),
             const SizedBox(height: 16),
-            const Text(
-              'No Posts Yet',
-              style: TextStyle(
+            Text(
+              loc.noPostYet,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -615,6 +632,13 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
         ),
       );
     }
+
+    final rawAvatar = profile!['profile_image_url'];
+    final avatarUrl = rawAvatar != null
+        ? (rawAvatar.toString().startsWith('http')
+        ? rawAvatar
+        : supabase.storage.from('avatars').getPublicUrl(rawAvatar))
+        : null;
 
     return GridView.builder(
       padding: const EdgeInsets.all(1),
@@ -647,8 +671,13 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                     likeCount: posts[index]['like_count'] ?? 0,
                     commentCount: posts[index]['comment_count']?? 0,
                     isLiked: posts[index]['is_liked'] ?? false,
+                    isSaved: posts[index]['is_saved'] ?? false,
+                    disableComments: posts[index]['disable_comments'] ?? false,
+                    use_original_ratio: posts[index]['use_original_ratio'],
+                    image_transformation: posts[index]['image_transformation'],
+                    original_aspect_ratio: (posts[index]['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
                   ),
-                  Url: mediaUrl,
+                  Url: avatarUrl,
 
                 ),
               ),
@@ -668,8 +697,9 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   }
 
   Widget _buildTaggedGrid() {
+    final loc = AppLocalizations.of(context)!;
     // In a real app, you would fetch tagged posts
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -680,7 +710,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           ),
           SizedBox(height: 16),
           Text(
-            'No Photos',
+            loc.noPhotos,
             style: TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -693,6 +723,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   }
 
   void _showOptions() {
+    final loc = AppLocalizations.of(context)!;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
@@ -731,19 +762,19 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           ),
           ListTile(
             leading: const Icon(Icons.share, color: Colors.white),
-            title: const Text('Share Profile',
+            title: Text(loc.shareProfile,
                 style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.person_add_disabled, color: Colors.white),
-            title: const Text('Restrict', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
+          // ListTile(
+          //   leading: const Icon(Icons.person_add_disabled, color: Colors.white),
+          //   title: const Text('Restrict', style: TextStyle(color: Colors.white)),
+          //   onTap: () {
+          //     Navigator.pop(context);
+          //   },
+          // ),
           const SizedBox(height: 8),
         ],
       ),

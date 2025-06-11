@@ -246,7 +246,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                   ),
                 ),
               ),
-              // --- END MODIFIED STORIES SECTION ---
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                       (context, index) {
@@ -299,46 +298,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
     );
   }
 
-  // Widget _buildStories(List<StoryData> stories) {
-  //   // Group all stories by userId
-  //   final Map<String, List<StoryData>> groupedStories = {};
-  //
-  //
-  //   for (final story in stories) {
-  //     groupedStories.putIfAbsent(story.userId, () => []).add(story);
-  //   }
-  //
-  //   // Convert grouped values into a list
-  //   final List<List<StoryData>> groupedList = groupedStories.values.toList();
-  //
-  //
-  //   // Sort user groups: isMe first, then unviewed, then viewed
-  //   groupedList.sort((a, b) {
-  //     final storyA = a.first;
-  //     final storyB = b.first;
-  //
-  //     if (storyA.isMe) return -1;
-  //     if (storyB.isMe) return 1;
-  //     if (!storyA.isViewed && storyB.isViewed) return -1;
-  //     if (storyA.isViewed && !storyB.isViewed) return 1;
-  //     return 0;
-  //   });
-  //
-  //   return Container(
-  //     height: 110,
-  //     child: ListView.builder(
-  //       scrollDirection: Axis.horizontal,
-  //       itemCount: groupedList.length,
-  //       itemBuilder: (context, index) {
-  //         final userStories = groupedList[index];
-  //         return _buildStoryItem(userStories);
-  //       },
-  //     ),
-  //   );
-  // }
-
-  // --- MODIFIED _buildStoryItem METHOD ---
-  // Now accepts a single StoryData object (the aggregated one)
   Widget _buildStoryItem(StoryData story, BuildContext context) {
     // No need for userStories.first, 'story' is already the aggregated object
     final String imageUrl = story.profileImageUrl ?? '';
@@ -642,40 +601,74 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
         // Rest of the post content remains the same...
         GestureDetector(
           onDoubleTap: () {
+            // Only handle like action, don't interfere with image display
             Provider.of<InstaDataProvider>(context, listen: false)
                 .likePost(post.id);
+
+            // Force a rebuild by calling setState if this is a suggested post
+            if (!isFollowing && mounted) {
+              setState(() {});
+            }
           },
-          child: Image.network(
-            post.imageUrl,
-            width: double.infinity,
-            height: MediaQuery.of(context).size.width,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                width: double.infinity,
-                height: MediaQuery.of(context).size.width,
-                color: Colors.grey[900],
-                child: Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded /
-                        loadingProgress.expectedTotalBytes!
-                        : null,
+          child: AspectRatio(
+            aspectRatio: 1.0, // Always Instagram's 1:1 container
+            child: Container(
+              color: Colors.black,
+              child: () {
+                // Parse the stored display preferences
+                final bool useOriginalRatio = post.use_original_ratio ?? false;
+                final String? transformationString = post.image_transformation;
+
+                Matrix4 transformation = Matrix4.identity();
+                if (transformationString != null && transformationString.isNotEmpty) {
+                  try {
+                    final values = transformationString.split(',').map((e) => double.parse(e)).toList();
+                    if (values.length == 16) { // Matrix4 has 16 values
+                      transformation = Matrix4.fromList(values);
+                    }
+                  } catch (e) {
+                    // If parsing fails, use identity matrix
+                    transformation = Matrix4.identity();
+                  }
+                }
+
+                return Transform(
+                  transform: transformation,
+                  child: Image.network(
+                    post.imageUrl,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: useOriginalRatio ? BoxFit.contain : BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        color: Colors.grey[900],
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        color: Colors.grey[900],
+                        child: const Center(
+                          child: Icon(Icons.error, color: Colors.white),
+                        ),
+                      );
+                    },
                   ),
-                ),
-              );
-            },
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: double.infinity,
-                height: MediaQuery.of(context).size.width,
-                color: Colors.grey[900],
-                child: Center(
-                  child: Icon(Icons.error, color: Colors.white),
-                ),
-              );
-            },
+                );
+              }(),
+            ),
           ),
         ),
         Padding(
@@ -689,6 +682,11 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                     onTap: () {
                       Provider.of<InstaDataProvider>(context, listen: false)
                           .likePost(post.id);
+
+                      // Force a rebuild by calling setState if this is a suggested post
+                      if (!isFollowing && mounted) {
+                        setState(() {});
+                      }
                     },
                     child: Icon(
                       post.isLiked ? Icons.favorite : Icons.favorite_border,
@@ -705,25 +703,28 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                     ),
                   ),
                   SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: () {
-                      showCommentSection(context, post.id);
-                    },
-                    child: Icon(
-                      OIcons.EvaIcons.message_circle_outline,
-                      color: Colors.white,
-                      size: 27,
+                  // Only show comment button if comments are enabled
+                  if (!post.disableComments) ...[
+                    GestureDetector(
+                      onTap: () {
+                        showCommentSection(context, post.id);
+                      },
+                      child: Icon(
+                        OIcons.EvaIcons.message_circle_outline,
+                        color: Colors.white,
+                        size: 27,
+                      ),
                     ),
-                  ),
-                  SizedBox(width: 3),
-                  Text(
-                    '${post.commentCount}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                    SizedBox(width: 3),
+                    Text(
+                      '${post.commentCount}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  SizedBox(width: 12),
+                    SizedBox(width: 12),
+                  ],
                   GestureDetector(
                       onTap: () {
                         _showShareOptions(post);

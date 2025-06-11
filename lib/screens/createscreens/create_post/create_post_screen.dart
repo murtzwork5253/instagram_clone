@@ -9,8 +9,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:icons_plus/icons_plus.dart' as OIcons;
 
+import '../../../l10n/app_localizations.dart';
 import '../camera_service.dart';
+import 'location_selection_screen.dart';
 
 // Define an enum to manage the different stages of post creation
 enum PostCreationStage {
@@ -42,6 +45,16 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   bool _isLoadingGallery = true;
   bool _hasRequestedPermission = false;
   late CameraService _cameraService;
+  String _selectedAlbum = 'Recent';
+  List<AssetPathEntity> _availableAlbums = [];
+  double _mediaAspectRatio = 1.0;
+  bool _useOriginalAspectRatio = false;
+  Matrix4 _transformation = Matrix4.identity();
+  final TransformationController _transformationController = TransformationController();
+
+  // Add these new fields:
+  bool _postUseOriginalRatio = false; // Store the ratio choice for this post
+  Matrix4 _postTransformation = Matrix4.identity(); // Store the zoom/pan state
 
   // Replaced TabController with PageController and ScrollController for custom tabs
   PageController _pageController = PageController();
@@ -51,39 +64,51 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
 
   PostCreationStage _currentStage = PostCreationStage.gallerySelection; // Start at gallery selection
 
+  // NEW CODE - Replace the above section with this:
   @override
   void initState() {
     super.initState();
-    // Initialize _selectedIndex and _pageController based on initialTabIndex
     _selectedIndex = widget.initialTabIndex;
     _pageController = PageController(initialPage: _selectedIndex);
 
     _cameraService = CameraService();
-    _initializeCamera();
+    _handleTabChange(_selectedIndex);
+
     _pageController.addListener(() {
-      if (_pageController.page?.round() != _selectedIndex) {
+      final newIndex = _pageController.page?.round();
+      if (newIndex != null && newIndex != _selectedIndex) {
         setState(() {
-          _selectedIndex = _pageController.page!.round();
-          _centerTab(_selectedIndex); // Center the tab when PageView changes
+          _selectedIndex = newIndex;
+          _centerTab(_selectedIndex);
+          _handleTabChange(_selectedIndex);
         });
       }
     });
 
-    // Request permissions and fetch media as soon as the screen is built
     requestPermissionAndFetchMedia();
   }
 
-  Future<void> _initializeCamera() async {
-    // Initialize camera with audio enabled (for reels)
-    await _cameraService.initializeCamera(enableAudio: true);
+  Future<void> _handleTabChange(int index) async {
+    switch (index) {
+      case 1: // STORY
+        await _cameraService.restartCamera(enableAudio: false);
+        break;
+      case 2: // REEL
+        await _cameraService.restartCamera(enableAudio: true);
+        break;
+      default: // POST or LIVE
+        await _cameraService.stopCamera();
+        break;
+    }
   }
 
   @override
   void dispose() {
     _pageController.dispose();
-    _scrollController.dispose(); // Dispose scroll controller
+    _scrollController.dispose();
     _captionController.dispose();
     _cameraService.dispose();
+    _transformationController.dispose();
     super.dispose();
   }
 
@@ -213,34 +238,59 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     setState(() {
       _isLoadingGallery = true;
     });
+
     try {
+      // Fetch all available albums
       final List<AssetPathEntity> albums = await PhotoManager.getAssetPathList(
-        type: RequestType.image, // Fetch only images for now
+        type: RequestType.image,
         hasAll: true,
       );
 
       if (albums.isNotEmpty) {
-        final AssetPathEntity recentAlbum = albums.first;
-        final List<AssetEntity> assets = await recentAlbum.getAssetListPaged(
+
+        final Map<String, AssetPathEntity> uniqueAlbums = {};
+        for (final album in albums) {
+          if (!uniqueAlbums.containsKey(album.name)) {
+            uniqueAlbums[album.name] = album;
+          }
+        }
+
+        final List<AssetPathEntity> filteredAlbums = uniqueAlbums.values.toList();
+        if (mounted) {
+          setState(() {
+            _availableAlbums = filteredAlbums;
+            // Ensure selected album exists in available albums, otherwise use first
+            if (!filteredAlbums.any((album) => album.name == _selectedAlbum)) {
+              _selectedAlbum = filteredAlbums.first.name;
+            }
+          });
+        }
+
+        // Find the selected album or use the first one (Recent)
+        AssetPathEntity selectedAlbumEntity = filteredAlbums.firstWhere(
+              (album) => album.name == _selectedAlbum,
+          orElse: () => filteredAlbums.first,
+        );
+
+        final List<AssetEntity> assets = await selectedAlbumEntity.getAssetListPaged(
           page: 0,
-          size: 50, // Fetch up to 50 recent images for preview
+          size: 50,
         );
 
         if (mounted) {
           setState(() {
             _galleryAssets = assets;
-            if (assets.isNotEmpty) {
-              if (_selectedMedia == null) {
-                _setSelectedMediaFromAsset(assets.first);
-              }
-            } else {
-              _selectedMedia = null; // No assets found
+            if (assets.isNotEmpty && _selectedMedia == null) {
+              _setSelectedMediaFromAsset(assets.first);
+            } else if (assets.isEmpty) {
+              _selectedMedia = null;
             }
           });
         }
       } else {
         if (mounted) {
           setState(() {
+            _availableAlbums = [];
             _galleryAssets = [];
             _selectedMedia = null;
           });
@@ -265,9 +315,16 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   Future<void> _setSelectedMediaFromAsset(AssetEntity asset) async {
     final File? file = await asset.file;
     if (file != null) {
+      // Calculate aspect ratio
+      double aspectRatio = asset.width / asset.height;
+
       if (mounted) {
         setState(() {
           _selectedMedia = XFile(file.path);
+          _mediaAspectRatio = aspectRatio;
+          _useOriginalAspectRatio = false; // Default to Instagram ratio
+          _transformation = Matrix4.identity(); // Reset zoom
+          _transformationController.value = Matrix4.identity();
         });
       }
     }
@@ -413,9 +470,11 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
         'caption': _captionController.text.trim(),
         'image_url': mediaUrl,
         'location': _location,
-        // 'disable_comments': _disableComments,
-        // 'share_to_other_platforms': _shareToOtherPlatforms,
+        'disable_comments': _disableComments,
         'created_at': DateTime.now().toUtc().toIso8601String(),
+        'use_original_ratio': _useOriginalAspectRatio,
+        'image_transformation': _transformation.storage.join(','), // Store as comma-separated string
+        'original_aspect_ratio': _mediaAspectRatio,
       });
 
       if (mounted) {
@@ -443,6 +502,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   void _openAdvancedSettings() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.black,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
@@ -451,27 +511,48 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  ListTile(
+                    title: const Text(
+                      'Advanced Settings',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                  const Divider(color: Colors.grey),
                   SwitchListTile(
-                    title: const Text('Disable Comments'),
+                    title: const Text(
+                      'Disable Comments',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    subtitle: const Text(
+                      'Turn off commenting on this post',
+                      style: TextStyle(color: Colors.grey),
+                    ),
                     value: _disableComments,
+                    activeColor: Colors.blue,
                     onChanged: (value) {
                       setModalState(() {
                         _disableComments = value;
                       });
-                    },
-                  ),
-                  SwitchListTile(
-                    title: const Text('Share to Other Platforms'),
-                    value: _shareToOtherPlatforms,
-                    onChanged: (value) {
-                      setModalState(() {
-                        _shareToOtherPlatforms = value;
+                      setState(() {
+                        _disableComments = value;
                       });
                     },
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      minimumSize: const Size(double.infinity, 45),
+                    ),
                     child: const Text('Done'),
                   ),
                 ],
@@ -483,15 +564,36 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     );
   }
 
-  void _selectLocation() async {
-    // In a real app, you'd use a location picker package here.
-    if (mounted) {
+  void _onAlbumChanged(String? newAlbum) {
+    if (newAlbum != null && newAlbum != _selectedAlbum) {
       setState(() {
-        _location = 'Surat, Gujarat, India'; // Example dummy location
+        _selectedAlbum = newAlbum;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location added (simulated).')),
-      );
+      _fetchGalleryMedia();
+    }
+  }
+
+// 6. Method to toggle aspect ratio
+  void _toggleAspectRatio() {
+    setState(() {
+      _useOriginalAspectRatio = !_useOriginalAspectRatio;
+      _transformation = Matrix4.identity(); // Reset zoom when changing aspect ratio
+      _transformationController.value = Matrix4.identity();
+    });
+  }
+
+  void _selectLocation() async {
+    final selectedLocation = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const LocationSelectionScreen(),
+      ),
+    );
+
+    if (selectedLocation != null && mounted) {
+      setState(() {
+        _location = selectedLocation;
+      });
     }
   }
 
@@ -499,66 +601,168 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   Widget _buildGallerySelectionUI() {
     return Column(
       children: [
-        AspectRatio(
-          aspectRatio: 1,
-          child: Container(
-            color: Colors.black, // Darker background for media preview
-            child: _selectedMedia != null
-                ? Image.file(
-              File(_selectedMedia!.path),
-              fit: BoxFit.cover,
-            )
-                : const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.photo_library, size: 60, color: Colors.white70),
-                  SizedBox(height: 10),
-                  Text('Select media from gallery below', style: TextStyle(color: Colors.white70)),
-                ],
+        // Media Preview with Zoom and Aspect Ratio Controls
+        Stack(
+          children: [
+            // Fixed Instagram 1:1 container
+            AspectRatio(
+              aspectRatio: 1.0, // Always maintain Instagram's 1:1 ratio for container
+              child: Container(
+                color: Colors.black,
+                child: _selectedMedia != null
+                    ? InteractiveViewer(
+                  transformationController: _transformationController,
+                  minScale: 0.5,
+                  maxScale: 3.0,
+                  onInteractionUpdate: (details) {
+                    setState(() {
+                      _transformation = _transformationController.value;
+                    });
+                  },
+                  child: Image.file(
+                    File(_selectedMedia!.path),
+                    // Change fit based on aspect ratio toggle
+                    fit: _useOriginalAspectRatio ? BoxFit.contain : BoxFit.cover,
+                  ),
+                )
+                    : const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.photo_library, size: 60, color: Colors.white70),
+                      SizedBox(height: 10),
+                      Text('Select media from gallery below', style: TextStyle(color: Colors.white70)),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+
+            // Aspect Ratio Toggle Button (bottom-left)
+            if (_selectedMedia != null)
+              Positioned(
+                left: 16,
+                bottom: 10,
+                child: GestureDetector(
+                  onTap: _toggleAspectRatio,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _useOriginalAspectRatio ? Icons.crop_free : OIcons.EvaIcons.expand,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+
+            // Zoom Reset Button (top-right)
+            if (_selectedMedia != null)
+              Positioned(
+                top: 16,
+                right: 16,
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _transformation = Matrix4.identity();
+                      _transformationController.value = Matrix4.identity();
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.zoom_out_map,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
-        // Dropdown for Recents/Photos/Videos (placeholder)
+
+        // Enhanced Controls Row
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 6.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Recents Dropdown
-              DropdownButton<String>(
-                value: 'Recents', // Currently fixed
-                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black),
-                items: const <String>['Recents', 'Photos', 'Videos'].map((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  // Implement filtering logic here based on newValue
-                  debugPrint('Selected gallery filter: $newValue');
-                },
-              ),
-              // Select Multiple Button
-              ElevatedButton(
-                onPressed: _pickMultipleImages, // Enable this if you implement multiple image picking
-                style: ElevatedButton.styleFrom(
-                  fixedSize: const Size(134, 20),
-                  backgroundColor: Colors.grey[400], // Background color
-                  foregroundColor: Colors.black, // Text color
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
+              // Album Dropdown
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: DropdownButton<String>(
+                  value: _selectedAlbum,
+                  icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                  underline: const SizedBox(), // Remove default underline
+                  items: _availableAlbums.map((AssetPathEntity album) {
+                    return DropdownMenuItem<String>(
+                      value: album.name,
+                      child: Text(
+                        album.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: _onAlbumChanged,
                 ),
-                child: const Text('SELECT MULTIPLE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+              ),
+
+              // Aspect Ratio Info and Select Multiple Button
+              Row(
+                children: [
+                  // // Aspect Ratio Indicator
+                  // if (_selectedMedia != null)
+                  //   Container(
+                  //     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  //     margin: const EdgeInsets.only(right: 8),
+                  //     decoration: BoxDecoration(
+                  //       color: Colors.grey.shade200,
+                  //       borderRadius: BorderRadius.circular(12),
+                  //     ),
+                  //     child: Text(
+                  //       _useOriginalAspectRatio
+                  //           ? '${_mediaAspectRatio.toStringAsFixed(2)}:1'
+                  //           : '1:1',
+                  //       style: const TextStyle(
+                  //         fontSize: 12,
+                  //         fontWeight: FontWeight.bold,
+                  //         color: Colors.black,
+                  //       ),
+                  //     ),
+                  //   ),
+
+                  // Select Multiple Button
+                  ElevatedButton(
+                    onPressed: _pickMultipleImages,
+                    style: ElevatedButton.styleFrom(
+                      fixedSize: const Size(134, 30),
+                      backgroundColor: Colors.grey[400],
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: const Text(
+                      'SELECT MULTIPLE',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
+
         Expanded(
-          child: _buildGalleryGrid(), // The grid view for gallery images
+          child: _buildGalleryGrid(),
         ),
       ],
     );
@@ -642,31 +846,63 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
 
   // --- UI building methods for Post Details Stage ---
   Widget _buildPostDetailsUI() {
-    return SafeArea( // Added SafeArea here for the caption details screen
+    return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Media Preview with current aspect ratio and zoom state
           AspectRatio(
-            aspectRatio: 1, // Instagram post aspect ratio
+            aspectRatio: 1.0, // Always maintain Instagram's 1:1 container
             child: Container(
               color: Colors.black,
               child: _selectedMedia != null
-                  ? Image.file(
-                File(_selectedMedia!.path),
-                fit: BoxFit.cover,
+                  ? Transform(
+                transform: _transformation,
+                child: Image.file(
+                  File(_selectedMedia!.path),
+                  // Change fit based on aspect ratio toggle
+                  fit: _useOriginalAspectRatio ? BoxFit.contain : BoxFit.cover,
+                ),
               )
-                  : const Center(child: Text('No media selected', style: TextStyle(color: Colors.white70))),
+                  : const Center(
+                child: Text(
+                  'No media selected',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
             ),
           ),
+
+          // // Aspect Ratio Info
+          // if (_selectedMedia != null)
+          //   Container(
+          //     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          //     color: Colors.grey.shade100,
+          //     child: Row(
+          //       children: [
+          //         Icon(Icons.info_outline, size: 16, color: Colors.grey.shade600),
+          //         const SizedBox(width: 8),
+          //         Text(
+          //           'Aspect Ratio: ${_useOriginalAspectRatio ? '${_mediaAspectRatio.toStringAsFixed(2)}:1 (Original)' : '1:1 (Instagram)'}',
+          //           style: TextStyle(
+          //             color: Colors.grey.shade600,
+          //             fontSize: 12,
+          //           ),
+          //         ),
+          //       ],
+          //     ),
+          //   ),
+
+          // Caption Input
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
               controller: _captionController,
               maxLines: 4,
-              style: TextStyle(color: Colors.white),
+              style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 hintText: 'Write a caption...',
-                hintStyle: TextStyle(color: Colors.white),
+                hintStyle: const TextStyle(color: Colors.white),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10.0),
                   borderSide: BorderSide.none,
@@ -676,23 +912,32 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
               ),
             ),
           ),
+
           const Divider(),
+
+          // Location Selection
           ListTile(
             leading: const Icon(Icons.location_on_outlined, color: Colors.grey),
             title: Text(
               _location ?? 'Add Location',
-              style: TextStyle(color: _location == null ? Colors.grey[700] : Colors.white),
+              style: TextStyle(
+                color: _location == null ? Colors.grey[700] : Colors.white,
+              ),
             ),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
             onTap: _selectLocation,
           ),
+
           const Divider(),
+
+          // Advanced Settings
           ListTile(
             leading: const Icon(Icons.settings_outlined, color: Colors.grey),
             title: const Text('Advanced Settings'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
             onTap: _openAdvancedSettings,
           ),
+
           const Divider(),
         ],
       ),
@@ -701,6 +946,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     // Determine PageView scrolling physics
     final ScrollPhysics pageViewPhysics = _currentStage == PostCreationStage.gallerySelection
         ? const PageScrollPhysics() // Enable scrolling in gallery selection
@@ -729,8 +975,8 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
             }
           },
         ),
-        title: const Text(
-          'New post',
+        title: Text(
+          loc!.newPost,
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
@@ -744,8 +990,11 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
                   );
                   return;
                 }
+                // Save the current display state before moving to details
                 setState(() {
-                  _currentStage = PostCreationStage.postDetails; // Move to post details
+                  _postUseOriginalRatio = _useOriginalAspectRatio;
+                  _postTransformation = _transformation;
+                  _currentStage = PostCreationStage.postDetails;
                 });
               } else {
                 _createPost(); // Call the share function
