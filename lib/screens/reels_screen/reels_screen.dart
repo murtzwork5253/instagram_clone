@@ -7,7 +7,9 @@ import '../createscreens/create_post/create_post_screen.dart';
 import '/screens/reels_screen/reel_provider.dart';
 
 class ReelsScreen extends StatefulWidget {
-  const ReelsScreen({super.key});
+  final ValueNotifier<int> refreshNotifier;
+
+  const ReelsScreen({super.key, required this.refreshNotifier});
 
   @override
   State<ReelsScreen> createState() => _ReelsScreenState();

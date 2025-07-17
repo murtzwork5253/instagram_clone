@@ -76,7 +76,10 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
             onTap: () {
               // Navigate to post detail or full screen view
               // You can implement this based on your app's navigation
-              Navigator.push(context, MaterialPageRoute(builder: (_) => SinglePostView(post: post, Url: post.profileImageUrl!)));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => SinglePostView(
+                  posts: savedPosts ,
+                  initialIndex: index,
+                  Url: post.profileImageUrl!)));
             },
             child: Container(
               decoration: BoxDecoration(

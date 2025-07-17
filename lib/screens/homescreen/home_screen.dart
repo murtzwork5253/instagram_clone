@@ -25,6 +25,7 @@ class _HomePageState extends State<HomeDashboard> {
   final ValueNotifier<int> homeRefreshNotifier = ValueNotifier(0);
   final ValueNotifier<int> profileRefreshNotifier = ValueNotifier(0);
   final ValueNotifier<int> searchRefreshNotifier = ValueNotifier(0);
+  final ValueNotifier<int> reelsRefreshNotifier = ValueNotifier(0);
 
   void initState() {
     super.initState();
@@ -213,7 +214,7 @@ class _HomePageState extends State<HomeDashboard> {
             children: [
               _pages[0], // Home
               _pages[1], // Search
-              _selectedBodyIndex == 2 ? const ReelsScreen() : Container(), // Only create ReelsScreen when selected
+              _selectedBodyIndex == 2 ? ReelsScreen(refreshNotifier: reelsRefreshNotifier,) : Container(), // Only create ReelsScreen when selected
               _pages[3], // Profile
             ],
           ),
@@ -259,6 +260,9 @@ class _HomePageState extends State<HomeDashboard> {
         break;
       case 1:
         searchRefreshNotifier.value++;
+        break;
+      case 3:
+        reelsRefreshNotifier.value++;
         break;
       case 4: // Profile (assuming profile tab is index 4)
         profileRefreshNotifier.value++;

@@ -65,7 +65,9 @@ class Assets {
   static const String l10nAppLocalizationsGu = 'lib/l10n/app_localizations_gu.dart';
   static const String libMain = 'lib/main.dart';
   static const String modelModels = 'lib/screens/chatscreen/model/models.dart';
+  static const String modelNotificationModel = 'lib/screens/notificationscreen/model/notification_model.dart';
   static const String moonApp = '.env';
+  static const String notificationscreenNotificationScreen = 'lib/screens/notificationscreen/notification_screen.dart';
   static const String profilescreenBlockedUsersScreen = 'lib/screens/profilescreen/blocked_users_screen.dart';
   static const String profilescreenCurrentUserProfile = 'lib/screens/profilescreen/current_user_profile.dart';
   static const String profilescreenEditProfileScreen = 'lib/screens/profilescreen/edit_profile_screen.dart';
@@ -86,6 +88,7 @@ class Assets {
   static const String searchscreenSearchScreen = 'lib/screens/searchscreen/search_screen.dart';
   static const String searchscreenSearchScreenState = 'lib/screens/searchscreen/search_screen_state.dart';
   static const String serviceAuthService = 'lib/screens/auth/service/auth_service.dart';
+  static const String serviceNotificationService = 'lib/screens/notificationscreen/service/notification_service.dart';
   static const String servicesAccountManager = 'lib/services/account_manager.dart';
   static const String servicesBlockedUsersService = 'lib/services/blocked_users_service.dart';
   static const String servicesInstaDataProvider = 'lib/services/insta_data_provider.dart';
@@ -94,5 +97,8 @@ class Assets {
   static const String servicesSupabaseService = 'lib/services/supabase_service.dart';
   static const String servicesSupabaseStorageService = 'lib/services/supabase_storage_service.dart';
   static const String splashSplashScreen = 'lib/screens/splash/splash_screen.dart';
+  static const String userTaggingUserModel = 'lib/screens/user_tagging/user_model.dart';
+  static const String userTaggingUserTaggingScreen = 'lib/screens/user_tagging/user_tagging_screen.dart';
+  static const String userTaggingUserTaggingService = 'lib/screens/user_tagging/user_tagging_service.dart';
 
 }

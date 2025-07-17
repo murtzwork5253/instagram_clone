@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
 class CameraService extends ChangeNotifier {
-  static final CameraService _instance = CameraService._internal();
-  factory CameraService() => _instance;
-  CameraService._internal();
-
+  // Remove singleton pattern: no static _instance, no factory
   CameraController? _controller;
   bool _isCameraInitialized = false;
   CameraDescription? _selectedCamera;
@@ -22,6 +19,7 @@ class CameraService extends ChangeNotifier {
   bool get isFlashOn => _isFlashOn;
   bool get isFrontCamera => _isFrontCamera;
   List<CameraDescription> get cameras => _cameras;
+  bool get isDisposed => _isDisposed;
 
   Future<void> initializeCameras() async {
     if (_cameras.isEmpty) {

@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,12 +15,14 @@ class ChatScreen extends StatefulWidget {
   final String currentUserId;
   final String? initialChatUserId;
   final bool? cameFromProfile; // NEW: Track if came from profile
+  final VoidCallback? onMessageRead;
 
   const ChatScreen({
     Key? key,
     required this.currentUserId,
     this.initialChatUserId,
-    this.cameFromProfile
+    this.cameFromProfile,
+    this.onMessageRead,
   }) : super(key: key);
 
   @override
@@ -268,10 +272,17 @@ class _ChatScreenState extends State<ChatScreen>
   Future<void> _markCurrentChatAsRead() async {
     if (_selectedChatUserId == null) return;
 
-    await _messageService.markMessagesAsRead(
-      currentUserId: widget.currentUserId,
-      otherUserId: _selectedChatUserId!,
-    );
+    try {
+      await _messageService.markMessagesAsRead(
+        currentUserId: widget.currentUserId,
+        otherUserId: _selectedChatUserId!,
+      );
+
+      // Notify parent widget that messages were read
+      widget.onMessageRead?.call();
+    } catch (e) {
+      print('Error marking messages as read: $e');
+    }
   }
 
   void _scrollToBottomSmooth() {
@@ -355,6 +366,8 @@ class _ChatScreenState extends State<ChatScreen>
 
     _fadeController.reverse();
     _slideController.reverse();
+
+    widget.onMessageRead?.call();
   }
 
   @override
@@ -363,10 +376,12 @@ class _ChatScreenState extends State<ChatScreen>
 
     return PopScope(
       canPop: _selectedChatUserId == null,
-      onPopInvoked: (bool didPop) {
+      onPopInvoked: (bool didPop) async {
         if (didPop) return;
 
         if (_selectedChatUserId != null) {
+          // Mark messages as read before navigating away
+          await _markCurrentChatAsRead();
           // If in chat mode, check if we came from profile
           if (_cameFromProfile) {
             // Go back to the previous screen (profile)
@@ -466,23 +481,23 @@ class _ChatScreenState extends State<ChatScreen>
                 fontWeight: FontWeight.bold
             ),
           ),
-          const SizedBox(width: 8),
-          if (_chatRooms.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${_chatRooms.length}',
-                style: TextStyle(
-                  color: Colors.grey[300],
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
+          // const SizedBox(width: 8),
+          // if (_chatRooms.isNotEmpty)
+          //   Container(
+          //     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          //     decoration: BoxDecoration(
+          //       color: Colors.grey[800],
+          //       borderRadius: BorderRadius.circular(12),
+          //     ),
+          //     child: Text(
+          //       '${_chatRooms.length}',
+          //       style: TextStyle(
+          //         color: Colors.grey[300],
+          //         fontSize: 12,
+          //         fontWeight: FontWeight.w500,
+          //       ),
+          //     ),
+          //   ),
         ],
       ),
       actions: [
@@ -912,6 +927,8 @@ class _ChatScreenState extends State<ChatScreen>
                               ? FontWeight.w500
                               : FontWeight.normal,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),

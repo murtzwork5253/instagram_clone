@@ -234,7 +234,8 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => SinglePostView(
-                                  post: post, // Pass the PostData object
+                                  posts: posts, // Pass the PostData object
+                                  initialIndex: index,
                                   Url: post.profileImageUrl ?? '', // Pass profile image URL
                                 ),
                               ),

@@ -277,25 +277,114 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // NEW CODE - Replace the entire _fetchMyProfileData method with this:
   Future<Map<String, dynamic>> _fetchMyProfileData(String userId) async {
     final supabase = Supabase.instance.client;
+    final currentUserId = supabase.auth.currentUser!.id; // Get current user ID for like/save checks
 
-    final profileRes =
-        await supabase.from('users').select().eq('id', userId).single();
-    final postsRes = await supabase
+    // Fetch user profile data
+    final profileRes = await supabase.from('users').select().eq('id', userId).single();
+
+    // Fetch posts with associated user data
+    final postsResponse = await supabase
         .from('posts')
-        .select()
+        .select('''
+          id,
+          user_id,
+          caption,
+          location,
+          image_url,
+          created_at,
+          disable_comments,
+          use_original_ratio,
+          image_transformation,
+          original_aspect_ratio,
+          users (
+            username,
+            profile_image_url
+          )
+        ''')
         .eq('user_id', userId)
         .order('created_at', ascending: false);
-    final followersRes =
-        await supabase.from('followers').select('follower_id').eq('following_id', userId);
-    final followingRes =
-        await supabase.from('followers').select('following_id').eq('follower_id', userId);
 
-    // Filter out blocked users
+    // Get all post IDs from the fetched posts
+    final postIds = (postsResponse as List).map((post) => post['id']).toList();
+
+    // Fetch all likes for these posts
+    final likesResponse = await supabase
+        .from('post_likes')
+        .select('post_id, user_id')
+        .inFilter('post_id', postIds);
+
+    // Fetch all comments for these posts
+    final commentsResponse = await supabase
+        .from('comments')
+        .select('id, post_id')
+        .inFilter('post_id', postIds);
+
+    // Fetch saved posts for the current user
+    List<dynamic> savedResponse = [];
+    if (currentUserId != null) {
+      savedResponse = await supabase
+          .from('saved_posts')
+          .select('post_id')
+          .eq('user_id', currentUserId)
+          .inFilter('post_id', postIds);
+    }
+
+    // Group likes, comments, and saves by post_id for easier lookup
+    final Map<String, List<dynamic>> likesByPost = {};
+    final Map<String, List<dynamic>> commentsByPost = {};
+    final Set<String> savedPostIds = savedResponse.map((save) => save['post_id'].toString()).toSet();
+
+    for (final like in likesResponse as List) {
+      final postId = like['post_id'].toString();
+      likesByPost[postId] = (likesByPost[postId] ?? [])..add(like);
+    }
+
+    for (final comment in commentsResponse as List) {
+      final postId = comment['post_id'].toString();
+      commentsByPost[postId] = (commentsByPost[postId] ?? [])..add(comment);
+    }
+
+    // Map raw post data to PostData objects
+    final List<PostData> fetchedPosts = (postsResponse).map((post) {
+      final user = post['users'];
+      final postId = post['id'].toString();
+      final likes = likesByPost[postId] ?? [];
+      final comments = commentsByPost[postId] ?? [];
+
+      final bool isLiked = currentUserId != null
+          ? likes.any((like) => like['user_id'] == currentUserId)
+          : false;
+
+      return PostData(
+        id: post['id'],
+        userId: post['user_id'],
+        username: user['username'],
+        profileImageUrl: user['profile_image_url'],
+        imageUrl: post['image_url'],
+        caption: post['caption'],
+        location: post['location'],
+        createdAt: DateTime.parse(post['created_at']),
+        likeCount: likes.length,
+        commentCount: comments.length,
+        isLiked: isLiked,
+        isSaved: savedPostIds.contains(postId),
+        disableComments: post['disable_comments'] ?? false,
+        use_original_ratio: post['use_original_ratio'],
+        image_transformation: post['image_transformation'],
+        original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
+      );
+    }).toList();
+
+    // Filter out blocked users from followers and following lists
     final blockedService = BlockedUsersService();
     final blockedUsers = await blockedService.getBlockedUsers();
     final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+
+    final followersRes = await supabase.from('followers').select('follower_id').eq('following_id', userId);
+    final followingRes = await supabase.from('followers').select('following_id').eq('follower_id', userId);
 
     final filteredFollowers = (followersRes as List)
         .where((f) => !blockedIds.contains(f['follower_id']))
@@ -304,9 +393,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .where((f) => !blockedIds.contains(f['following_id']))
         .toList();
 
+
     return {
       'users': profileRes,
-      'posts': postsRes,
+      'posts': fetchedPosts, // Return the list of PostData objects
       'followers': filteredFollowers,
       'following': filteredFollowing,
     };
@@ -587,21 +677,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3),
                   itemBuilder: (context, index) {
-                    final mediaPath = posts[index]['image_url'];
+                    final mediaPath = posts.cast<PostData>()[index].imageUrl;
                     final mediaUrl = mediaPath.toString().startsWith('http')
                         ? mediaPath
                         : Supabase.instance.client.storage
                             .from('post-media')
                             .getPublicUrl(mediaPath);
 
-                    List<PostData> postObjects = posts.map((post) {
-                      return PostData.fromJson(
-                        post,
-                        likeCount: post['like_count'] ?? 0,
-                        commentCount: post['comment_count'] ?? 0,
-                        isLiked: post['is_liked'] ?? false,
-                      );
-                    }).toList();
+                    // List<PostData> postObjects = posts.map((post) {
+                    //   return PostData.fromJson(
+                    //     post,
+                    //     likeCount: post['like_count'] ?? 0,
+                    //     commentCount: post['comment_count'] ?? 0,
+                    //     isLiked: post['is_liked'] ?? false,
+                    //   );
+                    // }).toList();
 
                     return GestureDetector(
                       onTap: () {
@@ -609,7 +699,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           context,
                           MaterialPageRoute(
                             builder: (_) => SinglePostView(
-                                post: postObjects[index], Url: imageUrl),
+                                posts: posts.cast<PostData>(),
+                                initialIndex: index,
+                                Url: imageUrl
+                            ),
                           ),
                         );
                       },

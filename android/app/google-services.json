@@ -1,45 +1,26 @@
 {
   "project_info": {
-    "project_number": "964440954021",
-    "firebase_url": "https://instagram-36d83-default-rtdb.asia-southeast1.firebasedatabase.app",
-    "project_id": "instagram-36d83",
-    "storage_bucket": "instagram-36d83.firebasestorage.app"
+    "project_number": "136740617687",
+    "project_id": "instagram-clone-v2-48ff0",
+    "storage_bucket": "instagram-clone-v2-48ff0.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:964440954021:android:999f4b148a11d558bc294c",
+        "mobilesdk_app_id": "1:136740617687:android:bfafcbf61e170af3651f92",
         "android_client_info": {
           "package_name": "com.supabase.instagramclone"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "964440954021-69h8df11ker9c5e8ic6uk6l171o7t1tu.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.supabase.instagramclone",
-            "certificate_hash": "73236e875eccdfb59573b29778f8813e6def8fd1"
-          }
-        },
-        {
-          "client_id": "964440954021-tfd38384ajvug38esqbdmv4vq6cndv5a.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAuGESh_LP6dBoJK4yn6UJHoJb28zWJgR4"
+          "current_key": "AIzaSyBaT9bT0Z_bbVT7SrB76SQBeR2j24zAYF8"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "964440954021-tfd38384ajvug38esqbdmv4vq6cndv5a.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

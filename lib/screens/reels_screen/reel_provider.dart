@@ -23,26 +23,23 @@ class ReelProvider extends ChangeNotifier {
     _initializeUserAndAuthListener(); // New method to set up user and auth listener
   }
 
+  // Update the auth state change handler:
   void _initializeUserAndAuthListener() {
-    // Initial user ID retrieval
     _updateCurrentUserId();
     _loadFollowingUsers();
-    fetchReels(); // Fetch reels initially for the current user
+    fetchReels();
 
-    // Listen for auth state changes
-    _authStateSubscription = supabase.auth.onAuthStateChange.listen((data) {
+    _authStateSubscription = supabase.auth.onAuthStateChange.listen((data) async {
       final AuthChangeEvent event = data.event;
-      // You can access data.session if needed, but for user ID, _updateCurrentUserId is enough.
 
-      print('Auth state changed: $event'); // Great for debugging!
-
-      // When the user signs in, signs out, or their user info is updated, refresh everything!
       if (event == AuthChangeEvent.signedIn ||
           event == AuthChangeEvent.signedOut ||
           event == AuthChangeEvent.userUpdated) {
-        _updateCurrentUserId(); // Update the user ID in the provider
-        _loadFollowingUsers(); // Reload following users for the new user
-        fetchReels(); // Re-fetch reels to update like/follow status for the new user
+
+        // SEQUENTIAL execution to avoid race conditions
+        _updateCurrentUserId();
+        await _loadFollowingUsers(); // Wait for this to complete
+        await fetchReels(); // Then fetch reels with correct user context
       }
     });
   }
@@ -110,63 +107,80 @@ class ReelProvider extends ChangeNotifier {
     }
   }
 
-  // Enhanced fetchReels with follow status
+  // Enhanced fetchReels with comment count from comments table
   Future<void> fetchReels() async {
     isLoading = true;
     notifyListeners();
 
     try {
-      // First load following users to ensure we have current follow status
+      reels.clear();
       await _loadFollowingUsers();
 
-      // Fetch blocked users
       final blockedService = BlockedUsersService();
       final blockedUsers = await blockedService.getBlockedUsers();
       final blockedIds = blockedUsers.map((u) => u['id']).toSet();
 
+      // First query: Get reels with user data and comments
       final response = await supabase
           .from('reels')
           .select('''
-            *,
-            users!reels_user_id_fkey(username, profile_image_url),
-            reel_likes(user_id)
-          ''')
+        *,
+        users!reels_user_id_fkey(username, profile_image_url),
+        comments(id)
+      ''')
           .order('created_at', ascending: false);
 
-      reels = (response as List)
-        .where((map) => !blockedIds.contains(map['user_id']))
-        .map((map) {
-        final userId = map['user_id'] as String;
-        final username = (map['users'] as Map?)?['username'] as String? ?? 'Unknown';
-        final userAvatar = (map['users'] as Map?)?['profile_image_url'] as String? ?? '';
-        final likes = map['likes'] as int? ?? 0;
-        final commentCount = map['comment_count'] as int? ?? 0;
+      final List<dynamic> reelDataList = response as List<dynamic>;
 
-        // FIXED: Proper like status check
-        final List<dynamic> reelLikes = map['reel_likes'] as List<dynamic>? ?? [];
-        final bool isLikedByUser = _currentUserId != null &&
-            reelLikes.any((likeMap) => (likeMap as Map<String, dynamic>)['user_id'] == _currentUserId);
+      // Second query: Get user's likes for all reels
+      final reelIds = reelDataList.map((data) => data['id']).toList();
+      final likesResponse = await supabase
+          .from('reel_likes')
+          .select('reel_id')
+          .eq('user_id', _currentUserId as Object)
+          .inFilter('reel_id', reelIds);
+
+      final likedReelIds = (likesResponse as List<dynamic>)
+          .map((like) => like['reel_id'])
+          .toSet();
+
+      reels = reelDataList
+          .where((data) => !blockedIds.contains(data['user_id']))
+          .map((data) {
+        final reelId = data['id'] as String;
+        final userId = data['user_id'] as String;
+
+        final user = data['users'] as Map<String, dynamic>? ?? {};
+        final username = user['username'] ?? 'Unknown';
+        final avatarPath = user['profile_image_url'] ?? '';
+
+        final comments = data['comments'] as List<dynamic>? ?? [];
+        final likesCount = data['likes'] as int? ?? 0;
+        final bool isLiked = likedReelIds.contains(reelId);
 
         return Reel(
-          id: map['id'],
-          videoUrl: map['video_url'],
+          id: reelId,
+          videoUrl: data['video_url'],
           userId: userId,
           username: username,
-          userAvatar: _getPublicImageUrl(userAvatar, 'avatars'),
-          caption: map['caption'],
-          likes: likes,
-          commentCount: commentCount,
-          isLiked: isLikedByUser,
-          isFollowing: followingUsers.contains(userId) && userId != _currentUserId, // FIXED: Don't show follow for own reels
-          createdAt: DateTime.parse(map['created_at']),
-          musicUrl: map['music_url'],
-          musicTrimStart: map['music_trim_start']?.toDouble(),
-          musicTrimEnd: map['music_trim_end']?.toDouble(),
-          isVideoMuted: map['is_video_muted'] ?? false,
+          userAvatar: _getPublicImageUrl(avatarPath, 'avatars'),
+          caption: data['caption'] ?? '',
+          likes: likesCount,
+          commentCount: comments.length,
+          isLiked: isLiked,
+          isFollowing: followingUsers.contains(userId) && userId != _currentUserId,
+          createdAt: DateTime.parse(data['created_at']),
+          musicUrl: data['music_url'],
+          musicTrimStart: (data['music_trim_start'] as num?)?.toDouble(),
+          musicTrimEnd: (data['music_trim_end'] as num?)?.toDouble(),
+          isVideoMuted: data['is_video_muted'] ?? false,
         );
       }).toList();
-    } catch (e) {
-      print('Error fetching reels: $e');
+
+      print('✅ Fetched ${reels.length} reels');
+    } catch (e, st) {
+      print('❌ Error fetching reels: $e');
+      print(st);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -349,23 +363,51 @@ class ReelProvider extends ChangeNotifier {
         'created_at': DateTime.now().toUtc().toIso8601String(),
       }).select().single();
 
-      // FIXED: Update comment count atomically using RPC function
+      // Use only RPC function for consistency
       await supabase.rpc('increment_comment_count', params: {'reel_id': reelId});
 
-      // Update local state
-      final reelIndex = reels.indexWhere((r) => r.id == reelId);
-      if (reelIndex != -1) {
-        final currentReel = reels[reelIndex];
-        reels[reelIndex] = currentReel.copyWith(
-            commentCount: currentReel.commentCount + 1
-        );
-        notifyListeners();
-      }
-
-      print('Successfully added comment to reel: $reelId');
+      // REFRESH the specific reel data instead of optimistic update
+      await _refreshSingleReel(reelId);
     } catch (e) {
       print('Error adding comment: $e');
       throw Exception('Failed to add comment. Please try again.');
+    }
+  }
+
+  Future<void> _refreshSingleReel(String reelId) async {
+    try {
+      // Get reel data with likes
+      final reelResponse = await supabase
+          .from('reels')
+          .select('likes, reel_likes(user_id)')
+          .eq('id', reelId)
+          .single();
+
+      // Get actual comment count from comments table
+      final commentResponse = await supabase
+          .from('comments')
+          .select('id')
+          .eq('reel_id', reelId);
+
+      final reelIndex = reels.indexWhere((r) => r.id == reelId);
+      if (reelIndex != -1) {
+        final currentReel = reels[reelIndex];
+        final likes = reelResponse['reel_likes'] as List? ?? [];
+        final isLiked = _currentUserId != null &&
+            likes.any((like) => like['user_id'] == _currentUserId);
+
+        print('Current reel: $currentReel');
+        print('Comment Count: ${commentResponse.length}');
+
+        reels[reelIndex] = currentReel.copyWith(
+          commentCount: commentResponse.length, // Use actual count from comments table
+          likes: reelResponse['likes'] ?? 0,
+          isLiked: isLiked,
+        );
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error refreshing single reel: $e');
     }
   }
 
@@ -484,115 +526,80 @@ class ReelProvider extends ChangeNotifier {
   }
 
 // Refactored deleteReel method
-  Future<void> deleteReel(String reelId, {
-    Function(String)? onError,
-    Function()? onSuccess
-  }) async {
-    // print('DEBUG PROVIDER: deleteReel method called for reel: $reelId');
-    // print('DEBUG PROVIDER: _currentUserId at start: $_currentUserId'); // <--- ADD THIS LINE
-    // print('Starting delete process for reel: $reelId');
-
+  Future<void> deleteReel(
+      String reelId, {
+        Function(String)? onError,
+        Function()? onSuccess,
+      }) async {
     if (_currentUserId == null) {
-      // print('Error: User not authenticated');
       throw Exception('User not authenticated');
     }
-
-    // print('Current user ID: $_currentUserId');
 
     try {
       // Find the reel to delete
       final reelIndex = reels.indexWhere((reel) => reel.id == reelId);
       if (reelIndex == -1) {
-        // print('Error: Reel not found in local list');
         throw Exception('Reel not found');
       }
 
       final reelToDelete = reels[reelIndex];
-      // print('Found reel to delete: ${reelToDelete.id}, owner: ${reelToDelete.userId}');
 
       // Check if current user owns the reel
       if (reelToDelete.userId != _currentUserId) {
-        // print('Error: Permission denied - user ${_currentUserId} trying to delete reel owned by ${reelToDelete.userId}');
         throw Exception('You can only delete your own reels');
       }
 
-      // Store original state for potential rollback
+      // Optimistic update
       final originalReels = List<Reel>.from(reels);
-
-      // Optimistic update - remove from local list
       reels.removeAt(reelIndex);
       notifyListeners();
-      // print('Optimistically removed reel from local list');
 
-      // Delete associated data first (comments, likes)
-      // print('Deleting associated comments and likes...');
-      final deleteResults = await Future.wait([
-        // Delete all comments for this reel
-        supabase
-            .from('comments')
-            .delete()
-            .eq('reel_id', reelId),
+      // Step 1: Delete associated notifications
+      final notifResponse = await supabase
+          .from('notifications')
+          .delete()
+          .eq('reel_id', reelId);
 
-        // Delete all likes for this reel
-        supabase
-            .from('reel_likes')
-            .delete()
-            .eq('reel_id', reelId),
+      print('🧾 Notifications delete response: $notifResponse');
+
+
+      // Step 2: Delete associated comments and likes
+      await Future.wait([
+        supabase.from('comments').delete().eq('reel_id', reelId),
+        supabase.from('reel_likes').delete().eq('reel_id', reelId),
       ]);
 
-      // print('Comments deletion result: ${deleteResults[0]}');
-      // print('Likes deletion result: ${deleteResults[1]}');
-
-      // Delete the reel from database
-      // print('Deleting reel from database...');
+      // Step 3: Delete the reel itself
       final response = await supabase
           .from('reels')
           .delete()
           .eq('id', reelId);
-          // .eq('user_id', reels[reelIndex].userId);
 
-      // print('Database delete response: $response');
-
-      // Check if any rows were actually deleted
-      // Note: Supabase returns the deleted rows, empty list means nothing was deleted
+      // Optional: Check for rows deleted
       if (response is List && response.isEmpty) {
-        // print('Warning: No rows were deleted from database. This might indicate the reel was already deleted or permission issues.');
-        // You might want to throw an error here or handle it differently
-        // throw Exception('Reel could not be deleted from database');
+        // Optionally throw or log
       }
 
-      // Delete video file from storage if exists
+      // Step 4: Delete video from storage (if applicable)
       if (reelToDelete.videoUrl.isNotEmpty &&
           !reelToDelete.videoUrl.startsWith('http')) {
         try {
-          // print('Attempting to delete video file: ${reelToDelete.videoUrl}');
-          final storageResponse = await supabase.storage
+          await supabase.storage
               .from('reels')
               .remove([reelToDelete.videoUrl]);
-          // print('Storage deletion response: $storageResponse');
-          // print('Successfully deleted video file from storage');
         } catch (storageError) {
-          // print('Warning: Failed to delete video file from storage: $storageError');
-          // Continue execution as the main deletion was successful
+          // Ignore storage deletion errors
         }
-      } else {
-        // print('Skipping video file deletion - URL is empty or external: ${reelToDelete.videoUrl}');
       }
 
-      // print('Successfully deleted reel: $reelId');
       await fetchReels();
       onSuccess?.call();
 
     } catch (e) {
-      // print('Error deleting reel: $e');
-      // print('Error type: ${e.runtimeType}');
-      // print('Stack trace: ${StackTrace.current}');
-
-      // Revert optimistic update on error
+      // Revert optimistic update
       try {
         print('Reverting optimistic update by refreshing reels...');
-        await fetchReels(); // Refresh the entire list to ensure consistency
-        print('Successfully refreshed reels after delete failure');
+        await fetchReels();
       } catch (fetchError) {
         print('Error refreshing reels after delete failure: $fetchError');
       }

@@ -85,7 +85,10 @@ class _CreateStoryContentState extends State<CreateStoryContent>
 
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => StoryPreviewScreen(imagePath: filePath),
+            builder: (_) => StoryPreviewScreen(
+              imagePath: filePath,
+              isFrontCamera: _cameraService.isFrontCamera, // Pass front camera info
+            ),
           ),
         ).then((_) {
           // Restart camera when returning from preview
@@ -174,21 +177,363 @@ class _CreateStoryContentState extends State<CreateStoryContent>
     );
   }
 
+  void _showPrivacySettings() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Story Privacy', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Everyone', style: TextStyle(color: Colors.white)),
+              leading: Radio<String>(
+                value: 'everyone',
+                groupValue: 'everyone', // Make this stateful
+                onChanged: (value) {},
+                activeColor: Colors.blue,
+              ),
+            ),
+            ListTile(
+              title: const Text('Followers only', style: TextStyle(color: Colors.white)),
+              leading: Radio<String>(
+                value: 'followers',
+                groupValue: 'everyone', // Make this stateful
+                onChanged: (value) {},
+                activeColor: Colors.blue,
+              ),
+            ),
+            ListTile(
+              title: const Text('Close friends', style: TextStyle(color: Colors.white)),
+              leading: Radio<String>(
+                value: 'close_friends',
+                groupValue: 'everyone', // Make this stateful
+                onChanged: (value) {},
+                activeColor: Colors.blue,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTimerSettings() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Story Duration', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('3 seconds', style: TextStyle(color: Colors.white)),
+              leading: Radio<int>(
+                value: 3,
+                groupValue: 24, // Make this stateful
+                onChanged: (value) {},
+                activeColor: Colors.blue,
+              ),
+            ),
+            ListTile(
+              title: const Text('10 seconds', style: TextStyle(color: Colors.white)),
+              leading: Radio<int>(
+                value: 10,
+                groupValue: 24, // Make this stateful
+                onChanged: (value) {},
+                activeColor: Colors.blue,
+              ),
+            ),
+            ListTile(
+              title: const Text('24 hours (default)', style: TextStyle(color: Colors.white)),
+              leading: Radio<int>(
+                value: 24,
+                groupValue: 24, // Make this stateful
+                onChanged: (value) {},
+                activeColor: Colors.blue,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openTextMode() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Opening Text Mode...')),
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                height: 4,
+                width: 40,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[700],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Add Text',
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  children: [
+                    _buildTextStyleOption('Classic', Colors.white, Colors.transparent),
+                    _buildTextStyleOption('Modern', Colors.black, Colors.white),
+                    _buildTextStyleOption('Neon', Colors.cyan, Colors.black),
+                    _buildTextStyleOption('Gradient', Colors.purple, Colors.pink),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextStyleOption(String name, Color textColor, Color backgroundColor) {
+    return ListTile(
+      title: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[700]!),
+        ),
+        child: Text(
+          'Sample Text',
+          style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+      ),
+      subtitle: Text(name, style: const TextStyle(color: Colors.white)),
+      onTap: () {
+        Navigator.pop(context);
+        // Implement text overlay functionality
+      },
     );
   }
 
   void _openLayoutMode() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Opening Layout Mode...')),
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[700],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Layout Options',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 20),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              children: [
+                _buildLayoutOption('Single', Icons.crop_portrait),
+                _buildLayoutOption('Collage', Icons.grid_on),
+                _buildLayoutOption('Split', Icons.vertical_split),
+                _buildLayoutOption('Frame', Icons.border_all),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLayoutOption(String name, IconData icon) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$name layout selected')),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.grey[800],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[700]!),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 40),
+            const SizedBox(height: 8),
+            Text(name, style: const TextStyle(color: Colors.white)),
+          ],
+        ),
+      ),
     );
   }
 
   void _openBoomerangEffects() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Opening Boomerang/Effects...')),
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[700],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Effects & Filters',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 100,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildEffectOption('Boomerang', Icons.repeat, Colors.purple),
+                  _buildEffectOption('Superzoom', Icons.zoom_in, Colors.blue),
+                  _buildEffectOption('Rewind', Icons.replay, Colors.green),
+                  _buildEffectOption('Slow Mo', Icons.slow_motion_video, Colors.orange),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Filters',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 80,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildFilterOption('Normal', Colors.grey),
+                  _buildFilterOption('Vintage', Colors.brown),
+                  _buildFilterOption('Bright', Colors.yellow),
+                  _buildFilterOption('Dramatic', Colors.red),
+                  _buildFilterOption('Cool', Colors.blue),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEffectOption(String name, IconData icon, Color color) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$name effect applied')),
+        );
+      },
+      child: Container(
+        width: 80,
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 30),
+            const SizedBox(height: 4),
+            Text(name, style: TextStyle(color: Colors.white, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterOption(String name, Color color) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$name filter applied')),
+        );
+      },
+      child: Container(
+        width: 60,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: color),
+        ),
+        child: Center(
+          child: Text(name, style: const TextStyle(color: Colors.white, fontSize: 10)),
+        ),
+      ),
     );
   }
 
@@ -253,9 +598,17 @@ class _CreateStoryContentState extends State<CreateStoryContent>
                             ? Transform(
                           alignment: Alignment.center,
                           transform: Matrix4.rotationY(math.pi),
-                          child: CameraPreview(_cameraService.controller!),
+                          child: (_cameraService.controller != null &&
+                              _cameraService.controller!.value.isInitialized &&
+                              !_cameraService.isDisposed)
+                              ? CameraPreview(_cameraService.controller!)
+                              : Center(child: CircularProgressIndicator()),
                         )
-                            : CameraPreview(_cameraService.controller!),
+                            : (_cameraService.controller != null &&
+                            _cameraService.controller!.value.isInitialized &&
+                            !_cameraService.isDisposed)
+                            ? CameraPreview(_cameraService.controller!)
+                            : Center(child: CircularProgressIndicator()),
                       ),
                     ),
                   ),

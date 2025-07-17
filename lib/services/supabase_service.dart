@@ -1,11 +1,13 @@
 import 'dart:ffi';
 
+import 'package:Instagram/services/push_notification_service.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart'; // Assuming you use uuid for unique file names
 import 'package:path/path.dart' as path;
 import 'dart:typed_data';
 import 'dart:io';
+import '../screens/notificationscreen/service/notification_service.dart';
 import 'blocked_users_service.dart';
 
 // Data models are included below the class definition
@@ -236,6 +238,16 @@ class SupabaseService {
     }
   }
 
+  /// Send a follow notification
+  static Future<void> sendFollowNotification({
+    required String userToFollowId,
+  }) async {
+    await NotificationService().createNotification(
+      recipientId: userToFollowId,
+      type: 'follow', senderId: _client.auth.currentUser!.id,
+    );
+  }
+
   // -------------------- FOLLOWING --------------------
   static Future<bool> toggleFollow(String userId) async {
     try {
@@ -257,6 +269,7 @@ class SupabaseService {
           'follower_id': user.id,
           'following_id': userId,
         });
+        await sendFollowNotification(userToFollowId: userId);
         return true;
       }
     } catch (e) {
@@ -346,6 +359,17 @@ class SupabaseService {
     throw FormatException('Invalid Supabase image URL format');
   }
 
+  static Future<void> sendLikeNotification({
+    required String postOwnerId,
+    required String postId,
+  }) async {
+    await NotificationService().createNotification(
+      recipientId: postOwnerId,
+      type: 'like',
+      postId: postId, senderId: _client.auth.currentUser!.id,
+    );
+  }
+
   static Future<bool> toggleLike(String postId) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('User not logged in');
@@ -359,6 +383,10 @@ class SupabaseService {
 
     if (existing != null) {
       await _client.from('post_likes').delete().eq('id', existing['id']);
+      await sendLikeNotification(
+        postOwnerId: user.id,
+        postId: postId,
+      );
       return false;
     } else {
       await _client.from('post_likes').insert({
@@ -369,6 +397,18 @@ class SupabaseService {
     }
   }
 
+  // Send a comment notification
+  static Future<void> sendCommentNotification({
+    required String postOwnerId,
+    required String postId,
+  }) async {
+    await NotificationService().createNotification(
+      recipientId: postOwnerId,
+      type: 'comment',
+      postId: postId,
+      senderId: _client.auth.currentUser!.id,
+    );
+  }
   static Future<void> addComment(String postId, String content) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('User not logged in');
@@ -379,6 +419,11 @@ class SupabaseService {
       'content': content,
       'created_at': DateTime.now().toUtc().toIso8601String(),
     });
+
+    await sendCommentNotification(
+      postOwnerId: user.id,
+      postId: postId,
+    );
   }
 
   // Update the getComments method in supabase_service.dart
@@ -411,19 +456,21 @@ class SupabaseService {
     }
   }
 
-  static Future<void> createStory(String mediaUrl) async {
+  static Future<Map<String, dynamic>> createStory(String mediaUrl) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('User not logged in');
 
     final now = DateTime.now().toUtc();
     final expiresAt = now.add(Duration(hours: 24));
 
-    await _client.from('stories').insert({
+    final response = await _client.from('stories').insert({
       'user_id': user.id,
       'media_url': mediaUrl,
       'expires_at': expiresAt.toIso8601String(),
       'created_at': now.toIso8601String(),
-    });
+    }).select().single();
+
+    return response;
   }
 
   // Inside lib/services/supabase_service.dart
@@ -560,17 +607,23 @@ class UserData {
   final String id;
   final String username;
   final String? profileImageUrl;
+  final String? email;
+  final String? bio;
 
   UserData({
     required this.id,
     required this.username,
     this.profileImageUrl,
+    this.email,
+    this.bio,
   });
 
   factory UserData.fromJson(Map<String, dynamic> json) => UserData(
         id: json['id'],
         username: json['username'],
         profileImageUrl: json['profile_image_url'],
+        email: json['email'],
+        bio: json['bio'],
       );
 }
 

@@ -4,38 +4,59 @@ import 'package:flutter/material.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
 import '../common/report_dialog.dart';
-import '../profilescreen/other_user_profile_screen.dart'; // Update this path if needed
+import '../profilescreen/other_user_profile_screen.dart';
+import '../user_tagging/user_model.dart';
+import '../user_tagging/user_tagging_service.dart'; // Update this path if needed
 
-// NEW CODE - Replace the above section with this:
 class SinglePostView extends StatefulWidget {
-  final PostData post;
-  final String Url;
+  final List<PostData> posts; // Changed to a list
+  final int initialIndex; // New parameter to know which post to start with
+  final String Url; // Still needed for the profile image URL logic
 
-  const SinglePostView({Key? key, required this.post, required this.Url}) : super(key: key);
+  const SinglePostView({
+    Key? key,
+    required this.posts,
+    required this.initialIndex,
+    required this.Url,
+  }) : super(key: key);
 
   @override
   State<SinglePostView> createState() => _SinglePostViewState();
 }
 
 class _SinglePostViewState extends State<SinglePostView> {
+  // NEW CODE - Replace the above section with this:
+  late PageController _pageController; // New: PageController to manage scrolling
   late PostData displayPost;
   late String profileUrl;
+  final UserTaggingService _taggingService = UserTaggingService();
+  Map<String, List<TaggedUser>> _postTaggedUsers = {}; // Store tagged users per post
 
   @override
   void initState() {
-    super.initState();
-    displayPost = widget.post;
+  super.initState();
+  _loadTaggedUsersForAllPosts();
+  _pageController = PageController(initialPage: widget.initialIndex); // Initialize with the starting post
+  // displayPost = widget.posts[widget.initialIndex]; // Set the initial post to display
 
-    if (widget.Url.isNotEmpty && widget.Url.startsWith('http')) {
-      profileUrl = widget.Url;
-    } else {
-      profileUrl = 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${widget.Url}';
-    }
+  final initialPost = widget.posts[widget.initialIndex];
+  if (initialPost.profileImageUrl != null && initialPost.profileImageUrl!.startsWith('http')) {
+    profileUrl = initialPost.profileImageUrl!;
+  } else {
+    profileUrl = 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${initialPost.profileImageUrl ?? 'default_avatar.png'}';
+  }
+  }
+
+  @override
+  void dispose() {
+  _pageController.dispose(); // Dispose the controller when the widget is removed
+  super.dispose();
   }
 
   String _formatTime(DateTime? time) {
@@ -54,80 +75,107 @@ class _SinglePostViewState extends State<SinglePostView> {
     }
   }
 
+  // Modify _handleLike
   void _handleLike() async {
     final provider = Provider.of<InstaDataProvider>(context, listen: false);
-    final newLikedState = !displayPost.isLiked;
-    final newLikeCount = newLikedState ? displayPost.likeCount + 1: displayPost.likeCount - 1;
+    final currentPostId = widget.posts[_pageController.page!.round()].id; // Get ID of the currently displayed post
+    final currentPost = widget.posts[_pageController.page!.round()];
 
-    setState(() {
-      displayPost = PostData(
-          id: displayPost.id,
-          userId: displayPost.userId,
-          username: displayPost.username,
-          profileImageUrl: displayPost.profileImageUrl,
-          imageUrl: displayPost.imageUrl,
-          caption: displayPost.caption,
-          location: displayPost.location,
-          createdAt: displayPost.createdAt,
-          likeCount: newLikeCount,
-          commentCount: displayPost.commentCount,
-          isLiked: newLikedState,
-          isSaved: displayPost.isSaved,
-          disableComments: displayPost.disableComments,
-          use_original_ratio: displayPost.use_original_ratio,
-          image_transformation: displayPost.image_transformation,
-          original_aspect_ratio: displayPost.original_aspect_ratio);
-    });
+    final newLikedState = !currentPost.isLiked;
+    final newLikeCount = newLikedState ? currentPost.likeCount + 1 : currentPost.likeCount - 1;
+
+    // OPTIMISTIC UPDATE: Update the local list immediately for immediate UI feedback
+    // Find the post in the widget.posts list and update it
+    final postIndexInList = widget.posts.indexWhere((p) => p.id == currentPostId);
+    if (postIndexInList != -1) {
+      widget.posts[postIndexInList] = PostData(
+        id: currentPost.id,
+        userId: currentPost.userId,
+        username: currentPost.username,
+        profileImageUrl: currentPost.profileImageUrl,
+        imageUrl: currentPost.imageUrl,
+        caption: currentPost.caption,
+        location: currentPost.location,
+        createdAt: currentPost.createdAt,
+        likeCount: newLikeCount,
+        commentCount: currentPost.commentCount,
+        isLiked: newLikedState,
+        isSaved: currentPost.isSaved,
+        disableComments: currentPost.disableComments,
+        use_original_ratio: currentPost.use_original_ratio,
+        image_transformation: currentPost.image_transformation,
+        original_aspect_ratio: currentPost.original_aspect_ratio,
+      );
+      // Trigger a rebuild of the current page using setState
+      setState(() {});
+    }
 
     try {
-      await provider.searchLikePost(displayPost.id);
-      provider.updateExplorePostLike(displayPost.id, newLikedState);
+      await provider.searchLikePost(currentPostId);
+      // The provider's internal list should also be updated.
+      // If `searchLikePost` already calls `updateExplorePostLike` internally,
+      // and `updateExplorePostLike` calls `notifyListeners()`, then that's good.
+      // However, if `widget.posts` comes from `_fetchMyProfileData` and is not the provider's `_posts` directly,
+      // you need to ensure the `ProfileScreen` or `OtherUserProfileScreen`
+      // also refreshes its data when a like/save occurs here.
     } catch (e) {
       print('Error liking post: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to like post')),
       );
-      setState(() {
-        displayPost = widget.post;
-      });
+      // REVERT OPTIMISTIC UPDATE on error
+      if (postIndexInList != -1) {
+        widget.posts[postIndexInList] = currentPost; // Revert to original state
+        setState(() {}); // Revert UI
+      }
     }
   }
 
+  // Modify _handleSave (similar logic to _handleLike)
   void _handleSave() async {
     final provider = Provider.of<InstaDataProvider>(context, listen: false);
-    final newSavedState = !displayPost.isSaved;
+    final currentPostId = widget.posts[_pageController.page!.round()].id;
+    final currentPost = widget.posts[_pageController.page!.round()];
 
-    setState(() {
-      displayPost = PostData(
-          id: displayPost.id,
-          userId: displayPost.userId,
-          username: displayPost.username,
-          profileImageUrl: displayPost.profileImageUrl,
-          imageUrl: displayPost.imageUrl,
-          caption: displayPost.caption,
-          location: displayPost.location,
-          createdAt: displayPost.createdAt,
-          likeCount: displayPost.likeCount,
-          commentCount: displayPost.commentCount,
-          isLiked: displayPost.isLiked,
-          isSaved: newSavedState,
-          disableComments: displayPost.disableComments,
-          use_original_ratio: displayPost.use_original_ratio,
-          image_transformation: displayPost.image_transformation,
-          original_aspect_ratio: displayPost.original_aspect_ratio);
-    });
+    final newSavedState = !currentPost.isSaved;
+
+    // OPTIMISTIC UPDATE
+    final postIndexInList = widget.posts.indexWhere((p) => p.id == currentPostId);
+    if (postIndexInList != -1) {
+      widget.posts[postIndexInList] = PostData(
+        id: currentPost.id,
+        userId: currentPost.userId,
+        username: currentPost.username,
+        profileImageUrl: currentPost.profileImageUrl,
+        imageUrl: currentPost.imageUrl,
+        caption: currentPost.caption,
+        location: currentPost.location,
+        createdAt: currentPost.createdAt,
+        likeCount: currentPost.likeCount,
+        commentCount: currentPost.commentCount,
+        isLiked: currentPost.isLiked,
+        isSaved: newSavedState,
+        disableComments: currentPost.disableComments,
+        use_original_ratio: currentPost.use_original_ratio,
+        image_transformation: currentPost.image_transformation,
+        original_aspect_ratio: currentPost.original_aspect_ratio,
+      );
+      setState(() {});
+    }
 
     try {
-      await provider.toggleSavePost(displayPost.id);
-      provider.updateExplorePostSave(displayPost.id, newSavedState);
+      await provider.toggleSavePost(currentPostId);
+      // Again, ensure the provider's internal list is updated and notifies listeners.
     } catch (e) {
       print('Error saving post: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to save post')),
       );
-      setState(() {
-        displayPost = widget.post;
-      });
+      // REVERT OPTIMISTIC UPDATE on error
+      if (postIndexInList != -1) {
+        widget.posts[postIndexInList] = currentPost; // Revert to original state
+        setState(() {}); // Revert UI
+      }
     }
   }
 
@@ -136,20 +184,26 @@ class _SinglePostViewState extends State<SinglePostView> {
     final loc = AppLocalizations.of(context)!;
     final currentUserId = AuthService.client().auth.currentUser?.id;
 
-    // This checks if the provider has a more up-to-date version of the post
-    // This is useful if the post is from the main feed and was updated in the background
-    final provider = Provider.of<InstaDataProvider>(context);
-    try {
-      final providerVersion = provider.posts.firstWhere((p) => p.id == widget.post.id);
-      // If the provider's version is different from our local state, update our local state
-      if (providerVersion.isLiked != displayPost.isLiked || providerVersion.isSaved != displayPost.isSaved) {
-        displayPost = providerVersion;
-      }
-    } catch (e) {
-      // Post is not in the main feed, which is expected for explore posts.
-    }
+    // // This checks if the provider has a more up-to-date version of the post
+    // // This is useful if the post is from the main feed and was updated in the background
+    // // NEW CODE - Replace the above section with this:
+    // final provider = Provider.of<InstaDataProvider>(context);
+    // try {
+    //   final providerVersion = provider.posts.firstWhere((p) => p.id == displayPost.id); // Use displayPost.id
+    //   // If the provider's version is different from our local state, update our local state
+    //   if (providerVersion.isLiked != displayPost.isLiked || providerVersion.isSaved != displayPost.isSaved) {
+    //     // Only update if current displayPost is the one from providerVersion,
+    //     // to avoid state issues when scrolling rapidly.
+    //     if (providerVersion.id == displayPost.id) {
+    //       displayPost = providerVersion;
+    //     }
+    //   }
+    // } catch (e) {
+    //   // Post is not in the main feed, which is expected for explore posts.
+    // }
 
 
+    // NEW CODE - Replace the above section with this:
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -157,169 +211,358 @@ class _SinglePostViewState extends State<SinglePostView> {
         title: Text(loc.post, style: const TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ListTile(
-              leading: CircleAvatar(
-                backgroundImage: NetworkImage(profileUrl),
-                radius: 16,
-              ),
-              title: GestureDetector(
-                onTap: () {
-                  if (displayPost.userId == currentUserId) {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen()));
-                  } else {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => OtherUserProfileScreen(userId: displayPost.userId)));
-                  }
-                },
-                child: Text(
-                  displayPost.username,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+      body: PageView.builder( // Changed to PageView.builder
+        controller: _pageController,
+        scrollDirection: Axis.vertical, // Enable vertical scrolling
+        itemCount: widget.posts.length, // Number of posts to display
+        onPageChanged: (index) {
+          setState(() {
+            displayPost = widget.posts[index]; // Update displayPost when page changes
+            // You might also need to update profileUrl if it varies per post,
+            // or pass it directly into the post item builder.
+            // For now, assuming profileUrl is consistent for all posts in this list,
+            // or derived from displayPost.profileImageUrl.
+          });
+        },
+        itemBuilder: (context, index) {
+          final post = widget.posts[index]; // Get the current post for this page
+          final currentProfileUrl = post.profileImageUrl!.startsWith('http')
+              ? post.profileImageUrl
+              : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${post.profileImageUrl}';
+
+          return SingleChildScrollView( // Each page can still scroll if its content is long
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: NetworkImage(currentProfileUrl!), // Use currentProfileUrl
+                    radius: 16,
                   ),
-                ),
-              ),
-              trailing: IconButton(onPressed: () { _showPostOptions(displayPost, context);}, icon: Icon(Icons.more_vert, color: Colors.white)),
-            ),
-            GestureDetector(
-              onDoubleTap: _handleLike,
-              child: AspectRatio(
-                aspectRatio: 1.0,
-                child: Container(
-                  color: Colors.black,
-                  child: () {
-                    final bool useOriginalRatio = displayPost.use_original_ratio ?? false;
-                    final String? transformationString = displayPost.image_transformation;
-
-                    Matrix4 transformation = Matrix4.identity();
-                    if (transformationString != null && transformationString.isNotEmpty) {
-                      try {
-                        final values = transformationString.split(',').map((e) => double.parse(e)).toList();
-                        if (values.length == 16) {
-                          transformation = Matrix4.fromList(values);
-                        }
-                      } catch (e) {
-                        transformation = Matrix4.identity();
+                  title: GestureDetector(
+                    onTap: () {
+                      if (post.userId == currentUserId) {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen()));
+                      } else {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => OtherUserProfileScreen(userId: post.userId)));
                       }
-                    }
-
-                    return Transform(
-                      transform: transformation,
-                      child: Image.network(
-                        displayPost.imageUrl,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: useOriginalRatio ? BoxFit.contain : BoxFit.cover,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            width: double.infinity,
-                            height: double.infinity,
-                            color: Colors.grey[900],
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes != null
-                                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                    : null,
-                              ),
-                            ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: double.infinity,
-                            height: double.infinity,
-                            color: Colors.grey[900],
-                            child: const Center(
-                              child: Icon(Icons.error, color: Colors.white),
-                            ),
-                          );
-                        },
+                    },
+                    child: Text(
+                      post.username,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
                       ),
-                    );
-                  }(),
+                    ),
+                  ),
+                  trailing: IconButton(onPressed: () { _showPostOptions(post, context);}, icon: Icon(Icons.more_vert, color: Colors.white)),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: _handleLike,
-                        child: Icon(
-                          displayPost.isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: displayPost.isLiked ? Colors.red : Colors.white,
-                          size: 27,
-                        ),
+                GestureDetector(
+                  onDoubleTap: _handleLike,
+                  child: Stack(
+                    children:[
+                      AspectRatio(
+                      aspectRatio: 1.0,
+                      child: Container(
+                        color: Colors.black,
+                        child: () {
+                          final bool useOriginalRatio = post.use_original_ratio ?? false;
+                          final String? transformationString = post.image_transformation;
+
+                          Matrix4 transformation = Matrix4.identity();
+                          if (transformationString != null && transformationString.isNotEmpty) {
+                            try {
+                              final values = transformationString.split(',').map((e) => double.parse(e)).toList();
+                              if (values.length == 16) {
+                                transformation = Matrix4.fromList(values);
+                              }
+                            } catch (e) {
+                              transformation = Matrix4.identity();
+                            }
+                          }
+
+                          return Transform(
+                            transform: transformation,
+                            child: Image.network(
+                              post.imageUrl,
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: useOriginalRatio ? BoxFit.contain : BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  color: Colors.grey[900],
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      value: loadingProgress.expectedTotalBytes != null
+                                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                          : null,
+                                    ),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  color: Colors.grey[900],
+                                  child: const Center(
+                                    child: Icon(Icons.error, color: Colors.white),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        }(),
                       ),
-                      SizedBox(width: 3),
-                      Text('${displayPost.likeCount}', style: TextStyle(color: Colors.white)),
-                      SizedBox(width: 12),
-                      if (!displayPost.disableComments) ...[
-                        GestureDetector(
-                          onTap: () {
-                            showCommentSection(context, displayPost.id);
-                          },
-                          child: Icon(
-                            OIcons.EvaIcons.message_circle_outline,
-                            color: Colors.white,
-                            size: 27,
+                    ),
+                      Positioned(
+                        bottom:10,
+                        left: 12,
+                        child: _hasTaggedUsers(post.id)
+                            ? GestureDetector(
+                          onTap: () => _showTaggedUsersModal(post.id),
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.7),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 16,
+                            ),
                           ),
-                        ),
-                        SizedBox(width: 3),
-                        Text('${displayPost.commentCount}', style: TextStyle(color: Colors.white)),
-                        SizedBox(width: 12),
-                      ],
-                      GestureDetector(
-                          onTap: () {
-                            _showShareOptions(displayPost, context);
-                          },
-                          child: Image.asset("assets/icon/shareicon.png", color: Colors.white, width: 26, height: 26)),
-                      Spacer(),
-                      GestureDetector(
-                        onTap: _handleSave,
-                        child: Icon(
-                          displayPost.isSaved ? Icons.bookmark : Icons.bookmark_border,
-                          color: Colors.white,
-                          size: 27,
-                        ),
+                        )
+                            : const SizedBox.shrink(),
                       ),
                     ],
                   ),
-                  SizedBox(height: 10),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '${displayPost.username} ',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: _handleLike,
+                            child: Icon(
+                              post.isLiked ? Icons.favorite : Icons.favorite_border,
+                              color: post.isLiked ? Colors.red : Colors.white,
+                              size: 27,
+                            ),
+                          ),
+                          SizedBox(width: 3),
+                          Text('${post.likeCount}', style: TextStyle(color: Colors.white)),
+                          SizedBox(width: 12),
+                          if (!post.disableComments) ...[
+                            GestureDetector(
+                              onTap: () {
+                                showCommentSection(context, post.id);
+                              },
+                              child: Icon(
+                                OIcons.EvaIcons.message_circle_outline,
+                                color: Colors.white,
+                                size: 27,
+                              ),
+                            ),
+                            SizedBox(width: 3),
+                            Text('${post.commentCount}', style: TextStyle(color: Colors.white)),
+                            SizedBox(width: 12),
+                          ],
+                          GestureDetector(
+                              onTap: () {
+                                _showShareOptions(post, context);
+                              },
+                              child: Image.asset("assets/icon/shareicon.png", color: Colors.white, width: 26, height: 26)),
+                          Spacer(),
+                          GestureDetector(
+                            onTap: _handleSave,
+                            child: Icon(
+                              post.isSaved ? Icons.bookmark : Icons.bookmark_border,
+                              color: Colors.white,
+                              size: 27,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 10),
+                      RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '${post.username} ',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            TextSpan(
+                              text: post.caption ?? '',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ],
                         ),
-                        TextSpan(
-                          text: displayPost.caption ?? '',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ],
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        _formatTime(post.createdAt),
+                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  bool _hasTaggedUsers(String postId) {
+    final taggedUsers = _postTaggedUsers[postId];
+    return taggedUsers != null && taggedUsers.isNotEmpty;
+  }
+
+  Future<void> _loadTaggedUsersForAllPosts() async {
+    final provider = Provider.of<InstaDataProvider>(context, listen: false);
+    final posts = provider.posts;
+    final suggestedPosts = provider.suggestedPosts;
+
+    // Combine all posts
+    final allPosts = [...posts, ...suggestedPosts];
+
+    for (final post in allPosts) {
+      await _loadTaggedUsersForPost(post.id);
+    }
+  }
+
+  Future<void> _loadTaggedUsersForPost(String postId) async {
+    try {
+      final taggedUsers = await _taggingService.getTaggedUsersFromPost(postId);
+      if (mounted) {
+        setState(() {
+          _postTaggedUsers[postId] = taggedUsers;
+        });
+      }
+    } catch (e) {
+      print('Error loading tagged users for post $postId: $e');
+    }
+  }
+
+  void _showTaggedUsersModal(String postId) async {
+    final taggedUsers = _postTaggedUsers[postId] ?? [];
+
+    if (taggedUsers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tagged users found')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Tagged People',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: taggedUsers.length,
+                itemBuilder: (context, index) {
+                  final user = taggedUsers[index];
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: Colors.grey[800],
+                      backgroundImage: user.profileImageUrl != null
+                          ? NetworkImage(_buildUserImageUrl(user.profileImageUrl!))
+                          : null,
+                      child: user.profileImageUrl == null
+                          ? const Icon(Icons.person, color: Colors.white)
+                          : null,
                     ),
-                  ),
-                  SizedBox(height: 5),
-                  Text(
-                    _formatTime(displayPost.createdAt),
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
+                    title: Text(
+                      user.username,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: user.fullName != null && user.fullName!.isNotEmpty
+                        ? Text(
+                      user.fullName!,
+                      style: const TextStyle(color: Colors.grey),
+                    )
+                        : null,
+                    trailing: const Icon(
+                      Icons.arrow_forward_ios,
+                      color: Colors.grey,
+                      size: 16,
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => OtherUserProfileScreen(userId: user.id),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _buildUserImageUrl(String? profileImageUrl) {
+    if (profileImageUrl == null) return '';
+
+    final bool isFullUrl =
+        Uri.tryParse(profileImageUrl)?.hasAbsolutePath == true &&
+            (profileImageUrl.startsWith('http://') ||
+                profileImageUrl.startsWith('https://'));
+
+    return isFullUrl
+        ? profileImageUrl
+        : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$profileImageUrl';
   }
 
   void _showPostOptions(PostData post,BuildContext context) {

@@ -14,6 +14,8 @@ import 'package:icons_plus/icons_plus.dart' as OIcons;
 import '../auth/service/auth_service.dart';
 import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart';
+import '../user_tagging/user_model.dart';
+import '../user_tagging/user_tagging_service.dart';
 
 class ReelPlayer extends StatefulWidget {
   final Reel reel;
@@ -38,6 +40,10 @@ class _ReelPlayerState extends State<ReelPlayer>
   String? _error;
   AudioPlayer? _audioPlayer;
   bool _hasMusic = false;
+  List<TaggedUser> _taggedUsers = [];
+  final UserTaggingService _taggingService = UserTaggingService();
+
+  bool _isDisposed = false;
 
   // AppBar animation
   late AnimationController _appBarAnimationController;
@@ -50,6 +56,7 @@ class _ReelPlayerState extends State<ReelPlayer>
     super.initState();
     _initializeVideo();
     _setupAppBarAnimation();
+    _loadTaggedUsers();
 
     // Show app bar initially for first reel
     if (widget.isFirstReel) {
@@ -140,91 +147,169 @@ class _ReelPlayerState extends State<ReelPlayer>
     }
   }
 
+  Future<void> _loadTaggedUsers() async {
+    final taggedUsers = await _taggingService.getTaggedUsersFromReel(widget.reel.id);
+    if (mounted) {
+      setState(() {
+        _taggedUsers = taggedUsers;
+      });
+    }
+  }
+
+  Widget _buildTaggedUsersList() {
+    if (_taggedUsers.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _taggedUsers.length,
+        itemBuilder: (context, index) {
+          final user = _taggedUsers[index];
+          return Container(
+            margin: const EdgeInsets.only(right: 8),
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundImage: user.profileImageUrl != null
+                      ? NetworkImage(user.profileImageUrl!)
+                      : null,
+                  child: user.profileImageUrl == null
+                      ? const Icon(Icons.person, size: 20)
+                      : null,
+                ),
+                Text(
+                  user.username,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showTaggedUsersModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Tagged People',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _taggedUsers.length,
+                itemBuilder: (context, index) {
+                  final user = _taggedUsers[index];
+                  final imageUrl = getFullProfileImageUrl(user.profileImageUrl);
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+                      child: imageUrl == null
+                          ? const Icon(Icons.person, color: Colors.white)
+                          : null,
+                    ),
+                    title: Text(
+                      user.username,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => OtherUserProfileScreen(userId: user.id),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String? getFullProfileImageUrl(String? imageUrl) {
+    if (imageUrl == null) return null;
+
+    final isFullUrl = Uri.tryParse(imageUrl)?.hasAbsolutePath == true &&
+        (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'));
+
+    return isFullUrl
+        ? imageUrl
+        : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$imageUrl';
+  }
+
+
   void _onVisibilityChanged(VisibilityInfo info) async {
     print('📱 Reel ${widget.reel.id} visibility: ${info.visibleFraction}');
 
+    if (!mounted || _isDisposed) {
+      print('⚠️ Widget or controller already disposed for reel ${widget.reel.id}');
+      return;
+    }
+
     if (_isInitialized && _videoController.value.isInitialized) {
       if (info.visibleFraction > 0.8) {
-        print(
-            '👁️ Reel ${widget.reel.id} became visible (${info.visibleFraction})');
+        print('👁️ Reel ${widget.reel.id} became visible (${info.visibleFraction})');
 
-        // Still in _onVisibilityChanged, after session activation
-        if (_videoController.value.isInitialized &&
-            !_videoController.value.isPlaying) {
-          _handleVideoAudio(); // Set volume appropriately
-          await _videoController.play();
-          print('ReelPlayer: Video playback initiated.');
-        }
-
-        // SECOND: Start video playback
         if (!_videoController.value.isPlaying) {
           try {
-            print('🎬 Starting video playback...');
+            _handleVideoAudio(); // Set volume
             await _videoController.play();
-            print('✅ Video started successfully');
+            print('✅ Video started for reel ${widget.reel.id}');
 
-            // Wait a moment for video to stabilize
-            await Future.delayed(Duration(milliseconds: 300));
+            await Future.delayed(const Duration(milliseconds: 300));
           } catch (e) {
-            print('❌ Error starting video: $e');
+            print('❌ Error starting video for reel ${widget.reel.id}: $e');
           }
         }
 
-        // THIRD: Start audio playback (with delay to ensure video doesn't interrupt)
-        // if (_hasMusic && _audioPlayer != null) {
-        //   try {
-        //     print('🎵 Starting audio playback...');
-        //
-        //     // Ensure audio session is active and configured properly
-        //     await _audioSession?.setActive(true);
-        //     await _audioSession?.configure(AudioSessionConfiguration(
-        //       avAudioSessionCategory: AVAudioSessionCategory.playback,
-        //       avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.mixWithOthers,
-        //       avAudioSessionMode: AVAudioSessionMode.defaultMode,
-        //       avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
-        //       avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-        //       androidAudioAttributes: const AndroidAudioAttributes(
-        //         contentType: AndroidAudioContentType.music,
-        //         flags: AndroidAudioFlags.none,
-        //         usage: AndroidAudioUsage.media,
-        //       ),
-        //       androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-        //       androidWillPauseWhenDucked: false,
-        //     ));
-        //
-        //     if (!_audioPlayer!.playing) {
-        //       await _setupAudioWhenVisible();
-        //
-        //       // Verify audio started
-        //       await Future.delayed(Duration(milliseconds: 200));
-        //       print('🔍 Audio state after start:');
-        //       print('  - Playing: ${_audioPlayer!.playing}');
-        //       print('  - Position: ${_audioPlayer!.position}');
-        //       print('  - Processing state: ${_audioPlayer!.processingState}');
-        //     }
-        //
-        //   } catch (e) {
-        //     print('❌ Error starting audio: $e');
-        //   }
-        // }
-
-        // Show app bar for first reel
         if (widget.isFirstReel) {
           _showAppBar();
         }
-      } else if (info.visibleFraction < 0.2) {
-        print(
-            '👁️ Reel ${widget.reel.id} became hidden (${info.visibleFraction})');
 
-        // Pause both video and audio
+      } else if (info.visibleFraction < 0.2) {
+        print('👁️ Reel ${widget.reel.id} became hidden (${info.visibleFraction})');
+
         if (_videoController.value.isPlaying) {
-          _videoController.pause();
-          print('⏸️ Video paused for reel ${widget.reel.id}');
+          try {
+            await _videoController.pause();
+            print('⏸️ Video paused for reel ${widget.reel.id}');
+          } catch (e) {
+            print('❌ Error pausing video for reel ${widget.reel.id}: $e');
+          }
         }
 
         if (_hasMusic && _audioPlayer != null && _audioPlayer!.playing) {
-          await _audioPlayer!.pause();
-          print('⏸️ Audio paused for reel ${widget.reel.id}');
+          try {
+            await _audioPlayer!.pause();
+            print('⏸️ Audio paused for reel ${widget.reel.id}');
+          } catch (e) {
+            print('❌ Error pausing audio for reel ${widget.reel.id}: $e');
+          }
         }
       }
     } else {
@@ -314,6 +399,9 @@ class _ReelPlayerState extends State<ReelPlayer>
                     child: const Center(child: CircularProgressIndicator()),
                   ),
 
+                // // Tagged Users List
+                // _buildTaggedUsersList(),
+
                 if (isLiked)
                   Center(
                     child: Icon(
@@ -356,6 +444,48 @@ class _ReelPlayerState extends State<ReelPlayer>
 
                 _buildUserInfoSection(currentReel),
                 _buildRightControls(currentReel),
+
+                // Bottom Info Row
+                Positioned(
+                  left: 255,
+                  right: 0,
+                  bottom: 14,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    // decoration: BoxDecoration(
+                    //   color: Colors.black.withOpacity(0.5),
+                    //   borderRadius: BorderRadius.circular(18),
+                    // ),
+                    child: Row(
+                      // mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Tagged Users Count
+                        if (_taggedUsers.isNotEmpty)
+                          GestureDetector(
+                            onTap: _showTaggedUsersModal,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_taggedUsers.length} people',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -377,6 +507,7 @@ class _ReelPlayerState extends State<ReelPlayer>
   void dispose() {
     _appBarAnimationController.dispose();
     _chewieController?.dispose();
+    _isDisposed = true;
     _videoController.dispose();
     super.dispose();
   }
@@ -578,7 +709,7 @@ class ReelPlayerEnhancements {
                     child: Text(
                       'Original Audio - ${currentReel.username}',
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 12),
+                          color: Colors.white, fontSize: 12.5),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -593,7 +724,7 @@ class ReelPlayerEnhancements {
   }
 
   // FIXED: Build enhanced right-side controls with proper state management
-  Widget buildRightControls(Reel currentReel, BuildContext context) {
+  Widget buildRightControls(Reel reel, BuildContext context) {
     return Consumer<ReelProvider>(
       builder: (context, reelProvider, child) {
         return Positioned(
@@ -601,24 +732,38 @@ class ReelPlayerEnhancements {
           bottom: 30,
           child: Column(
             children: [
-              // FIXED: Like button with proper animation and state
-              AnimatedScale(
-                scale: currentReel.isLiked ? 1.2 : 1.0,
-                duration: const Duration(milliseconds: 150),
-                child: IconButton(
-                  icon: Icon(
-                    currentReel.isLiked
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                    color: currentReel.isLiked ? Colors.red : Colors.white,
-                    size: 30,
-                  ),
-                  onPressed: () => handleDoubleTapLike(context, currentReel.id),
-                ),
-              ),
-              Text(
-                _formatCount(currentReel.likes),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
+              Consumer<ReelProvider>(
+                builder: (context, reelProvider, _) {
+                  final currentReel = reelProvider.reels.firstWhere(
+                        (r) => r.id == reel.id,
+                    orElse: () => reel, // fallback if not found
+                  );
+
+                  return Column(
+                    children: [
+                      // FIXED: Like button with proper animation and synced state
+                      AnimatedScale(
+                        scale: currentReel.isLiked ? 1.2 : 1.0,
+                        duration: const Duration(milliseconds: 150),
+                        child: IconButton(
+                          icon: Icon(
+                            currentReel.isLiked
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: currentReel.isLiked ? Colors.red : Colors.white,
+                            size: 30,
+                          ),
+                          onPressed: () =>
+                              reelProvider.toggleReelLike(currentReel.id),
+                        ),
+                      ),
+                      Text(
+                        _formatCount(currentReel.likes),
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  );
+                },
               ),
 
               const SizedBox(height: 15),
@@ -627,10 +772,10 @@ class ReelPlayerEnhancements {
               IconButton(
                 icon: const Icon(OIcons.EvaIcons.message_circle_outline, color: Colors.white, size: 30),
                 onPressed: () =>
-                    showCommentBottomSheet(context, currentReel.id),
+                    showCommentBottomSheet(context, reel.id),
               ),
               Text(
-                _formatCount(currentReel.commentCount),
+                _formatCount(reel.commentCount),
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
 
@@ -638,12 +783,12 @@ class ReelPlayerEnhancements {
 
               // Share button
               IconButton(
-                icon: Image.asset("assets/icon/shareicon.png",color: Colors.white,width: 30,height: 40,),
+                icon: Image.asset("assets/icon/shareicon.png",color: Colors.white,width: 29,height: 39,),
                 onPressed: () => handleShare(
                     context,
-                    currentReel.id,
-                    currentReel.username,
-                    currentReel.caption
+                    reel.id,
+                    reel.username,
+                    reel.caption
                 ),
               ),
 
@@ -652,9 +797,8 @@ class ReelPlayerEnhancements {
               // More options
               IconButton(
                 icon: const Icon(Icons.more_vert, color: Colors.white, size: 28),
-                onPressed: () => _showMoreOptions(context, currentReel),
+                onPressed: () => _showMoreOptions(context, reel),
               ),
-              // ... rest of the controls remain the same
             ],
           ),
         );

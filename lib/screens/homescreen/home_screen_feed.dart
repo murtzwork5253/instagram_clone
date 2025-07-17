@@ -14,43 +14,325 @@ import '../auth/service/auth_service.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import '../chatscreen/chat_screen.dart';
 import '../common/report_dialog.dart';
-import '../createscreens/create_story/story_preview_screen.dart';
+import '../notificationscreen/notification_screen.dart';
+import '../user_tagging/user_model.dart';
+import '../user_tagging/user_tagging_service.dart';
 
 class InstagramHomeScreen extends StatefulWidget {
   final ValueNotifier<int>? refreshNotifier;
   final ValueNotifier<int>? profileRefreshNotifier;
 
-  const InstagramHomeScreen({Key? key, this.refreshNotifier, this.profileRefreshNotifier}) : super(key: key);
+  const InstagramHomeScreen(
+      {Key? key, this.refreshNotifier, this.profileRefreshNotifier})
+      : super(key: key);
 
   @override
   State<InstagramHomeScreen> createState() => _InstagramHomeScreenState();
 }
 
-class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
-
+class _InstagramHomeScreenState extends State<InstagramHomeScreen>
+    with TickerProviderStateMixin {
   // Store the listener function so we can remove it later
   VoidCallback? _refreshListener;
+  Map<String, int> _unreadMessageCounts = {};
+  int _totalUnreadChats = 0; // Total number of users with unread messages
+  RealtimeChannel? _messageSubscription;
+  final UserTaggingService _taggingService = UserTaggingService();
+  Map<String, List<TaggedUser>> _postTaggedUsers =
+      {}; // Store tagged users per post
+  late AnimationController _chatAnimationController;
+  late Animation<Offset> _chatSlideAnimation;
+  late Animation<Offset> _homeSlideAnimation;
+  static const double _openChatThreshold = 0.5;
 
+  late AnimationController _cameraAnimationController;
+  late Animation<Offset> _cameraSlideAnimation;
+  late Animation<Offset> _homeSlideAnimationForCamera;
+  final double _openCameraThreshold = 0.3; // Threshold for opening camera
+
+  // --- ADDED: Cache for isFollowingUser futures per postId ---
+  final Map<String, Future<bool>> _isFollowingFutures = {};
+
+  // Replace the existing initState method with this:
+  @override
   void initState() {
     super.initState();
 
     // Define the listener function
     _refreshListener = () {
-      // Always check if the widget is still mounted before using context
       if (mounted) {
         final provider = Provider.of<InstaDataProvider>(context, listen: false);
         provider.reloadData();
       }
     };
 
-    // Add the listener
     widget.refreshNotifier?.addListener(_refreshListener!);
+    _setupMessageSubscription();
+    _startListeningToUnreadMessages();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTaggedUsersForAllPosts();
+    });
+
+    // Initialize AnimationController for swipe-to-chat
+    _chatAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    // Initialize animations for side-by-side transition
+    _chatSlideAnimation = Tween<Offset>(
+      begin: const Offset(1.0, 0.0), // Chat starts off-screen to the right
+      end: Offset.zero, // Chat ends fully on-screen
+    ).animate(CurvedAnimation(
+      parent: _chatAnimationController,
+      curve: Curves.easeOut,
+    ));
+
+    _homeSlideAnimation = Tween<Offset>(
+      begin: Offset.zero, // Home starts at original position
+      end: const Offset(-1.0, 0.0), // Home slides completely to the left
+    ).animate(CurvedAnimation(
+      parent: _chatAnimationController,
+      curve: Curves.easeOut,
+    ));
+
+    _cameraAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _cameraSlideAnimation = Tween<Offset>(
+      begin: const Offset(-1.0, 0.0), // Slide from bottom
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _cameraAnimationController,
+      curve: Curves.easeInOut,
+    ));
+    _homeSlideAnimationForCamera = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(0.3, 0.0), // Slide home screen to right
+    ).animate(CurvedAnimation(
+      parent: _cameraAnimationController,
+      curve: Curves.easeInOut,
+    ));
+  }
+
+  Future<void> _loadTaggedUsersForAllPosts() async {
+    final provider = Provider.of<InstaDataProvider>(context, listen: false);
+    final posts = provider.posts;
+    final suggestedPosts = provider.suggestedPosts;
+
+    // Combine all posts
+    final allPosts = [...posts, ...suggestedPosts];
+
+    for (final post in allPosts) {
+      await _loadTaggedUsersForPost(post.id);
+    }
+  }
+
+  Future<void> _loadTaggedUsersForPost(String postId) async {
+    try {
+      final taggedUsers = await _taggingService.getTaggedUsersFromPost(postId);
+      if (mounted) {
+        setState(() {
+          _postTaggedUsers[postId] = taggedUsers;
+        });
+      }
+    } catch (e) {
+      print('Error loading tagged users for post $postId: $e');
+    }
+  }
+
+  // Add this method to listen for unread messages
+  void _startListeningToUnreadMessages() {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) return;
+
+    // Subscribe to real-time changes in the messages table
+    Supabase.instance.client
+        .channel('unread_messages')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'messages',
+          callback: (payload) async {
+            if (mounted) {
+              await _updateUnreadMessageCounts();
+            }
+          },
+        )
+        .subscribe();
+
+    // Initial count
+    _updateUnreadMessageCounts();
+  }
+
+  void _showTaggedUsersModal(String postId) async {
+    final taggedUsers = _postTaggedUsers[postId] ?? [];
+
+    if (taggedUsers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tagged users found')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Tagged People',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: taggedUsers.length,
+                itemBuilder: (context, index) {
+                  final user = taggedUsers[index];
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: Colors.grey[800],
+                      backgroundImage: user.profileImageUrl != null
+                          ? NetworkImage(
+                              _buildUserImageUrl(user.profileImageUrl!))
+                          : null,
+                      child: user.profileImageUrl == null
+                          ? const Icon(Icons.person, color: Colors.white)
+                          : null,
+                    ),
+                    title: Text(
+                      user.username,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: user.fullName != null && user.fullName!.isNotEmpty
+                        ? Text(
+                            user.fullName!,
+                            style: const TextStyle(color: Colors.grey),
+                          )
+                        : null,
+                    trailing: const Icon(
+                      Icons.arrow_forward_ios,
+                      color: Colors.grey,
+                      size: 16,
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              OtherUserProfileScreen(userId: user.id),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Add this method to update unread message count
+  Future<void> _updateUnreadMessageCounts() async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return;
+
+      // Get all unread messages grouped by sender
+      final response = await Supabase.instance.client
+          .from('messages')
+          .select('sender_id')
+          .eq('receiver_id', currentUserId)
+          .eq('is_read', false)
+          .neq('sender_id', currentUserId);
+
+      // Count messages per sender
+      Map<String, int> newCounts = {};
+      for (final message in response) {
+        final senderId = message['sender_id'] as String;
+        newCounts[senderId] = (newCounts[senderId] ?? 0) + 1;
+      }
+
+      if (mounted) {
+        setState(() {
+          _unreadMessageCounts = newCounts;
+          _totalUnreadChats =
+              newCounts.keys.length; // Number of users with unread messages
+        });
+      }
+
+      print('Unread message counts updated: $_unreadMessageCounts');
+      print('Total unread chats: $_totalUnreadChats');
+    } catch (e) {
+      print('Error updating unread message counts: $e');
+    }
+
+    // Method to get unread count for a specific user
+    int getUnreadCountForUser(String userId) {
+      return _unreadMessageCounts[userId] ?? 0;
+    }
+
+    // Method to get total number of users with unread messages
+    int getTotalUnreadChats() {
+      return _totalUnreadChats;
+    }
+  }
+
+  // Add these helper methods:
+  void _openChatScreen() {
+    if (_chatAnimationController.status != AnimationStatus.completed) {
+      _chatAnimationController.forward();
+    }
+  }
+
+  void _closeChatScreen() {
+    if (_chatAnimationController.status != AnimationStatus.dismissed) {
+      _chatAnimationController.reverse();
+    }
   }
 
   // IMPORTANT: Remove the listener when the widget is disposed
   @override
   void dispose() {
     widget.refreshNotifier?.removeListener(_refreshListener!);
+    _messageSubscription?.unsubscribe();
+    _chatAnimationController.dispose(); // Add this line
+    _cameraAnimationController.dispose(); // Add this line
     super.dispose();
   }
 
@@ -72,229 +354,338 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
     }
   }
 
+  void _setupMessageSubscription() {
+    _messageSubscription = Supabase.instance.client
+        .channel('home_messages')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'messages',
+          callback: (payload) {
+            // Update unread counts when any message changes
+            _updateUnreadMessageCounts();
+          },
+        )
+        .subscribe();
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    return GestureDetector(
-        // Detect a horizontal drag ending, specifically a swipe from left to right.
-        onHorizontalDragEnd: (details) {
-          if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
-            Navigator.of(context).push(
-              PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) =>
-                    CreatePostScreen(initialTabIndex: 1),
-                transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                  const beginOffset = Offset(-1.0, 0.0);
-                  const endOffset = Offset.zero;
+    return Stack(
+      children: [
+        // Home Screen with slide animation (affected by both chat and camera)
+        SlideTransition(
+          position: _homeSlideAnimation, // This handles chat sliding
+          child: SlideTransition(
+            position: _homeSlideAnimationForCamera,
+            // This handles camera sliding
+            child: GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                final screenWidth = MediaQuery.of(context).size.width;
 
-                  const homeScreenBeginOffset = Offset.zero;
-                  const homeScreenEndOffset = Offset(0.3, 0.0);
+                if (details.delta.dx > 0) {
+                  // Right swipe - camera transition
+                  // Reset chat animation to ensure it doesn't interfere
+                  _chatAnimationController.reset();
 
-                  var storyScreenTween = Tween(begin: beginOffset, end: endOffset)
-                      .chain(CurveTween(curve: Curves.ease));
-                  var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset)
-                      .chain(CurveTween(curve: Curves.ease));
+                  final progress = (details.delta.dx / screenWidth) * 2;
+                  final newValue = (_cameraAnimationController.value + progress)
+                      .clamp(0.0, 1.0);
+                  _cameraAnimationController.value = newValue;
+                } else {
+                  // Left swipe - chat transition
+                  // Reset camera animation to ensure it doesn't interfere
+                  _cameraAnimationController.reset();
 
-                  // Replace the above section with this:
-                  return Stack(
-                    children: <Widget>[
-                      // Wrap the home screen's SlideTransition in an OverflowBox
-                      // This allows the home screen to render its full size even when
-                      // partially off-screen due to the slide animation, preventing overflow.
-                      OverflowBox(
-                        minHeight: 0.0,
-                        maxHeight: double.infinity,
-                        minWidth: 0.0,
-                        maxWidth: double.infinity,
-                        alignment: Alignment.topLeft, // Ensures content starts from the top-left of its "allowed" infinite space
-                        child: SlideTransition(
-                          position: homeScreenTween.animate(animation),
-                          child: widget, // This is the home screen
+                  final progress = (-details.delta.dx / screenWidth) * 2;
+                  final newValue = (_chatAnimationController.value + progress)
+                      .clamp(0.0, 1.0);
+                  _chatAnimationController.value = newValue;
+                }
+              },
+              onHorizontalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                final chatAnimationValue = _chatAnimationController.value;
+                final cameraAnimationValue = _cameraAnimationController.value;
+
+                if (velocity < -300 ||
+                    chatAnimationValue > _openChatThreshold) {
+                  // Open chat if fast swipe left or past threshold
+                  _cameraAnimationController.reset(); // Ensure camera is reset
+                  _chatAnimationController.forward().then((_) {
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            ChatScreen(
+                          currentUserId: currentUserId!,
+                          cameFromProfile: false,
+                          onMessageRead: () {
+                            _updateUnreadMessageCounts();
+                          },
                         ),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration:
+                            const Duration(milliseconds: 300),
                       ),
-                      SlideTransition(
-                        position: storyScreenTween.animate(animation),
-                        child: child,
+                    ).then((_) {
+                      _chatAnimationController.reset();
+                    });
+                  });
+                } else if (velocity > 300 ||
+                    cameraAnimationValue > _openCameraThreshold) {
+                  // Open camera if fast swipe right or past threshold
+                  _chatAnimationController.reset(); // Ensure chat is reset
+                  _cameraAnimationController.forward().then((_) {
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            CreatePostScreen(initialTabIndex: 1),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration:
+                            const Duration(milliseconds: 300),
                       ),
-                    ],
-                  );
-                },
-                fullscreenDialog: true,
-              ),
-            );
-          }
-          else if (details.primaryVelocity != null && details.primaryVelocity! < 0) {
-            Navigator.of(context).push(
-              PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) =>
-                    ChatScreen(currentUserId: currentUserId!),
-                transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                  const beginOffset = Offset(1.0, 0.0);
-                  const endOffset = Offset.zero;
+                    ).then((_) {
+                      _cameraAnimationController.reset();
+                    });
+                  });
+                } else {
+                  // Return to home screen - reset both animations
+                  _chatAnimationController.reverse();
+                  _cameraAnimationController.reverse();
+                }
+              },
+              child: Consumer<InstaDataProvider>(
+                builder: (context, provider, _) {
+                  // Your existing CustomScrollView content here
+                  if (provider.isLoading) {
+                    return Center(child: CircularProgressIndicator());
+                  }
 
-                  const homeScreenBeginOffset = Offset.zero;
-                  const homeScreenEndOffset = Offset(0.0, 0.3);
+                  if (!provider.isLoading) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _loadTaggedUsersForAllPosts();
+                    });
+                  }
 
-                  var chatScreenTween = Tween(begin: beginOffset, end: endOffset)
-                      .chain(CurveTween(curve: Curves.ease));
-                  var homeScreenTween = Tween(begin: homeScreenBeginOffset, end: homeScreenEndOffset)
-                      .chain(CurveTween(curve: Curves.ease));
+                  final stories = provider.stories;
+                  final posts = provider.posts;
 
-                  // Replace the above section with this:
-                  return Stack(
-                    children: <Widget>[
-                      // Wrap the home screen's SlideTransition in an OverflowBox
-                      // This allows the home screen to render its full size even when
-                      // partially off-screen due to the slide animation, preventing overflow.
-                      OverflowBox(
-                        minHeight: 0.0,
-                        maxHeight: double.infinity,
-                        minWidth: 0.0,
-                        maxWidth: double.infinity,
-                        alignment: Alignment.topLeft, // Ensures content starts from the top-left of its "allowed" infinite space
-                        child: SlideTransition(
-                          position: homeScreenTween.animate(animation),
-                          child: widget, // This is the home screen
+                  return CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      // Your SliverAppBar and UI here as-is
+                      SliverAppBar(
+                        pinned: false,
+                        floating: true,
+                        backgroundColor: Colors.black,
+                        title: Text(
+                          'Instagram',
+                          style: TextStyle(
+                            fontFamily: 'GrandHotel',
+                            fontSize: 33,
+                            color: Colors.white,
+                          ),
                         ),
+                        actions: [
+                          IconButton(
+                            onPressed: () {
+                              Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => NotificationScreen()));
+                            },
+                            icon: Image.asset(
+                              "assets/icon/Icon.png",
+                              width: 25,
+                              height: 25,
+                            ),
+                          ),
+                          // Chat icon with badge
+                          Stack(
+                            children: [
+                              IconButton(
+                                onPressed: () {
+                                  final currentUserId = Supabase
+                                      .instance.client.auth.currentUser?.id;
+                                  if (currentUserId != null) {
+                                    Navigator.of(context).push(
+                                      PageRouteBuilder(
+                                        pageBuilder: (context, animation,
+                                                secondaryAnimation) =>
+                                            ChatScreen(
+                                          currentUserId: currentUserId,
+                                          cameFromProfile: false,
+                                          onMessageRead: () {
+                                            _updateUnreadMessageCounts();
+                                          },
+                                        ),
+                                        transitionsBuilder: (context, animation,
+                                            secondaryAnimation, child) {
+                                          const begin = Offset(1.0, 0.0);
+                                          const end = Offset.zero;
+                                          final tween =
+                                              Tween(begin: begin, end: end);
+                                          final offsetAnimation =
+                                              animation.drive(tween);
+                                          return SlideTransition(
+                                            position: offsetAnimation,
+                                            child: child,
+                                          );
+                                        },
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              'You need to be logged in to view chats.')),
+                                    );
+                                  }
+                                },
+                                icon: Image.asset(
+                                    "assets/images/image-removebg-preview.png",
+                                    width: 25,
+                                    height: 25,
+                                    color: Colors.white),
+                              ),
+                              if (_totalUnreadChats > 0)
+                                Positioned(
+                                  right: 8,
+                                  top: -1,
+                                  child: Container(
+                                    padding: EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.black, width: 1),
+                                    ),
+                                    constraints: BoxConstraints(
+                                      minWidth: 16,
+                                      minHeight: 16,
+                                    ),
+                                    child: Text(
+                                      _totalUnreadChats.toString(),
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
-                      SlideTransition(
-                        position: chatScreenTween.animate(animation),
-                        child: child,
-                      ),
-                    ],
-                  );
-                },
-                fullscreenDialog: true,
-              ),
-            );
-          }
-        },
-        child: Consumer<InstaDataProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          final stories = provider.stories;
-          final posts = provider.posts;
-
-          return CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              // Your SliverAppBar and UI here as-is
-              SliverAppBar(
-                pinned: false,
-                floating: true,
-                backgroundColor: Colors.black,
-                title: Text(
-                  'Instagram',
-                  style: TextStyle(
-                    fontFamily: 'GrandHotel',
-                    fontSize: 33,
-                    color: Colors.white,
-                  ),
-                ),
-                // NEW CODE - Replace the above section with this:
-                actions: [
-                  IconButton(
-                    onPressed: (){},
-                    icon: Image.asset("assets/icon/Icon.png",width: 25,height: 25,),
-                  ),
-                  // This is likely your existing message icon
-                  IconButton(
-                    onPressed: () {
-                      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-                      if (currentUserId != null) {
-                        Navigator.of(context).push(
-                          PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) =>
-                                ChatScreen(currentUserId: currentUserId), // Pass the current user ID
-                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                              const begin = Offset(1.0, 0.0); // Start from right
-                              const end = Offset.zero;
-                              final tween = Tween(begin: begin, end: end);
-                              final offsetAnimation = animation.drive(tween);
-                              return SlideTransition(
-                                position: offsetAnimation,
-                                child: child,
-                              );
+                      // Stories section
+                      SliverToBoxAdapter(
+                        child: Container(
+                          height: 121,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: stories.length,
+                            itemBuilder: (context, index) {
+                              final story = stories[index];
+                              return _buildStoryItem(story, context);
                             },
                           ),
-                        );
-                      } else {
-                        // Handle case where user is not logged in
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('You need to be logged in to view chats.')),
-                        );
-                      }
-                    },
-                    icon: Image.asset("assets/images/image-removebg-preview.png", width: 25, height: 25, color: Colors.white),
-                  ),
-                ],
+                        ),
+                      ),
+                      // Posts section
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final posts = provider.posts;
+                            final suggestedPosts = provider.suggestedPosts;
+                            final followingUserIds =
+                                posts.map((post) => post.userId).toSet();
+                            final filteredSuggestedPosts = suggestedPosts
+                                .where((post) =>
+                                    !followingUserIds.contains(post.userId))
+                                .toList();
+
+                            if (index < posts.length) {
+                              return _buildPost(posts[index],
+                                  isFollowing: true);
+                            } else {
+                              final suggestedIndex = index - posts.length;
+                              if (suggestedIndex <
+                                  filteredSuggestedPosts.length) {
+                                return Column(
+                                  children: [
+                                    if (suggestedIndex == 0)
+                                      _buildSuggestedPostsHeader(),
+                                    _buildPost(
+                                        filteredSuggestedPosts[suggestedIndex],
+                                        isFollowing: false),
+                                  ],
+                                );
+                              }
+                            }
+                            return SizedBox.shrink();
+                          },
+                          childCount: () {
+                            final posts = provider.posts;
+                            final suggestedPosts = provider.suggestedPosts;
+                            final followingUserIds =
+                                posts.map((post) => post.userId).toSet();
+                            final filteredSuggestedPosts = suggestedPosts
+                                .where((post) =>
+                                    !followingUserIds.contains(post.userId))
+                                .toList();
+                            return posts.length + filteredSuggestedPosts.length;
+                          }(),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-              // --- MODIFIED STORIES SECTION ---
-              SliverToBoxAdapter(
-                child: Container(
-                  height: 110, // Fixed height for story row
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: stories.length, // Iterate over the aggregated stories
-                    itemBuilder: (context, index) {
-                      final story = stories[index]; // 'story' is a single aggregated StoryData object
-                      return _buildStoryItem(story, context); // Pass the single aggregated StoryData
-                    },
-                  ),
-                ),
-              ),
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                    final posts = provider.posts;
-                    final suggestedPosts = provider.suggestedPosts;
+            ),
+          ),
+        ),
 
-                    // Get IDs of users we're already following (from regular posts)
-                    final followingUserIds = posts.map((post) => post.userId).toSet();
+        // Camera Screen overlay with slide animation
+        SlideTransition(
+          position: _cameraSlideAnimation,
+          child: AnimatedBuilder(
+            animation: _cameraAnimationController,
+            builder: (context, child) {
+              // Only show camera screen when animation has started
+              if (_cameraAnimationController.value > 0) {
+                return CreatePostScreen(initialTabIndex: 1);
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
 
-                    // Filter suggested posts to exclude users we're already following
-                    final filteredSuggestedPosts = suggestedPosts
-                        .where((post) => !followingUserIds.contains(post.userId))
-                        .toList();
-
-                    final totalPosts = posts.length + filteredSuggestedPosts.length;
-
-                    if (index < posts.length) {
-                      // Regular posts from following users
-                      return _buildPost(posts[index], isFollowing: true);
-                    } else {
-                      // Suggested posts from non-following users
-                      final suggestedIndex = index - posts.length;
-                      if (suggestedIndex < filteredSuggestedPosts.length) {
-                        return Column(
-                          children: [
-                            if (suggestedIndex == 0) _buildSuggestedPostsHeader(),
-                            _buildPost(filteredSuggestedPosts[suggestedIndex], isFollowing: false),
-                          ],
-                        );
-                      }
-                    }
-                    return SizedBox.shrink();
+        // Chat Screen overlay with slide animation
+        SlideTransition(
+          position: _chatSlideAnimation,
+          child: AnimatedBuilder(
+            animation: _chatAnimationController,
+            builder: (context, child) {
+              // Only show chat screen when animation has started
+              if (_chatAnimationController.value > 0) {
+                return ChatScreen(
+                  currentUserId: currentUserId!,
+                  cameFromProfile: false,
+                  onMessageRead: () {
+                    _updateUnreadMessageCounts();
                   },
-                  childCount: () {
-                    final posts = provider.posts;
-                    final suggestedPosts = provider.suggestedPosts;
-                    final followingUserIds = posts.map((post) => post.userId).toSet();
-                    final filteredSuggestedPosts = suggestedPosts
-                        .where((post) => !followingUserIds.contains(post.userId))
-                        .toList();
-                    return posts.length + filteredSuggestedPosts.length;
-                  }(),
-                ),
-              ),
-              SliverToBoxAdapter(child: SizedBox(height: 10)),
-            ],
-          );
-        },
-      ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -311,7 +702,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
     final bool isMyEmptyStory = story.isMe && !story.hasStory;
     // print("🧩 Building story item -> username: ${story.username}, isMe: ${story.isMe}, hasStory: ${story.hasStory}, isMyEmptyStory: ${isMyEmptyStory}");
 
-
     return GestureDetector(
       onTap: () {
         if (isMyEmptyStory) {
@@ -319,8 +709,11 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
             context,
             PageRouteBuilder(
               pageBuilder: (context, animation, secondaryAnimation) =>
-                  CreatePostScreen(initialTabIndex: 1,),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  CreatePostScreen(
+                initialTabIndex: 1,
+              ),
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
                 const begin = Offset(-1.0, 0.0);
                 const end = Offset.zero;
                 final tween = Tween(begin: begin, end: end);
@@ -332,52 +725,95 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               },
             ),
           );
-        }
-        else {
-          final provider = Provider.of<InstaDataProvider>(context, listen: false);
+        } else {
+          final provider =
+              Provider.of<InstaDataProvider>(context, listen: false);
 
-          // Get all individual stories for this user from the provider's dedicated map
-          final List<StoryData> userAllIndividualStories = provider.getIndividualStoriesForUser(story.userId);
+          // Get ALL stories from all users (aggregated stories)
+          final allStories = provider.stories;
 
-          // Sort stories for display order in StoryViewScreen (oldest first)
-          userAllIndividualStories.sort((a, b) {
-            if (a.createdAt == null && b.createdAt == null) return 0;
-            if (a.createdAt == null) return 1;
-            if (b.createdAt == null) return -1;
-            return a.createdAt!.compareTo(b.createdAt!);
-          });
+          // Find the current user's story index in the aggregated list
+          final currentUserStoryIndex =
+              allStories.indexWhere((s) => s.userId == story.userId);
 
-          // NEW LOGIC: Find the initial index of the first unviewed story
-          int initialIndex = 0; // Default to the first story
-          if (!story.isViewed) { // Only search for unviewed if the aggregated story is not viewed
-            final firstUnviewedIndex = userAllIndividualStories.indexWhere((s) => !s.isViewed);
-            if (firstUnviewedIndex != -1) {
-              initialIndex = firstUnviewedIndex;
+          if (currentUserStoryIndex == -1) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Story not found')),
+            );
+            return;
+          }
+
+          // Create a list of all individual stories for ALL users in order
+          List<StoryData> allIndividualStories = [];
+          List<int> userStartIndices =
+              []; // Track where each user's stories start
+
+          for (int i = 0; i < allStories.length; i++) {
+            final userStory = allStories[i];
+            if (userStory.hasStory) {
+              userStartIndices.add(allIndividualStories.length);
+              final userIndividualStories =
+                  provider.getIndividualStoriesForUser(userStory.userId);
+
+              // Sort individual stories by creation time (oldest first)
+              userIndividualStories.sort((a, b) {
+                if (a.createdAt == null && b.createdAt == null) return 0;
+                if (a.createdAt == null) return 1;
+                if (b.createdAt == null) return -1;
+                return a.createdAt!.compareTo(b.createdAt!);
+              });
+
+              allIndividualStories.addAll(userIndividualStories);
             }
           }
 
-
-          if (userAllIndividualStories.isNotEmpty) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => StoryViewScreen(
-                  stories: userAllIndividualStories, // Pass the list of ALL individual stories
-                  initialIndex: initialIndex, // Pass the calculated initial index
-                ),
-              ),
-            );
-          } else {
-            // Handle case where no individual stories are found, even if aggregated had 'hasStory'
+          if (allIndividualStories.isEmpty) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('No individual stories found for ${story.username}')),
+              SnackBar(content: Text('No stories found')),
             );
+            return;
           }
+
+          // Find the starting index for the current user
+          int currentUserStartIndex = 0;
+          for (int i = 0; i < currentUserStoryIndex; i++) {
+            if (allStories[i].hasStory) {
+              final userStories =
+                  provider.getIndividualStoriesForUser(allStories[i].userId);
+              currentUserStartIndex += userStories.length;
+            }
+          }
+
+          // Find the first unviewed story for the current user
+          int initialIndex = currentUserStartIndex;
+          final currentUserStories =
+              provider.getIndividualStoriesForUser(story.userId);
+
+          if (!story.isViewed && currentUserStories.isNotEmpty) {
+            final firstUnviewedIndex =
+                currentUserStories.indexWhere((s) => !s.isViewed);
+            if (firstUnviewedIndex != -1) {
+              initialIndex = currentUserStartIndex + firstUnviewedIndex;
+            }
+          }
+
+          // Navigate to StoryViewScreen with all stories
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StoryViewScreen(
+                stories: allIndividualStories,
+                initialIndex: initialIndex,
+                userStartIndices:
+                    userStartIndices, // Pass this to help with navigation
+              ),
+            ),
+          );
         }
       },
       child: Container(
-        width: 80,
-        margin: const EdgeInsets.only(left: 10, top: 8),
+        width: 90,
+        margin: const EdgeInsets.only(left: 8, top: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -386,22 +822,31 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               children: [
                 // Avatar with border
                 Container(
-                  padding: const EdgeInsets.all(2),
+                  padding: const EdgeInsets.all(1),
                   decoration: BoxDecoration(
                     // Modify gradient: if it's "My Empty Story", set it to transparent.
                     // Otherwise, use the existing logic for grey/colorful borders.
                     gradient: isMyEmptyStory
-                        ? const LinearGradient(colors: [Colors.transparent, Colors.transparent])
+                        ? const LinearGradient(
+                            colors: [Colors.transparent, Colors.transparent])
                         : (story.isViewed // Use the aggregated 'isViewed'
-                        ? const LinearGradient(colors: [Colors.grey, Colors.grey]) // All viewed
-                        : const LinearGradient(colors: [Colors.purple, Colors.orange, Colors.red])), // Unviewed exists
+                            ? const LinearGradient(colors: [
+                                Colors.grey,
+                                Colors.grey
+                              ]) // All viewed
+                            : const LinearGradient(colors: [
+                                Colors.purple,
+                                Colors.orange,
+                                Colors.red
+                              ])),
+                    // Unviewed exists
                     shape: BoxShape.circle,
                   ),
                   child: CircleAvatar(
-                    radius: 36,
+                    radius: 44,
                     backgroundColor: Colors.black,
                     child: CircleAvatar(
-                      radius: 32,
+                      radius: 42,
                       backgroundColor: Colors.grey[800],
                       backgroundImage: NetworkImage(displayUrl),
                     ),
@@ -410,11 +855,11 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                 // Plus icon, conditionally shown when it's the current user's empty story
                 if (isMyEmptyStory)
                   Positioned(
-                    bottom: 0,
+                    bottom: 2,
                     right: 8,
                     child: Container(
-                      width: 20,
-                      height: 20,
+                      width: 22,
+                      height: 23,
                       decoration: BoxDecoration(
                         color: Colors.blue,
                         shape: BoxShape.circle,
@@ -424,7 +869,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                         child: Icon(
                           Icons.add,
                           color: Colors.white,
-                          size: 16,
+                          size: 20,
                         ),
                       ),
                     ),
@@ -466,15 +911,23 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
       ),
     );
   }
+
   // --- END MODIFIED _buildStoryItem METHOD ---
 
   Widget _buildPost(PostData post, {bool isFollowing = true}) {
     final imageUrl = (post.profileImageUrl != null &&
-        post.profileImageUrl!.startsWith('http'))
+            post.profileImageUrl!.startsWith('http'))
         ? post.profileImageUrl!
         : post.profileImageUrl != null
-        ? 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${post.profileImageUrl}'
-        : 'https://your-app.com/default-avatar.png';
+            ? 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${post.profileImageUrl}'
+            : 'https://your-app.com/default-avatar.png';
+
+    // --- ADDED: Cache the isFollowingUser future for this post if not already cached ---
+    final currentUser = AuthService.client().auth.currentUser;
+    if (!isFollowing && currentUser != null && !_isFollowingFutures.containsKey(post.id)) {
+      _isFollowingFutures[post.id] = Provider.of<InstaDataProvider>(context, listen: false)
+          .isFollowingUser(currentUser.id, post.userId);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -501,7 +954,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               }
             },
             leading: CircleAvatar(
-              radius: 16,
+              radius: 17,
               backgroundImage: NetworkImage(imageUrl),
               child: imageUrl == null ? Icon(Icons.person) : null,
             ),
@@ -509,83 +962,104 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               post.username,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 13,
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
               ),
             ),
             subtitle: post.location != null && post.location!.isNotEmpty
                 ? Text(
-              post.location!,
-              style: TextStyle(color: Colors.white),
-            )
+                    post.location!,
+                    style: TextStyle(color: Colors.white, fontSize: 13),
+                  )
                 : null,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Show follow/unfollow button for suggested posts
                 if (!isFollowing) ...[
-                  FutureBuilder<bool>(
-                    future: Provider.of<InstaDataProvider>(context, listen: false)
-                        .isFollowingUser(
-                        AuthService.client().auth.currentUser!.id,
-                        post.userId
-                    ),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.blue,
-                          ),
-                        );
-                      }
-
-                      final bool isCurrentlyFollowing = snapshot.data ?? false;
-
-                      return TextButton(
-                        onPressed: () async {
-                          try {
-                            final provider = Provider.of<InstaDataProvider>(context, listen: false);
-                            final currentUserId = AuthService.client().auth.currentUser!.id;
-
-                            if (isCurrentlyFollowing) {
-                              await provider.unfollowUser(currentUserId, post.userId);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Unfollowed ${post.username}')),
-                              );
-                            } else {
-                              await provider.followUser(currentUserId, post.userId);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Following ${post.username}')),
+                  currentUser == null
+                      ? TextButton(
+                          onPressed: null,
+                          child: Text('Login to follow', style: TextStyle(color: Colors.white)),
+                        )
+                      : FutureBuilder<bool>(
+                          future: _isFollowingFutures[post.id],
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.blue,
+                                ),
                               );
                             }
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to ${isCurrentlyFollowing ? 'unfollow' : 'follow'} user')),
+
+                            if (snapshot.hasError) {
+                              return Text('Error', style: TextStyle(color: Colors.red));
+                            }
+
+                            final bool isCurrentlyFollowing = snapshot.data ?? false;
+
+                            return TextButton(
+                              onPressed: () async {
+                                try {
+                                  final provider = Provider.of<InstaDataProvider>(context,
+                                      listen: false);
+                                  final currentUserId = currentUser.id;
+
+                                  if (isCurrentlyFollowing) {
+                                    await provider.unfollowUser(
+                                        currentUserId, post.userId);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content:
+                                              Text('Unfollowed ${post.username}')),
+                                    );
+                                  } else {
+                                    await provider.followUser(
+                                        currentUserId, post.userId);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content:
+                                              Text('Following ${post.username}')),
+                                    );
+                                  }
+                                  // Refresh the cached future for this post
+                                  setState(() {
+                                    _isFollowingFutures[post.id] = provider.isFollowingUser(currentUserId, post.userId);
+                                  });
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            'Failed to ${isCurrentlyFollowing ? 'unfollow' : 'follow'} user')),
+                                  );
+                                }
+                              },
+                              style: TextButton.styleFrom(
+                                backgroundColor: isCurrentlyFollowing
+                                    ? Colors.grey[800]
+                                    : Colors.blue,
+                                padding:
+                                    EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                minimumSize: Size(0, 0),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                              child: Text(
+                                isCurrentlyFollowing ? 'Following' : 'Follow',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             );
-                          }
-                        },
-                        style: TextButton.styleFrom(
-                          backgroundColor: isCurrentlyFollowing ? Colors.grey[800] : Colors.blue,
-                          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          minimumSize: Size(0, 0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
+                          },
                         ),
-                        child: Text(
-                          isCurrentlyFollowing ? 'Following' : 'Follow',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                   SizedBox(width: 2),
                 ],
                 IconButton(
@@ -610,65 +1084,99 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               setState(() {});
             }
           },
-          child: AspectRatio(
-            aspectRatio: 1.0, // Always Instagram's 1:1 container
-            child: Container(
-              color: Colors.black,
-              child: () {
-                // Parse the stored display preferences
-                final bool useOriginalRatio = post.use_original_ratio ?? false;
-                final String? transformationString = post.image_transformation;
+          child: Stack(
+            children: [
+              AspectRatio(
+                aspectRatio: 1.0, // Always Instagram's 1:1 container
+                child: Container(
+                  color: Colors.black,
+                  child: () {
+                    // Parse the stored display preferences
+                    final bool useOriginalRatio =
+                        post.use_original_ratio ?? false;
+                    final String? transformationString =
+                        post.image_transformation;
 
-                Matrix4 transformation = Matrix4.identity();
-                if (transformationString != null && transformationString.isNotEmpty) {
-                  try {
-                    final values = transformationString.split(',').map((e) => double.parse(e)).toList();
-                    if (values.length == 16) { // Matrix4 has 16 values
-                      transformation = Matrix4.fromList(values);
+                    Matrix4 transformation = Matrix4.identity();
+                    if (transformationString != null &&
+                        transformationString.isNotEmpty) {
+                      try {
+                        final values = transformationString
+                            .split(',')
+                            .map((e) => double.parse(e))
+                            .toList();
+                        if (values.length == 16) {
+                          // Matrix4 has 16 values
+                          transformation = Matrix4.fromList(values);
+                        }
+                      } catch (e) {
+                        // If parsing fails, use identity matrix
+                        transformation = Matrix4.identity();
+                      }
                     }
-                  } catch (e) {
-                    // If parsing fails, use identity matrix
-                    transformation = Matrix4.identity();
-                  }
-                }
 
-                return Transform(
-                  transform: transformation,
-                  child: Image.network(
-                    post.imageUrl,
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: useOriginalRatio ? BoxFit.contain : BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
+                    return Transform(
+                      transform: transformation,
+                      child: Image.network(
+                        post.imageUrl,
                         width: double.infinity,
                         height: double.infinity,
-                        color: Colors.grey[900],
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                                : null,
+                        fit: useOriginalRatio ? BoxFit.contain : BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            color: Colors.grey[900],
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: loadingProgress.expectedTotalBytes !=
+                                        null
+                                    ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                    : null,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            color: Colors.grey[900],
+                            child: const Center(
+                              child: Icon(Icons.error, color: Colors.white),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  }(),
+                ),
+              ),
+              Positioned(
+                bottom: 10,
+                left: 12,
+                child: _hasTaggedUsers(post.id)
+                    ? GestureDetector(
+                        onTap: () => _showTaggedUsersModal(post.id),
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.7),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.person,
+                            color: Colors.white,
+                            size: 16,
                           ),
                         ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: double.infinity,
-                        height: double.infinity,
-                        color: Colors.grey[900],
-                        child: const Center(
-                          child: Icon(Icons.error, color: Colors.white),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              }(),
-            ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
           ),
         ),
         Padding(
@@ -779,6 +1287,11 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
     );
   }
 
+  bool _hasTaggedUsers(String postId) {
+    final taggedUsers = _postTaggedUsers[postId];
+    return taggedUsers != null && taggedUsers.isNotEmpty;
+  }
+
   void _showPostOptions(PostData post) {
     final currentUser = AuthService.client().auth.currentUser;
     final currentUserId = currentUser?.id;
@@ -814,23 +1327,27 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               FutureBuilder<bool>(
                 // Use FutureBuilder to check follow status asynchronously
                 future: Provider.of<InstaDataProvider>(context, listen: false)
-                    .isFollowingUser(currentUserId!, post.userId), // Ensure currentUserId is not null
+                    .isFollowingUser(currentUserId!, post.userId),
+                // Ensure currentUserId is not null
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const ListTile(
                       leading: SizedBox(
                         width: 24, // Match icon size
                         height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       ),
-                      title: Text('Loading...', style: TextStyle(color: Colors.white)),
+                      title: Text('Loading...',
+                          style: TextStyle(color: Colors.white)),
                     );
                   }
                   if (snapshot.hasError) {
                     print("Error checking follow status: ${snapshot.error}");
                     return ListTile(
                       leading: const Icon(Icons.error, color: Colors.red),
-                      title: const Text('Error loading follow status', style: TextStyle(color: Colors.red)),
+                      title: const Text('Error loading follow status',
+                          style: TextStyle(color: Colors.red)),
                       onTap: () {
                         Navigator.pop(context);
                       },
@@ -841,7 +1358,9 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
 
                   return ListTile(
                     leading: Icon(
-                      isFollowing ? Icons.person_remove_outlined : Icons.person_add_outlined,
+                      isFollowing
+                          ? Icons.person_remove_outlined
+                          : Icons.person_add_outlined,
                       color: Colors.white,
                     ),
                     title: Text(
@@ -852,16 +1371,20 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                       Navigator.pop(context); // Close bottom sheet immediately
 
                       try {
-                        final provider = Provider.of<InstaDataProvider>(context, listen: false);
+                        final provider = Provider.of<InstaDataProvider>(context,
+                            listen: false);
                         if (isFollowing) {
-                          await provider.unfollowUser(currentUserId, post.userId);
+                          await provider.unfollowUser(
+                              currentUserId, post.userId);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Unfollowed ${post.username}')),
+                            SnackBar(
+                                content: Text('Unfollowed ${post.username}')),
                           );
                         } else {
                           await provider.followUser(currentUserId, post.userId);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Following ${post.username}')),
+                            SnackBar(
+                                content: Text('Following ${post.username}')),
                           );
                         }
                         // You might want to refresh the UI that shows the follow status
@@ -869,7 +1392,9 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                       } catch (e) {
                         print('Error following/unfollowing: $e');
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to ${isFollowing ? 'unfollow' : 'follow'} user')),
+                          SnackBar(
+                              content: Text(
+                                  'Failed to ${isFollowing ? 'unfollow' : 'follow'} user')),
                         );
                       }
                     },
@@ -905,11 +1430,12 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
               ListTile(
                 leading: Icon(Icons.report_outlined, color: Colors.red),
                 title: Text('Report', style: TextStyle(color: Colors.red)),
-                onTap: () async{
+                onTap: () async {
                   Navigator.pop(context);
                   await showDialog(
-                  context: context,
-                  builder: (context) => ReportDialog(targetType: 'post', targetId: post.id),
+                    context: context,
+                    builder: (context) =>
+                        ReportDialog(targetType: 'post', targetId: post.id),
                   );
                 },
               ),
@@ -957,7 +1483,9 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                     return Center(child: CircularProgressIndicator());
                   }
 
-                  if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                  if (snapshot.hasError ||
+                      !snapshot.hasData ||
+                      snapshot.data!.isEmpty) {
                     return Center(
                       child: Text(
                         'No users found',
@@ -971,7 +1499,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                     itemCount: snapshot.data!.length,
                     itemBuilder: (context, index) {
                       final user = snapshot.data![index];
-                      final String imageUrl = _buildUserImageUrl(user['profile_image_url']);
+                      final String imageUrl =
+                          _buildUserImageUrl(user['profile_image_url']);
 
                       return ListTile(
                         leading: CircleAvatar(
@@ -990,9 +1519,9 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
                         ),
                         subtitle: user['full_name'] != null
                             ? Text(
-                          user['full_name'],
-                          style: TextStyle(color: Colors.grey),
-                        )
+                                user['full_name'],
+                                style: TextStyle(color: Colors.grey),
+                              )
                             : null,
                         onTap: () {
                           Navigator.pop(context);
@@ -1010,7 +1539,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
             // Add to story option
             ListTile(
               leading: Icon(Icons.add_circle_outline, color: Colors.white),
-              title: Text('Add post to your story', style: TextStyle(color: Colors.white)),
+              title: Text('Add post to your story',
+                  style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
                 _addPostToStory(post);
@@ -1040,9 +1570,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
       final currentUserId = Supabase.instance.client.auth.currentUser?.id;
       if (currentUserId == null) return [];
 
-      final response = await Supabase.instance.client
-          .from('followers')
-          .select('''
+      final response =
+          await Supabase.instance.client.from('followers').select('''
           following_id,
           users!followers_following_id_fkey (
             id,
@@ -1050,8 +1579,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
             full_name,
             profile_image_url
           )
-        ''')
-          .eq('follower_id', currentUserId);
+        ''').eq('follower_id', currentUserId);
 
       return response.map<Map<String, dynamic>>((item) {
         final profile = item['users'];
@@ -1072,8 +1600,10 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
   String _buildUserImageUrl(String? profileImageUrl) {
     if (profileImageUrl == null) return '';
 
-    final bool isFullUrl = Uri.tryParse(profileImageUrl)?.hasAbsolutePath == true &&
-        (profileImageUrl.startsWith('http://') || profileImageUrl.startsWith('https://'));
+    final bool isFullUrl =
+        Uri.tryParse(profileImageUrl)?.hasAbsolutePath == true &&
+            (profileImageUrl.startsWith('http://') ||
+                profileImageUrl.startsWith('https://'));
 
     return isFullUrl
         ? profileImageUrl
@@ -1088,7 +1618,14 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
     // 2. Sending a notification to the user
     // 3. Adding to their direct messages
     // print("THe user Id iw: ${user['id']}");
-    Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(currentUserId: AuthService.client().auth.currentUser!.id,initialChatUserId: user['id'],cameFromProfile: true,)));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => ChatScreen(
+                  currentUserId: AuthService.client().auth.currentUser!.id,
+                  initialChatUserId: user['id'],
+                  cameFromProfile: true,
+                )));
   }
 
 // Method to add post to story
@@ -1106,8 +1643,10 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen> {
 
 // Method to copy post link
   void _copyPostLink(PostData post) {
-   final imageUrl = post.imageUrl;
-    final postLink = imageUrl.startsWith('http') && imageUrl.startsWith('https') ? imageUrl : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/post-media/${post.userId}/$imageUrl';
+    final imageUrl = post.imageUrl;
+    final postLink = imageUrl.startsWith('http') && imageUrl.startsWith('https')
+        ? imageUrl
+        : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/post-media/${post.userId}/$imageUrl';
 
     Clipboard.setData(ClipboardData(text: postLink));
   }

@@ -6,15 +6,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/supabase_service.dart';
 import '../../services/insta_data_provider.dart';
 import '../common/report_dialog.dart';
+import '../user_tagging/user_model.dart';
+import '../user_tagging/user_tagging_service.dart';
 
 class StoryViewScreen extends StatefulWidget {
   final List<StoryData> stories;
   final int initialIndex;
+  final List<int> userStartIndices;
 
   const StoryViewScreen({
     Key? key,
     required this.stories,
     this.initialIndex = 0,
+    this.userStartIndices = const [],
   }) : super(key: key);
 
   @override
@@ -28,6 +32,12 @@ class _StoryViewScreenState extends State<StoryViewScreen>
   int _currentIndex = 0;
   bool _isPaused = false;
   bool _showUI = true;
+  List<TaggedUser> _taggedUsers = [];
+  final UserTaggingService _taggingService = UserTaggingService();
+
+  // Like feature state
+  bool _isLiked = false;
+  bool _likeLoading = false;
 
   @override
   void initState() {
@@ -39,17 +49,88 @@ class _StoryViewScreenState extends State<StoryViewScreen>
       vsync: this,
       duration: const Duration(seconds: 5),
     )..addListener(() {
-        if (_animationController.value == 1.0) _nextStory();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) setState(() {});
-        });
+      if (_animationController.value == 1.0) _nextStory();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
       });
+    });
 
     _startTimer();
     _markStoryAsViewed(widget.stories[_currentIndex].id!);
+    _loadTaggedUsers(widget.stories[_currentIndex].id!);
+    _checkIfLiked(widget.stories[_currentIndex].id!);
   }
 
-  // <--- ADD THIS HELPER FUNCTION (copy from home_screen_feed.dart) ---
+  Future<void> _loadTaggedUsers(String storyId) async {
+    final taggedUsers = await _taggingService.getTaggedUsersFromStory(storyId);
+    if (mounted) {
+      setState(() {
+        _taggedUsers = taggedUsers;
+      });
+    }
+  }
+
+  Future<void> _checkIfLiked(String storyId) async {
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      setState(() => _isLiked = false);
+      return;
+    }
+    final res = await supabase
+        .from('story_likes')
+        .select('id')
+        .eq('story_id', storyId)
+        .eq('user_id', userId)
+        .maybeSingle();
+    setState(() {
+      _isLiked = res != null;
+    });
+  }
+
+  Future<void> _toggleLike(String storyId) async {
+    if (_likeLoading) return;
+    setState(() => _likeLoading = true);
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      setState(() => _likeLoading = false);
+      return;
+    }
+    if (_isLiked) {
+      // Unlike
+      await supabase
+          .from('story_likes')
+          .delete()
+          .eq('story_id', storyId)
+          .eq('user_id', userId);
+      setState(() {
+        _isLiked = false;
+        _likeLoading = false;
+      });
+    } else {
+      // Like
+      await supabase.from('story_likes').insert({
+        'story_id': storyId,
+        'user_id': userId,
+      });
+      setState(() {
+        _isLiked = true;
+        _likeLoading = false;
+      });
+    }
+  }
+
+  void _onPageChanged(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    _markStoryAsViewed(widget.stories[index].id!);
+    _loadTaggedUsers(widget.stories[index].id!);
+    _checkIfLiked(widget.stories[index].id!);
+    _resumeTimer();
+  }
+
   String _formatTime(DateTime? time) {
     if (time == null) return '';
 
@@ -68,8 +149,6 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     }
   }
 
-  // --- END ADDED HELPER FUNCTION ---
-
   void _startTimer() {
     _animationController.reset();
     _animationController.forward();
@@ -84,6 +163,17 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     });
   }
 
+  int _getUserIndexForStory(int storyIndex) {
+    for (int i = 0; i < widget.userStartIndices.length; i++) {
+      if (i == widget.userStartIndices.length - 1 ||
+          (storyIndex >= widget.userStartIndices[i] &&
+              storyIndex < widget.userStartIndices[i + 1])) {
+        return i;
+      }
+    }
+    return widget.userStartIndices.length - 1;
+  }
+
   void _resumeTimer() {
     if (_animationController.value < 1.0) {
       _animationController.forward();
@@ -94,34 +184,115 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     });
   }
 
+  // NEW: Get stories for current user
+  List<StoryData> _getStoriesForCurrentUser() {
+    final currentUserIndex = _getUserIndexForStory(_currentIndex);
+    final startIndex = widget.userStartIndices[currentUserIndex];
+    final endIndex = (currentUserIndex == widget.userStartIndices.length - 1)
+        ? widget.stories.length
+        : widget.userStartIndices[currentUserIndex + 1];
+
+    return widget.stories.sublist(startIndex, endIndex);
+  }
+
+  // NEW: Get current story index within user's stories
+  int _getCurrentStoryIndexInUser() {
+    final currentUserIndex = _getUserIndexForStory(_currentIndex);
+    final startIndex = widget.userStartIndices[currentUserIndex];
+    return _currentIndex - startIndex;
+  }
+
   void _nextStory() {
-    if (_currentIndex < widget.stories.length - 1) {
-      setState(() => _currentIndex++);
-      _pageController.animateToPage(
-        _currentIndex,
-        duration: const Duration(milliseconds: 1),
-        curve: Curves.linear,
-      );
-      _startTimer();
-      _markStoryAsViewed(widget.stories[_currentIndex].id!);
+    final currentUserIndex = _getUserIndexForStory(_currentIndex);
+    final nextIndex = _currentIndex + 1;
+
+    // Check if we're at the last story overall
+    if (nextIndex >= widget.stories.length) {
+      Navigator.pop(context);
+      return;
+    }
+
+    final nextUserIndex = _getUserIndexForStory(nextIndex);
+
+    // If moving to a different user, use page transition
+    if (currentUserIndex != nextUserIndex) {
+      _transitionToUser(nextUserIndex);
     } else {
-      Provider.of<InstaDataProvider>(context, listen: false).reloadData();
-      Navigator.of(context).pop();
+      // Same user, just move to next story
+      setState(() {
+        _currentIndex = nextIndex;
+      });
+      _pageController.jumpToPage(_currentIndex);
+      _markStoryAsViewed(widget.stories[_currentIndex].id!);
+      _loadTaggedUsers(widget.stories[_currentIndex].id!);
+      _startTimer();
     }
   }
 
   void _previousStory() {
-    if (_currentIndex > 0) {
-      setState(() => _currentIndex--);
+    final currentUserIndex = _getUserIndexForStory(_currentIndex);
+    final previousIndex = _currentIndex - 1;
+
+    // If at the first story, exit
+    if (previousIndex < 0) {
+      Provider.of<InstaDataProvider>(context, listen: false).reloadData();
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final previousUserIndex = _getUserIndexForStory(previousIndex);
+
+    // If moving to a different user, use page transition
+    if (currentUserIndex != previousUserIndex) {
+      _transitionToUser(previousUserIndex, goToLast: true);
+    } else {
+      // Same user, just move to previous story
+      setState(() {
+        _currentIndex = previousIndex;
+      });
       _pageController.animateToPage(
         _currentIndex,
         duration: const Duration(milliseconds: 1),
         curve: Curves.linear,
       );
+      _markStoryAsViewed(widget.stories[_currentIndex].id!);
+      _loadTaggedUsers(widget.stories[_currentIndex].id!);
       _startTimer();
+    }
+  }
+
+  // NEW: Transition to a different user with animation
+  void _transitionToUser(int userIndex, {bool goToLast = false}) {
+    final targetStoryIndex = goToLast
+        ? (userIndex == widget.userStartIndices.length - 1
+        ? widget.stories.length - 1
+        : widget.userStartIndices[userIndex + 1] - 1)
+        : widget.userStartIndices[userIndex];
+
+    setState(() {
+      _currentIndex = targetStoryIndex;
+    });
+
+    _pageController.animateToPage(
+      _currentIndex,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ).then((_) {
+      _markStoryAsViewed(widget.stories[_currentIndex].id!);
+      _loadTaggedUsers(widget.stories[_currentIndex].id!);
+      _startTimer();
+    });
+  }
+
+  // MODIFIED: Handle tap navigation with user detection
+  void _handleTapNavigation(TapUpDetails details) {
+    final width = MediaQuery.of(context).size.width;
+    final isRightSide = details.globalPosition.dx > width / 2;
+
+    if (isRightSide) {
+      _nextStory();
     } else {
-      Provider.of<InstaDataProvider>(context, listen: false).reloadData();
-      Navigator.of(context).pop();
+      _previousStory();
     }
   }
 
@@ -130,7 +301,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
     Provider.of<InstaDataProvider>(context, listen: false)
-        .viewStory(storyId, story.userId); // Pass both IDs
+        .viewStory(storyId, story.userId);
   }
 
   String? _buildProfileImageUrl(String? url) {
@@ -158,13 +329,11 @@ class _StoryViewScreenState extends State<StoryViewScreen>
                 title: const Text('Delete Story'),
                 onTap: () async {
                   Navigator.pop(context);
-                  // Implement delete functionality here
                   try {
                     await SupabaseService().deleteStory(currentStory.id!);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Story deleted')),
                     );
-                    // Optionally, close the story view if deleted
                     Navigator.of(context).pop();
                     await Provider.of<InstaDataProvider>(context, listen: false).refreshFeed();
                   } catch (e) {
@@ -213,6 +382,8 @@ class _StoryViewScreenState extends State<StoryViewScreen>
   @override
   Widget build(BuildContext context) {
     final currentStory = widget.stories[_currentIndex];
+    final currentUserStories = _getStoriesForCurrentUser();
+    final currentStoryInUser = _getCurrentStoryIndexInUser();
 
     Color profileBorderColor = Colors.grey;
     if (currentStory.isMe && currentStory.hasStory) {
@@ -220,7 +391,6 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     } else if (!currentStory.isMe && !currentStory.isViewed) {
       profileBorderColor = Colors.orange;
     }
-    // debugPrint("Story time: ${currentStory.createdAt}");
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -235,61 +405,97 @@ class _StoryViewScreenState extends State<StoryViewScreen>
                 aspectRatio: 8.5 / 16,
                 child: PageView.builder(
                   controller: _pageController,
+                  onPageChanged: _onPageChanged,
                   itemCount: widget.stories.length,
-                  physics: const NeverScrollableScrollPhysics(),
                   itemBuilder: (context, index) {
                     final story = widget.stories[index];
-                    return Padding(
-                      padding: const EdgeInsets.all(2.0),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.network(
-                          story.mediaUrl!,
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Story Image/Video
+                        CachedNetworkImage(
+                          imageUrl: story.mediaUrl!,
                           fit: BoxFit.cover,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Center(
-                              child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes !=
-                                        null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                    : null,
-                                color: Colors.white,
-                              ),
-                            );
-                          },
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Center(
-                                  child: Icon(Icons.error,
-                                      color: Colors.red, size: 50)),
+                          placeholder: (context, url) => const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                          errorWidget: (context, url, error) => const Icon(Icons.error),
                         ),
-                      ),
+
+                        // Tagged Users Overlay
+                        if (_taggedUsers.isNotEmpty)
+                          Positioned(
+                            top: 100,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              height: 60,
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _taggedUsers.length,
+                                itemBuilder: (context, index) {
+                                  final user = _taggedUsers[index];
+                                  return Container(
+                                    margin: const EdgeInsets.only(right: 8),
+                                    child: Column(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 20,
+                                          backgroundImage: user.profileImageUrl != null
+                                              ? NetworkImage(user.profileImageUrl!)
+                                              : null,
+                                          child: user.profileImageUrl == null
+                                              ? const Icon(Icons.person, size: 20)
+                                              : null,
+                                        ),
+                                        Text(
+                                          user.username,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.white,
+                                            shadows: [
+                                              Shadow(
+                                                offset: Offset(0, 1),
+                                                blurRadius: 3.0,
+                                                color: Colors.black,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                      ],
                     );
                   },
                 ),
               ),
             ),
 
-            // Navigation Tap Zones
+            // MODIFIED: Navigation Tap Zones
             Row(
               children: [
                 Expanded(
                   child: GestureDetector(
-                    onTap: _previousStory,
+                    onTapUp: _handleTapNavigation,
                     behavior: HitTestBehavior.translucent,
                   ),
                 ),
                 Expanded(
                   child: GestureDetector(
-                    onTap: _nextStory,
+                    onTapUp: _handleTapNavigation,
                     behavior: HitTestBehavior.translucent,
                   ),
                 ),
               ],
             ),
 
-            // Top Info & Progress
+            // MODIFIED: Top Info & Progress - Show progress for current user only
             Visibility(
               visible: _showUI,
               child: Positioned(
@@ -301,18 +507,16 @@ class _StoryViewScreenState extends State<StoryViewScreen>
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Row(
-                        children: List.generate(widget.stories.length, (index) {
+                        children: List.generate(currentUserStories.length, (index) {
                           return Expanded(
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 2.0),
+                              padding: const EdgeInsets.symmetric(horizontal: 2.0),
                               child: LinearProgressIndicator(
-                                value: index == _currentIndex
+                                value: index == currentStoryInUser
                                     ? _animationController.value
-                                    : (index < _currentIndex ? 1.0 : 0.0),
+                                    : (index < currentStoryInUser ? 1.0 : 0.0),
                                 backgroundColor: Colors.white24,
-                                valueColor: const AlwaysStoppedAnimation<Color>(
-                                    Colors.white),
+                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                                 minHeight: 3,
                               ),
                             ),
@@ -329,8 +533,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
                             child: CircleAvatar(
                                 radius: 20,
                                 backgroundImage: NetworkImage(
-                                  _buildProfileImageUrl(
-                                      currentStory.profileImageUrl)!,
+                                  _buildProfileImageUrl(currentStory.profileImageUrl)!,
                                 )),
                           ),
                           const SizedBox(width: 8),
@@ -341,9 +544,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(
-                            width: 8,
-                          ),
+                          const SizedBox(width: 8),
                           if (currentStory.createdAt != null)
                             Text(
                               _formatTime(currentStory.createdAt),
@@ -376,21 +577,29 @@ class _StoryViewScreenState extends State<StoryViewScreen>
                 bottom: 20,
                 right: 20,
                 child: GestureDetector(
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content:
-                              Text('Like story functionality coming soon!')),
-                    );
-                  },
+                  onTap: _likeLoading
+                      ? null
+                      : () => _toggleLike(currentStory.id!),
                   child: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.white.withOpacity(0.1),
                     ),
-                    child: const Icon(Icons.favorite_border,
-                        color: Colors.white, size: 30),
+                    child: _likeLoading
+                        ? const SizedBox(
+                            width: 30,
+                            height: 30,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Icon(
+                            _isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: Colors.white,
+                            size: 30,
+                          ),
                   ),
                 ),
               ),

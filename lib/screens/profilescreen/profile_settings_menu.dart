@@ -2,16 +2,23 @@
 import 'package:Instagram/screens/saved-psots/saved_post_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../main.dart';
 import '../../providers/language_provider.dart';
 import '../../services/insta_data_provider.dart';
+import '../../services/supabase_service.dart';
 import '../auth/login_page.dart';
 import '../auth/password_change_screen.dart';
 import '../auth/service/auth_service.dart';
 import '../profilescreen/blocked_users_screen.dart';
+import 'package:Instagram/screens/notificationscreen/service/notification_service.dart';
+import 'package:Instagram/screens/notificationscreen/model/notification_model.dart';
 
 // Import all the new screens
 // import 'screens/account_screen.dart';
@@ -214,14 +221,21 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
 
             const Divider(color: Colors.white, height: 20, thickness: 0.2),
 
-            // Logout Section
-            _buildMenuItem(
-              Icons.logout,
-              loc.logout,
-              _logout,
-              false,
-            ),
+            // // Logout Section
+            // _buildMenuItem(
+            //   ,
+            //   loc.logout,
+            //   _logout,
+            //   false,
+            // ),
 
+            ListTile(
+              title: Text(
+                "Logout",
+                style: const TextStyle(color: Colors.red, fontSize: 16),
+              ),
+              onTap: _logout,
+            ),
             const SizedBox(height: 20),
           ],
         ),
@@ -263,14 +277,181 @@ class _AccountScreenState extends State<AccountScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
+  UserData? _currentUser;
+  late final profileImageUrl;
 
   @override
   void initState() {
     super.initState();
-    // Initialize with dummy data - replace with actual user data
-    _usernameController.text = "john_doe";
-    _emailController.text = "john.doe@example.com";
-    _bioController.text = "Photography enthusiast 📸";
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchCurrentUserData();
+    });
+  }
+
+  void _fetchCurrentUserData() {
+    final provider = Provider.of<InstaDataProvider>(context, listen: false);
+    final user = provider.currentUser;
+    if (user != null) {
+      final bool isFullUrl =
+          Uri.tryParse(user.profileImageUrl!)?.hasAbsolutePath == true &&
+              (user.profileImageUrl!.startsWith('http://') ||
+                  user.profileImageUrl!.startsWith('https://'));
+
+      profileImageUrl = isFullUrl
+          ? user.profileImageUrl!
+          : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/${user.profileImageUrl}';
+    }
+    if (user != null) {
+      setState(() {
+        _currentUser = user;
+        _usernameController.text = user.username;
+        _emailController.text = user.email!;
+        _bioController.text = user.bio ?? '';
+      });
+    }
+  }
+
+  Future<void> _showImagePicker(String? userId) async {
+    print('_showImagePicker called with userId: $userId');
+    if (userId == null) {
+      _showErrorSnackBar('Error: User not logged in');
+      return;
+    }
+
+    final BuildContext context = this.context;
+
+    try {
+      List<Permission> permissionsToRequest = [
+        Permission.camera,
+        Permission.storage,
+        Permission.photos,
+      ];
+
+      final statuses = await permissionsToRequest.request();
+      final cameraGranted = statuses[Permission.camera]?.isGranted ?? false;
+      final storageAccess =
+          (statuses[Permission.storage]?.isGranted ?? false) ||
+              (statuses[Permission.photos]?.isGranted ?? false);
+
+      if (!cameraGranted || !storageAccess) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+              Text('Please grant required permissions to update picture'),
+            ),
+          );
+        }
+        return;
+      }
+    } catch (e) {
+      _showErrorSnackBar('Please grant camera and storage access in settings');
+      return;
+    }
+
+    try {
+      final picker = ImagePicker();
+      final ImageSource? source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        backgroundColor: Colors.grey[900],
+        builder: (BuildContext ctx) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('Update Profile Picture',
+                      style:
+                      TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.photo_library, color: Colors.blue),
+                  title: const Text("Photo Gallery"),
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt, color: Colors.blue),
+                  title: const Text("Camera"),
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source != null && mounted) {
+        final XFile? image = await picker.pickImage(
+          source: source,
+          imageQuality: 75,
+          maxWidth: 800,
+        );
+
+        if (image != null) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          );
+
+          try {
+            final bytes = await image.readAsBytes();
+            final fileName =
+                'public/${userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+            await Supabase.instance.client.storage.from('avatars').uploadBinary(
+                fileName, bytes,
+                fileOptions: const FileOptions(contentType: 'image/jpeg'));
+
+            Navigator.of(context).pop(); // close loading
+
+            await Supabase.instance.client
+                .from('users')
+                .update({'profile_image_url': fileName}).eq('id', userId);
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Profile image updated')),
+            );
+
+            // Trigger a rebuild to reflect the new avatar URL, which will cause _loadProfileData to re-run
+            // or you can manually update the avatarUrl and call setState.
+            // For now, setState will re-run build. To refresh _loadProfileData, you'd need to call it again.
+            // Let's call _loadProfileData again to ensure avatarUrl is correctly updated from Supabase.
+            setState(() {});
+          } catch (e) {
+            if (mounted) Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error uploading image: $e')),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error: $e');
+    }
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    } else if (navigatorKey.currentContext != null) {
+      ScaffoldMessenger.of(navigatorKey.currentContext!)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    _bioController.dispose();
+    super.dispose();
   }
 
   @override
@@ -293,17 +474,18 @@ class _AccountScreenState extends State<AccountScreen> {
               child: Column(
                 children: [
                   CircleAvatar(
-                    radius: 50,
+                    radius: 49,
                     backgroundColor: Colors.grey[800],
-                    child: const Icon(Icons.person, size: 50, color: Colors.white),
+                    backgroundImage: profileImageUrl != null ? NetworkImage(profileImageUrl) : null,
+                    child: profileImageUrl == null
+                        ? const Icon(Icons.person, color: Colors.white, size: 40)
+                        : null,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 5),
                   TextButton(
                     onPressed: () {
-                      // Handle profile picture change
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Change profile picture')),
-                      );
+                      // // Handle profile picture change
+                      _showImagePicker(_currentUser?.id);
                     },
                     child: const Text('Change Profile Photo'),
                   ),
@@ -323,7 +505,6 @@ class _AccountScreenState extends State<AccountScreen> {
             const SizedBox(height: 30),
 
             // Account Options
-            _buildAccountOption('Personal Information', Icons.person_outline),
             _buildAccountOption('Professional Dashboard', Icons.dashboard),
             _buildAccountOption('Account Status', Icons.info_outline),
             _buildAccountOption('Download Your Data', Icons.download),
@@ -375,13 +556,93 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
       ),
       trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
-      onTap: () {
-        // ScaffoldMessenger.of(context).showSnackBar(
-        //   SnackBar(content: Text('$title tapped')),
-        // );
-      },
+      onTap: () => _handleAccountOptionTap(title),
     );
   }
+
+  void _handleAccountOptionTap(String title) {
+    switch (title) {
+      case 'Personal Information':
+        _showErrorSnackBar('Coming soon: Personal Information');
+        break;
+      case 'Professional Dashboard':
+        _showErrorSnackBar('Coming soon: Dashboard with stats');
+        break;
+      case 'Account Status':
+        _showErrorSnackBar('Your account is currently active');
+        break;
+      case 'Download Your Data':
+        _downloadUserData();
+        break;
+      case 'Delete Account':
+        _confirmDeleteAccount();
+        break;
+    }
+  }
+
+  void _downloadUserData() async {
+    final userId = _currentUser?.id;
+    if (userId == null) return;
+
+    final userResponse = await Supabase.instance.client
+        .from('users')
+        .select()
+        .eq('id', userId)
+        .single();
+
+    if (userResponse != null) {
+      final data = userResponse;
+      final jsonData = data.toString(); // You can format this better
+
+      // You can also save it locally using path_provider + file io
+      _showErrorSnackBar('User data prepared:\n$jsonData');
+    } else {
+      _showErrorSnackBar('Unable to fetch user data');
+    }
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text('Are you sure? All your data will be deleted.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final userId = _currentUser?.id;
+    if (userId == null) {
+      _showErrorSnackBar('Error: No user ID found');
+      return;
+    }
+
+    try {
+      final client = Supabase.instance.client;
+
+      // Optional: Delete related content like posts, comments, reels etc.
+      await client.from('users').delete().eq('id', userId);
+
+      _showErrorSnackBar('Your account has been deleted');
+
+      // Log out user and redirect
+      await client.auth.signOut();
+
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    } catch (e) {
+      _showErrorSnackBar('Failed to delete account: $e');
+    }
+  }
+
+
+
 }
 
 // screens/notifications_screen.dart
@@ -393,13 +654,91 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  bool _likesEnabled = true;
-  bool _commentsEnabled = true;
-  bool _followsEnabled = true;
-  bool _messagesEnabled = true;
-  bool _liveVideosEnabled = false;
-  bool _emailNotifications = true;
-  bool _pushNotifications = true;
+  final NotificationService _notificationService = NotificationService();
+  final String currentUserId = Supabase.instance.client.auth.currentUser!.id;
+
+  NotificationPreferencesModel? _preferences;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  void _loadPreferences() async {
+    final preferences = await _notificationService.getUserNotificationPreferences(currentUserId);
+    setState(() {
+      _preferences = preferences;
+      _isLoading = false;
+    });
+  }
+
+  void _updatePreference(String type, bool value) async {
+    if (_preferences == null) return;
+
+    NotificationPreferencesModel updatedPreferences;
+
+    switch (type) {
+      case 'likes':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: value,
+          comments: _preferences!.comments,
+          follows: _preferences!.follows,
+          mentions: _preferences!.mentions,
+          stories: _preferences!.stories,
+        );
+        break;
+      case 'comments':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: _preferences!.likes,
+          comments: value,
+          follows: _preferences!.follows,
+          mentions: _preferences!.mentions,
+          stories: _preferences!.stories,
+        );
+        break;
+      case 'follows':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: _preferences!.likes,
+          comments: _preferences!.comments,
+          follows: value,
+          mentions: _preferences!.mentions,
+          stories: _preferences!.stories,
+        );
+        break;
+      case 'mentions':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: _preferences!.likes,
+          comments: _preferences!.comments,
+          follows: _preferences!.follows,
+          mentions: value,
+          stories: _preferences!.stories,
+        );
+        break;
+      case 'stories':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: _preferences!.likes,
+          comments: _preferences!.comments,
+          follows: _preferences!.follows,
+          mentions: _preferences!.mentions,
+          stories: value,
+        );
+        break;
+      default:
+        return;
+    }
+
+    await _notificationService.updateNotificationPreferences(updatedPreferences);
+    setState(() {
+      _preferences = updatedPreferences;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -411,61 +750,54 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         title: const Text('Notifications'),
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Push Notifications',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-            _buildNotificationSwitch('Likes', _likesEnabled, (value) {
-              setState(() => _likesEnabled = value);
-            }),
-            _buildNotificationSwitch('Comments', _commentsEnabled, (value) {
-              setState(() => _commentsEnabled = value);
-            }),
-            _buildNotificationSwitch('New Followers', _followsEnabled, (value) {
-              setState(() => _followsEnabled = value);
-            }),
-            _buildNotificationSwitch('Direct Messages', _messagesEnabled, (value) {
-              setState(() => _messagesEnabled = value);
-            }),
-            _buildNotificationSwitch('Live Videos', _liveVideosEnabled, (value) {
-              setState(() => _liveVideosEnabled = value);
-            }),
-
-            const Divider(color: Colors.grey, height: 40),
-
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'General Settings',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-            _buildNotificationSwitch('Email Notifications', _emailNotifications, (value) {
-              setState(() => _emailNotifications = value);
-            }),
-            _buildNotificationSwitch('Push Notifications', _pushNotifications, (value) {
-              setState(() => _pushNotifications = value);
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationSwitch(String title, bool value, ValueChanged<bool> onChanged) {
-    return SwitchListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      value: value,
-      onChanged: onChanged,
-      activeColor: Colors.blue,
-      secondary: const Icon(Icons.notifications, color: Colors.white),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _preferences == null
+              ? const Center(child: Text('Error loading preferences'))
+              : ListView(
+                  children: [
+                    SwitchListTile(
+                      title: const Text('Likes', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Get notified when someone likes your content', style: TextStyle(color: Colors.grey)),
+                      value: _preferences!.likes,
+                      onChanged: (value) => _updatePreference('likes', value),
+                      activeColor: Colors.blue,
+                      secondary: const Icon(Icons.favorite, color: Colors.white),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Comments', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Get notified when someone comments on your posts', style: TextStyle(color: Colors.grey)),
+                      value: _preferences!.comments,
+                      onChanged: (value) => _updatePreference('comments', value),
+                      activeColor: Colors.blue,
+                      secondary: const Icon(Icons.comment, color: Colors.white),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Follows', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Get notified when someone follows you', style: TextStyle(color: Colors.grey)),
+                      value: _preferences!.follows,
+                      onChanged: (value) => _updatePreference('follows', value),
+                      activeColor: Colors.blue,
+                      secondary: const Icon(Icons.person_add, color: Colors.white),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Mentions', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Get notified when someone mentions you', style: TextStyle(color: Colors.grey)),
+                      value: _preferences!.mentions,
+                      onChanged: (value) => _updatePreference('mentions', value),
+                      activeColor: Colors.blue,
+                      secondary: const Icon(Icons.alternate_email, color: Colors.white),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Stories', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Get notified when someone posts a story', style: TextStyle(color: Colors.grey)),
+                      value: _preferences!.stories,
+                      onChanged: (value) => _updatePreference('stories', value),
+                      activeColor: Colors.blue,
+                      secondary: const Icon(Icons.history, color: Colors.white),
+                    ),
+                  ],
+                ),
     );
   }
 }

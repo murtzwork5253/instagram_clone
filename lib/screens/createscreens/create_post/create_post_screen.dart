@@ -12,6 +12,9 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../../../l10n/app_localizations.dart';
+import '../../user_tagging/user_model.dart';
+import '../../user_tagging/user_tagging_screen.dart';
+import '../../user_tagging/user_tagging_service.dart';
 import '../camera_service.dart';
 import 'location_selection_screen.dart';
 
@@ -51,6 +54,8 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   bool _useOriginalAspectRatio = false;
   Matrix4 _transformation = Matrix4.identity();
   final TransformationController _transformationController = TransformationController();
+  List<TaggedUser> _taggedUsers = [];
+  final UserTaggingService _taggingService = UserTaggingService();
 
   // Add these new fields:
   bool _postUseOriginalRatio = false; // Store the ratio choice for this post
@@ -71,7 +76,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     _selectedIndex = widget.initialTabIndex;
     _pageController = PageController(initialPage: _selectedIndex);
 
-    _cameraService = CameraService();
+    _cameraService = CameraService(); // Now a normal instance
     _handleTabChange(_selectedIndex);
 
     _pageController.addListener(() {
@@ -107,7 +112,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     _pageController.dispose();
     _scrollController.dispose();
     _captionController.dispose();
-    _cameraService.dispose();
+    _cameraService.dispose(); // Now safe to dispose
     _transformationController.dispose();
     super.dispose();
   }
@@ -355,6 +360,24 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     }
   }
 
+  void _openTaggingScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UserTaggingScreen(
+          currentUserId: supabase.auth.currentUser!.id, // Replace with actual user ID
+          initialTaggedUsers: _taggedUsers,
+          title: 'Tag People',
+          onUsersSelected: (selectedUsers) {
+            setState(() {
+              _taggedUsers = selectedUsers;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
   // You can implement this if you plan to support multiple images
   Future<void> _pickMultipleImages() async {
     try {
@@ -465,7 +488,8 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw Exception('User not authenticated');
 
-      await supabase.from('posts').insert({
+      // Create the post first and get the post ID
+      final response = await supabase.from('posts').insert({
         'user_id': userId,
         'caption': _captionController.text.trim(),
         'image_url': mediaUrl,
@@ -473,9 +497,29 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
         'disable_comments': _disableComments,
         'created_at': DateTime.now().toUtc().toIso8601String(),
         'use_original_ratio': _useOriginalAspectRatio,
-        'image_transformation': _transformation.storage.join(','), // Store as comma-separated string
+        'image_transformation': _transformation.storage.join(','),
         'original_aspect_ratio': _mediaAspectRatio,
-      });
+      }).select('id').single();
+
+      final postId = response['id'] as String;
+
+      // print("Tagged Users: ${_taggedUsers.map((user) => user.username)}");
+      // print("Post ID: $postId");
+
+      // Save tagged users to the post if any exist
+      if (_taggedUsers.isNotEmpty) {
+        await _taggingService.saveTaggedUsersToPost(
+          postId: postId,
+          taggedUsers: _taggedUsers,
+        );
+
+        // Optional: Notify tagged users
+        // await _taggingService.notifyTaggedUsers(
+        //   taggedUsers: _taggedUsers,
+        //   postId: postId,
+        //   authorId: userId,
+        // );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -846,6 +890,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
 
   // --- UI building methods for Post Details Stage ---
   Widget _buildPostDetailsUI() {
+
     return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -930,6 +975,53 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
 
           const Divider(),
 
+          ListTile(
+            leading: const Icon(Icons.person_add, color: Colors.white),
+            title: Text(
+              _taggedUsers.isEmpty
+                  ? 'Tag People'
+                  : 'Tagged ${_taggedUsers.length} people',
+              style: const TextStyle(color: Colors.white),
+            ),
+            onTap: _openTaggingScreen,
+          ),
+          if (_taggedUsers.isNotEmpty)
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 9),
+              height: 60,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _taggedUsers.length,
+                itemBuilder: (context, index) {
+                  final user = _taggedUsers[index];
+                  return Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    width: 70,
+                    child: Column(
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundImage: user.profileImageUrl != null
+                              ? NetworkImage(_getDisplayUrl(user.profileImageUrl!))
+                              : null,
+                          child: user.profileImageUrl == null
+                              ? const Icon(Icons.person, size: 20)
+                              : null,
+                        ),
+                        Text(
+                          user.username,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          const Divider(),
+
           // Advanced Settings
           ListTile(
             leading: const Icon(Icons.settings_outlined, color: Colors.grey),
@@ -942,6 +1034,13 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
         ],
       ),
     );
+  }
+
+  String _getDisplayUrl(String profileUrl) {
+    if (profileUrl.startsWith('http://') || profileUrl.startsWith('https://')) {
+      return profileUrl;
+    }
+    return 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$profileUrl';
   }
 
   @override

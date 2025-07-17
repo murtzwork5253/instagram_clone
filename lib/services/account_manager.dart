@@ -4,7 +4,8 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+// Import your push notification service
+import 'push_notification_service.dart'; // Adjust the import path as needed
 
 class StoredAccount {
   final String userId;
@@ -90,6 +91,9 @@ class AccountManager {
 
       await _storeAccount(account);
       await _setCurrentAccount(account.userId);
+
+      // Update notification listeners for all stored accounts
+      await _updateNotificationListenersForAllAccounts();
     } catch (e) {
       print('Error storing account: $e');
     }
@@ -112,7 +116,7 @@ class AccountManager {
   }
 
   // Switch to a specific account
-  Future<bool> switchToAccount(String userId,BuildContext context) async {
+  Future<bool> switchToAccount(String userId, BuildContext context) async {
     try {
       final accounts = await getStoredAccounts();
       final accountIndex = accounts.indexWhere((acc) => acc.userId == userId);
@@ -186,6 +190,10 @@ class AccountManager {
       }
 
       await _setCurrentAccount(userId);
+
+      // Update notification listeners for all stored accounts
+      await _updateNotificationListenersForAllAccounts();
+
       print('Successfully switched to account: ${account.username}');
       return true;
     } catch (e) {
@@ -207,6 +215,9 @@ class AccountManager {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_currentAccountKey);
     }
+
+    // Update notification listeners for all stored accounts
+    await _updateNotificationListenersForAllAccounts();
   }
 
   // Get current account ID
@@ -228,6 +239,16 @@ class AccountManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accountsKey);
     await prefs.remove(_currentAccountKey);
+
+    // Clear all notification listeners
+    await PushNotificationService.dispose();
+  }
+
+  // Update notification listeners for all stored accounts
+  Future<void> _updateNotificationListenersForAllAccounts() async {
+    final accounts = await getStoredAccounts();
+    final userIds = accounts.map((account) => account.userId).toList();
+    await PushNotificationService.updateNotificationListenersForAllAccounts(userIds);
   }
 
   // Private helper methods

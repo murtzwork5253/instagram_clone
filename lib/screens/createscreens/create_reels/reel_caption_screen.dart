@@ -6,6 +6,10 @@ import 'package:video_player/video_player.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
 
+import '../../user_tagging/user_model.dart';
+import '../../user_tagging/user_tagging_screen.dart';
+import '../../user_tagging/user_tagging_service.dart';
+
 class ReelCaptionScreen extends StatefulWidget {
   final Map<String, dynamic> reelData;
 
@@ -28,6 +32,8 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
   bool _isVideoPlaying = true;
   double _uploadProgress = 0.0;
   String _uploadStatus = '';
+  List<TaggedUser> _taggedUsers = [];
+  final UserTaggingService _taggingService = UserTaggingService();
 
   late AnimationController _fadeAnimationController;
   late Animation<double> _fadeAnimation;
@@ -37,6 +43,7 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
   String _currentUsername = '';
   String _currentUserAvatar = '';
   String? musicUrl;
+  String? _currentReelId;
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -170,43 +177,20 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
     }
   }
 
-  Future<void> _saveReelToDatabase(String videoUrl) async {
-    print('Trim values before saving: Start=${widget.reelData['musicTrimStart']}, End=${widget.reelData['musicTrimEnd']}');
-
+  Future<String> _saveReelToDatabase(String videoUrl) async {
     try {
-      // Handle trim values - they come as ratios (0.0-1.0) from the editor
-      double musicTrimStartRatio = 0.0;
-      double musicTrimEndRatio = 0.0;
-
-      if (widget.reelData['musicTrimStart'] != null && widget.reelData['musicTrimEnd'] != null) {
-        musicTrimStartRatio = (widget.reelData['musicTrimStart'] ?? 0.0).toDouble();
-        musicTrimEndRatio = (widget.reelData['musicTrimEnd'] ?? 0.0).toDouble();
-
-        print('Music trim ratios - Start: $musicTrimStartRatio, End: $musicTrimEndRatio');
-
-        // Validate ratios
-        if (musicTrimStartRatio < 0.0) musicTrimStartRatio = 0.0;
-        if (musicTrimEndRatio > 1.0) musicTrimEndRatio = 1.0;
-        if (musicTrimEndRatio <= musicTrimStartRatio) musicTrimEndRatio = 1.0;
-
-        print('Validated trim ratios - Start: $musicTrimStartRatio, End: $musicTrimEndRatio');
-      }
-
-      await _supabase.from('reels').insert({
+      final response = await _supabase.from('reels').insert({
         'video_url': videoUrl,
         'user_id': _currentUserId,
         'username': _currentUsername,
         'user_avatar': _currentUserAvatar,
         'caption': _captionController.text.trim(),
-        'music_url': musicUrl,
-        'music_trim_start': musicTrimStartRatio, // Store as ratio (0.0-1.0)
-        'music_trim_end': musicTrimEndRatio,     // Store as ratio (0.0-1.0)
         'is_video_muted': widget.reelData['isVideoMuted'],
         'text_overlays': widget.reelData['textOverlays'],
         'created_at': DateTime.now().toIso8601String(),
-      });
+      }).select('id').single(); // Add select to get the ID back
 
-      print('Saved trim values as ratios: Start=$musicTrimStartRatio, End=$musicTrimEndRatio');
+      return response['id'].toString();
     } catch (e) {
       print('Error saving reel to database: $e');
       throw e;
@@ -266,22 +250,57 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
           await processedFile.delete();
         }
 
-        // Save reel data to database
-        await _saveReelToDatabase(videoUrl);
+        setState(() {
+          _uploadStatus = 'Saving reel data...';
+          _uploadProgress = 0.7;
+        });
+
+        // Save reel data to database and get the reel ID
+        _currentReelId = await _saveReelToDatabase(videoUrl);
+
+        // Save tagged users to the reel if any exist
+        if (_taggedUsers.isNotEmpty && _currentReelId != null) {
+          setState(() {
+            _uploadStatus = 'Saving tagged users...';
+            _uploadProgress = 0.9;
+          });
+
+          await _taggingService.saveTaggedUsersToReel(
+            reelId: _currentReelId!,
+            taggedUsers: _taggedUsers,
+          );
+
+          // Optional: Notify tagged users (uncomment if you have notification service)
+          // await _taggingService.notifyTaggedUsers(
+          //   taggedUsers: _taggedUsers,
+          //   postId: _currentReelId!,
+          //   authorId: _currentUserId!,
+          // );
+        }
+
+        setState(() {
+          _uploadStatus = 'Complete!';
+          _uploadProgress = 1.0;
+        });
 
         // Show success and navigate back
         if (mounted) {
+          String successMessage = 'Reel published successfully!';
+          if (_taggedUsers.isNotEmpty) {
+            successMessage += ' ${_taggedUsers.length} user${_taggedUsers.length > 1 ? 's' : ''} tagged.';
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 10),
-                  Text('Reel published successfully!'),
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(successMessage)),
                 ],
               ),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
+              duration: const Duration(seconds: 3),
             ),
           );
 
@@ -559,12 +578,12 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
 
                             const SizedBox(height: 16),
 
-                            // // Quick actions (remove location and music buttons)
-                            // Row(
-                            //   children: [
-                            //     _buildQuickAction(Icons.tag, 'Tag people'),
-                            //   ],
-                            // ),
+                            // Quick actions (remove location and music buttons)
+                            Row(
+                              children: [
+                                _buildQuickAction(Icons.person, 'Tag people'),
+                              ],
+                            ),
 
                             const SizedBox(height: 24),
 
@@ -698,33 +717,59 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
   Widget _buildQuickAction(IconData icon, String label) {
     return GestureDetector(
       onTap: () {
-        // Implement quick action functionality
-        if(label=='Tag people'){
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => TagUsersScreen(), // This will be your new screen
-            ),
-          );
+        if (label == 'Tag people') {
+          _openTaggingScreen();
         }
       },
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: Colors.grey[700],
-              size: 20,
-            ),
+          Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  color: Colors.grey[700],
+                  size: 20,
+                ),
+              ),
+              // Show count badge if users are tagged
+              if (label == 'Tag people' && _taggedUsers.isNotEmpty)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '${_taggedUsers.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
-            label,
+            label == 'Tag people' && _taggedUsers.isNotEmpty
+                ? '$label (${_taggedUsers.length})'
+                : label,
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey[600],
@@ -732,6 +777,34 @@ class _ReelCaptionScreenState extends State<ReelCaptionScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openTaggingScreen() {
+    if (_currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to tag users. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UserTaggingScreen(
+          currentUserId: _currentUserId!,
+          initialTaggedUsers: _taggedUsers,
+          title: 'Tag People in Reel',
+          onUsersSelected: (selectedUsers) {
+            setState(() {
+              _taggedUsers = selectedUsers;
+            });
+          },
+        ),
       ),
     );
   }

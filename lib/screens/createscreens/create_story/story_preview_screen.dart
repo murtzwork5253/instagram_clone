@@ -1,22 +1,199 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:Instagram/screens/homescreen/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart'; // Import provider package
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../services/insta_data_provider.dart';
-import '../../../services/supabase_service.dart'; // <-- Adjust this import path!
+import '../../../services/supabase_service.dart';
+import '../../user_tagging/user_model.dart';
+import '../../user_tagging/user_tagging_screen.dart'; // <-- Adjust this import path!
+import '../../user_tagging/user_tagging_service.dart';
 
 class StoryPreviewScreen extends StatefulWidget {
   final String imagePath; // Path to the captured image or selected image
+  final bool isFrontCamera;
 
-  const StoryPreviewScreen({Key? key, required this.imagePath}) : super(key: key);
+  const StoryPreviewScreen({Key? key, required this.imagePath, this.isFrontCamera=false}) : super(key: key);
 
   State<StoryPreviewScreen> createState() => StoryPreviewScreenState();
 }
 
 class StoryPreviewScreenState extends State<StoryPreviewScreen> {
   bool _isUploading = false;
+  List<TaggedUser> _taggedUsers = [];
+  final UserTaggingService _taggingService = UserTaggingService();
+  String? _currentStoryId;
+
+  void _openTextOverlay() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: double.infinity,
+          height: 200,
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Add Text',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'Type your text here...',
+                  hintStyle: TextStyle(color: Colors.grey[500]),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[700]!),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Colors.blue),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[800],
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                  ),
+                  Container(
+                    height: 40,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Color picker buttons
+                        _buildColorButton(Colors.white),
+                        _buildColorButton(Colors.black),
+                        _buildColorButton(Colors.red),
+                        _buildColorButton(Colors.blue),
+                        _buildColorButton(Colors.green),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Text added to story!')),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Add', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorButton(Color color) {
+    return GestureDetector(
+      onTap: () {
+        // Handle color selection
+      },
+      child: Container(
+        width: 24,
+        height: 24,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 1),
+        ),
+      ),
+    );
+  }
+
+  void _openTaggingScreen() {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to tag users. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UserTaggingScreen(
+          currentUserId: currentUserId,
+          initialTaggedUsers: _taggedUsers,
+          title: 'Tag People in Story',
+          onUsersSelected: (selectedUsers) {
+            setState(() {
+              _taggedUsers = selectedUsers;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaggedUsersList() {
+    if (_taggedUsers.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _taggedUsers.length,
+        itemBuilder: (context, index) {
+          final user = _taggedUsers[index];
+          return Container(
+            margin: const EdgeInsets.only(right: 8),
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundImage: user.profileImageUrl != null
+                      ? NetworkImage(user.profileImageUrl!)
+                      : null,
+                  child: user.profileImageUrl == null
+                      ? const Icon(Icons.person, size: 20)
+                      : null,
+                ),
+                Text(
+                  user.username,
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,12 +204,21 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
           // 1. Full-screen Image Preview with 9:16 Aspect Ratio
           Center(
             child: AspectRatio(
-              aspectRatio: 9 / 16, // Forces a 9:16 aspect ratio
+              aspectRatio: 9 / 16,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(14), // Optional: Slightly curved edges
-                child: Image.file(
+                borderRadius: BorderRadius.circular(14),
+                child: widget.isFrontCamera
+                    ? Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.rotationY(math.pi), // Mirror the front camera image
+                  child: Image.file(
+                    File(widget.imagePath),
+                    fit: BoxFit.cover,
+                  ),
+                )
+                    : Image.file(
                   File(widget.imagePath),
-                  fit: BoxFit.cover, // Ensures the image fills the container
+                  fit: BoxFit.cover,
                 ),
               ),
             ),
@@ -56,14 +242,10 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
 
                 // More Instagram-like icons
                 _buildTopActionIcon(Icons.person_add_alt_1_outlined, () {
-                  // Handle tagging people
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Tag People (Not Implemented)')));
+                  _openTaggingScreen();
                 }),
                 _buildTopActionIcon(Icons.text_fields, () {
-                  // Handle adding text
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Add Text (Not Implemented)')));
+                  _openTextOverlay();
                 }),
                 _buildTopActionIcon(Icons.brush_outlined, () {
                   // Handle drawing/doodling
@@ -76,17 +258,20 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
                       const SnackBar(content: Text('Add Sticker/GIF (Not Implemented)')));
                 }),
                 _buildTopActionIcon(Icons.music_note_outlined, () {
-                  // Handle adding music
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Add Music (Not Implemented)')));
+                  _openMusicMode();
                 }),
                 _buildTopActionIcon(Icons.more_vert, () {
-                  // More options (e.g., save, settings)
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('More Options (Not Implemented)')));
                 }),
               ],
             ),
+          ),
+
+          // Tagged Users List
+          Positioned(
+            top: 100,
+            left: 0,
+            right: 0,
+            child: _buildTaggedUsersList(),
           ),
 
           // 3. Bottom Action Buttons (Your Story, Close Friends, Send To)
@@ -114,7 +299,7 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
                     )
                         : Icon(Icons.add_circle_outline, size: 20, color: Colors.white),
                     onTap: _isUploading
-                        ? (){}
+                        ? () {}
                         : () async {
                       setState(() => _isUploading = true);
 
@@ -122,17 +307,23 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
                       await SupabaseService.uploadStoryMedia(File(widget.imagePath));
 
                       if (uploadedUrl != null) {
-                        await Provider.of<InstaDataProvider>(context, listen: false)
+                        // Create story and get the story ID
+                        final storyId = await Provider.of<InstaDataProvider>(context, listen: false)
                             .createStory(uploadedUrl);
-                        // Explicitly refresh stories for the current user after upload
+
+                        if (storyId != null && _taggedUsers.isNotEmpty) {
+                          // Save tagged users to the story
+                          await _taggingService.saveTaggedUsersToStory(
+                            storyId: storyId,
+                            taggedUsers: _taggedUsers,
+                          );
+                        }
+
+                        // Refresh stories
                         Provider.of<InstaDataProvider>(context, listen: false).reloadData();
                         Navigator.of(context).popUntil((route) => route.isFirst);
                       } else {
                         Fluttertoast.showToast(msg: "Failed to upload story media.");
-                      }
-
-                      if (mounted) {
-                        setState(() => _isUploading = false);
                       }
                     },
                   ),
@@ -190,9 +381,132 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0),
       child: IconButton(
-        icon: Icon(icon, color: Colors.grey, size: 28),
+        icon: Icon(icon, color: Colors.white, size: 28),
         onPressed: onPressed,
       ),
+    );
+  }
+
+  void _openMusicMode() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Container(
+          child: Column(
+            children: [
+              Container(
+                height: 4,
+                width: 40,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[700],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'Add Music',
+                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              // Search bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search music...',
+                    hintStyle: TextStyle(color: Colors.grey[500]),
+                    prefixIcon: Icon(Icons.search, color: Colors.grey[500]),
+                    filled: true,
+                    fillColor: Colors.grey[800],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Music categories
+              Container(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    _buildMusicCategory('Popular', true),
+                    _buildMusicCategory('Trending', false),
+                    _buildMusicCategory('Mood', false),
+                    _buildMusicCategory('Genre', false),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: 15,
+                  itemBuilder: (context, index) => _buildMusicItem(index),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMusicCategory(String name, bool isSelected) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.blue : Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[700]!),
+      ),
+      child: Text(
+        name,
+        style: TextStyle(
+          color: isSelected ? Colors.white : Colors.grey[400],
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMusicItem(int index) {
+    return ListTile(
+      leading: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.grey[800],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.music_note, color: Colors.white),
+      ),
+      title: Text('Song Title $index', style: const TextStyle(color: Colors.white)),
+      subtitle: Text('Artist Name $index', style: TextStyle(color: Colors.grey[500])),
+      trailing: IconButton(
+        icon: const Icon(Icons.play_arrow, color: Colors.white),
+        onPressed: () {
+          // Play preview
+        },
+      ),
+      onTap: () {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Song $index added to story!')),
+        );
+      },
     );
   }
 
@@ -228,8 +542,6 @@ class StoryPreviewScreenState extends State<StoryPreviewScreen> {
     );
   }
 
-  // Function to show a more detailed share sheet (like Instagram's)
-  // Replace your _showShareSheet method with this fixed version
   void _showShareSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,

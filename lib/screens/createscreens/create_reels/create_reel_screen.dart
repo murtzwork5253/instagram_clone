@@ -384,9 +384,17 @@ class _CreateReelContentState extends State<CreateReelContent> with WidgetsBindi
                           ? Transform(
                         alignment: Alignment.center,
                         transform: Matrix4.rotationY(math.pi),
-                        child: CameraPreview(_cameraService.controller!),
+                        child: (_cameraService.controller != null &&
+                            _cameraService.controller!.value.isInitialized &&
+                            !_cameraService.isDisposed)
+                            ? CameraPreview(_cameraService.controller!)
+                            : Center(child: CircularProgressIndicator()),
                       )
-                          : CameraPreview(_cameraService.controller!),
+                          : (_cameraService.controller != null &&
+                              _cameraService.controller!.value.isInitialized &&
+                              !_cameraService.isDisposed)
+                              ? CameraPreview(_cameraService.controller!)
+                              : Center(child: CircularProgressIndicator()),
                     ),
                   ),
                 ),

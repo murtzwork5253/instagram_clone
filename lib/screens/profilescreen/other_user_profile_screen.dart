@@ -65,12 +65,100 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           .eq('id', widget.userId)
           .single();
 
+      // NEW CODE - Replace the above section with this:
       // Load posts
-      final postsRes = await supabase
+      final postsResponse = await supabase
           .from('posts')
-          .select()
+          .select('''
+        id,
+        user_id,
+        caption,
+        location,
+        image_url,
+        created_at,
+        disable_comments,
+        use_original_ratio,
+        image_transformation,
+        original_aspect_ratio,
+        users (
+          username,
+          profile_image_url
+        )
+      ''') // Select necessary fields for PostData
           .eq('user_id', widget.userId)
           .order('created_at', ascending: false);
+
+      // Get all post IDs to fetch likes, comments, and saves separately
+      final postIds = (postsResponse as List).map((post) => post['id']).toList();
+
+      // Fetch all likes for these posts
+      final likesResponse = await supabase
+          .from('post_likes')
+          .select('post_id, user_id')
+          .inFilter('post_id', postIds);
+
+      // Fetch all comments for these posts
+      final commentsResponse = await supabase
+          .from('comments')
+          .select('id, post_id')
+          .inFilter('post_id', postIds);
+
+      // Fetch saved posts for current user
+      List<dynamic> savedResponse = [];
+      if (currentUserId != null) { // Use currentUserId defined in this method
+        savedResponse = await supabase
+            .from('saved_posts')
+            .select('post_id')
+            .eq('user_id', currentUserId)
+            .inFilter('post_id', postIds);
+      }
+
+      // Group likes, comments, and saves by post_id
+      final Map<String, List<dynamic>> likesByPost = {};
+      final Map<String, List<dynamic>> commentsByPost = {};
+      final Set<String> savedPostIds = savedResponse
+          .map((save) => save['post_id'].toString())
+          .toSet();
+
+      for (final like in likesResponse as List) {
+        final postId = like['post_id'].toString();
+        likesByPost[postId] = (likesByPost[postId] ?? [])..add(like);
+      }
+
+      for (final comment in commentsResponse as List) {
+        final postId = comment['post_id'].toString();
+        commentsByPost[postId] = (commentsByPost[postId] ?? [])..add(comment);
+      }
+
+      final List<PostData> fetchedPosts = (postsResponse).map((post) {
+        final user = post['users'];
+        final postId = post['id'].toString();
+        final likes = likesByPost[postId] ?? [];
+        final comments = commentsByPost[postId] ?? [];
+
+        final bool isLiked = currentUserId != null
+            ? likes.any((like) => like['user_id'] == currentUserId)
+            : false;
+
+        return PostData(
+          id: post['id'],
+          userId: post['user_id'],
+          username: user['username'],
+          profileImageUrl: user['profile_image_url'],
+          imageUrl: post['image_url'],
+          caption: post['caption'],
+          location: post['location'],
+          createdAt: DateTime.parse(post['created_at']),
+          likeCount: likes.length,
+          commentCount: comments.length,
+          isLiked: isLiked,
+          isSaved: savedPostIds.contains(postId),
+          disableComments: post['disable_comments'] ?? false,
+          use_original_ratio: post['use_original_ratio'],
+          image_transformation: post['image_transformation'],
+          original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
+        );
+      }).toList();
 
       // Check if current user is following this profile
       final followingCheck = await supabase
@@ -102,12 +190,13 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           .where((f) => !blockedIds.contains(f['following_id']))
           .toList();
 
+      // NEW CODE - Replace the above section with this:
       setState(() {
         profile = profileRes;
-        posts = postsRes;
+        posts = fetchedPosts; // Assign the mapped PostData list
         followersCount = filteredFollowers.length;
         followingCount = filteredFollowing.length;
-        postsCount = postsRes.length;
+        postsCount = fetchedPosts.length; // Use fetchedPosts.length
         isFollowing = followingCheck != null; // Set the follow status
         isLoading = false;
       });
@@ -649,7 +738,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
       ),
       itemCount: posts.length,
       itemBuilder: (context, index) {
-        final mediaPath = posts[index]['image_url'];
+        final mediaPath = posts.cast<PostData>()[index].imageUrl;
         final mediaUrl = mediaPath.toString().startsWith('http')
             ? mediaPath
             : supabase.storage.from('post-media').getPublicUrl(mediaPath);
@@ -661,24 +750,9 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
               context,
               MaterialPageRoute(
                 builder: (context) => SinglePostView(
-                  post: PostData(
-                    id: posts[index]['id'],
-                    userId: posts[index]['user_id'],
-                    username: profile!['username'],
-                    imageUrl: mediaUrl,
-                    caption: posts[index]['caption'],
-                    createdAt: DateTime.parse(posts[index]['created_at']),
-                    likeCount: posts[index]['like_count'] ?? 0,
-                    commentCount: posts[index]['comment_count']?? 0,
-                    isLiked: posts[index]['is_liked'] ?? false,
-                    isSaved: posts[index]['is_saved'] ?? false,
-                    disableComments: posts[index]['disable_comments'] ?? false,
-                    use_original_ratio: posts[index]['use_original_ratio'],
-                    image_transformation: posts[index]['image_transformation'],
-                    original_aspect_ratio: (posts[index]['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
-                  ),
+                  posts: posts.cast<PostData>(),
+                  initialIndex: index,
                   Url: avatarUrl,
-
                 ),
               ),
             );

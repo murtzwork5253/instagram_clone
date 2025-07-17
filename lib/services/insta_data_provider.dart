@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../screens/notificationscreen/service/notification_service.dart';
 import '../services/supabase_service.dart';
 
 class InstaDataProvider extends ChangeNotifier {
@@ -885,6 +886,8 @@ class InstaDataProvider extends ChangeNotifier {
     }
   }
 
+
+
   Future<void> followUser(String currentUserId, String targetUserId) async {
     try {
       await Supabase.instance.client.from('followers').insert({
@@ -926,10 +929,11 @@ class InstaDataProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> createStory(String mediaUrl) async {
+  Future<String?> createStory(String mediaUrl) async {
     try {
-      // NEW CODE - Replace the above section with this:
-      await SupabaseService.createStory(mediaUrl);
+      // Create story in Supabase and get the story ID
+      final response = await SupabaseService.createStory(mediaUrl);
+      final storyId = response['id'] as String?;
 
       // --- Start of refined optimistic update logic ---
       final currentUserStoryIndex = _stories.indexWhere((story) => story.userId == _currentUser?.id);
@@ -938,7 +942,7 @@ class InstaDataProvider extends ChangeNotifier {
         // If current user already has a story entry, update it to reflect the new unviewed story.
         final existingStory = _stories[currentUserStoryIndex];
         _stories[currentUserStoryIndex] = StoryData(
-          id: existingStory.id,
+          id: storyId ?? existingStory.id,
           userId: existingStory.userId,
           username: existingStory.username,
           profileImageUrl: existingStory.profileImageUrl,
@@ -948,37 +952,34 @@ class InstaDataProvider extends ChangeNotifier {
           isViewed: false, // Mark as unviewed because a new story was added
           createdAt: DateTime.now(), // Update creation time
         );
-      } else {
+      } else if (_currentUser != null) {
         // If current user had no story entry (e.g., this is their very first story), create a new one.
-        if (_currentUser != null) {
-          _stories.insert(0, StoryData( // Insert at the beginning for typical display order
-            id: 'new_story_temp_${DateTime.now().microsecondsSinceEpoch}', // Provide a temporary unique ID
-            userId: _currentUser!.id,
-            username: _currentUser!.username,
-            profileImageUrl: _currentUser!.profileImageUrl, // Assuming avatarUrl is available in UserData
-            mediaUrl: mediaUrl,
-            isMe: true,
-            hasStory: true,
-            isViewed: false, // Mark as unviewed
-            createdAt: DateTime.now(),
-          ));
-        }
+        _stories.insert(0, StoryData(
+          id: storyId ?? 'new_story_temp_${DateTime.now().microsecondsSinceEpoch}',
+          userId: _currentUser!.id,
+          username: _currentUser!.username,
+          profileImageUrl: _currentUser!.profileImageUrl,
+          mediaUrl: mediaUrl,
+          isMe: true,
+          hasStory: true,
+          isViewed: false,
+          createdAt: DateTime.now(),
+        ));
       }
-      notifyListeners(); // Notify listeners immediately after this optimistic local state update
-
-      // --- End of refined optimistic update logic ---
+      notifyListeners();
 
       // Introduce a small delay to allow Supabase to synchronize data.
       await Future.delayed(const Duration(milliseconds: 5000));
 
-      // Fetch stories from the server to ensure full consistency and handle any backend-determined state.
+      // Fetch stories from the server to ensure full consistency
       await _fetchStories();
-      notifyListeners(); // Notify again after fetching from DB to ensure the latest state is reflected
+      notifyListeners();
 
       print('InstaDataProvider: Story created and home screen refreshed.');
+      return storyId;
     } catch (e) {
-      print('Error creating story: $e'); // Add this print for better error visibility
-      // Fluttertoast.showToast(msg: "Error Creating Story");
+      print('Error creating story: $e');
+      return null;
     }
   }
 
