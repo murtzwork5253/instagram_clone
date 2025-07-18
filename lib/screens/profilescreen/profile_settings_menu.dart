@@ -1,4 +1,5 @@
 // profile_settings_menu.dart
+import 'package:Instagram/screens/homescreen/home_screen.dart';
 import 'package:Instagram/screens/saved-psots/saved_post_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -11,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../l10n/app_localizations.dart';
 import '../../main.dart';
 import '../../providers/language_provider.dart';
+import '../../services/account_manager.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/login_page.dart';
@@ -47,18 +49,81 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
     '1051202779186-kqac9ms2803rllegshdu2d3n6bjff23h.apps.googleusercontent.com',
   );
 
-  // Enhanced logout function
+  // Enhanced logout function for current account only
   Future<void> _logout() async {
     try {
       // Show confirmation dialog
       bool shouldLogout = await _showLogoutConfirmation();
       if (!shouldLogout) return;
 
+      // Get current account ID before signing out
+      final currentAccountId = await AccountManager.instance.getCurrentAccountId();
+
       // 1. Sign out from Google
       await _googleSignIn.signOut();
 
       // 2. Sign out from Supabase
       await AuthService.client().auth.signOut();
+
+      // 3. Remove current account from stored accounts
+      if (currentAccountId != null) {
+        await AccountManager.instance.removeAccount(currentAccountId);
+      }
+
+      // 4. Reset provider data
+      Provider.of<InstaDataProvider>(context, listen: false).reset();
+
+      // 5. Check if there are other stored accounts
+      final remainingAccounts = await AccountManager.instance.getStoredAccounts();
+
+      if (remainingAccounts.isNotEmpty) {
+        // Switch to the first available account
+        final nextAccount = remainingAccounts.first;
+        final switchSuccess = await AccountManager.instance.switchToAccount(nextAccount.userId, context);
+
+        if (switchSuccess) {
+          // Successfully switched to another account, go back to main app
+          if (mounted) {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => HomeDashboard()), // Replace with your main screen
+                  (route) => false,
+            );
+          }
+          return;
+        }
+      }
+
+      // No other accounts available or switch failed, navigate to login screen
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => LoginPage()),
+              (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logout error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+// New method for logging out all accounts
+  Future<void> _logoutAllAccounts() async {
+    try {
+      // Show confirmation dialog
+      bool shouldLogout = await _showLogoutAllConfirmation();
+      if (!shouldLogout) return;
+
+      // 1. Sign out from Google
+      await _googleSignIn.signOut();
+
+      // 2. Sign out from all accounts using AccountManager
+      await AccountManager.instance.signOutAll();
 
       // 3. Reset provider data
       Provider.of<InstaDataProvider>(context, listen: false).reset();
@@ -82,6 +147,7 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
     }
   }
 
+// Updated confirmation dialog for single account logout
   Future<bool> _showLogoutConfirmation() async {
     final loc = AppLocalizations.of(context)!;
     return await showDialog<bool>(
@@ -91,7 +157,7 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
           backgroundColor: Colors.grey[900],
           title: Text(loc.logout, style: const TextStyle(color: Colors.white)),
           content: Text(
-            loc.logoutConfirmation,
+            'Are you sure you want to logout from this account? This will remove the account from your saved accounts.',
             style: const TextStyle(color: Colors.white70),
           ),
           actions: [
@@ -102,6 +168,34 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
               child: Text(loc.logout, style: const TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+  }
+
+// New confirmation dialog for all accounts logout
+  Future<bool> _showLogoutAllConfirmation() async {
+    final loc = AppLocalizations.of(context)!;
+    return await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: Text('Logout All Accounts', style: const TextStyle(color: Colors.white)),
+          content: Text(
+            'Are you sure you want to logout from all accounts? This will remove all saved accounts and you will need to sign in again.',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(loc.cancel, style: const TextStyle(color: Colors.blue)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('Logout All', style: const TextStyle(color: Colors.red)),
             ),
           ],
         );
@@ -235,6 +329,13 @@ class ProfileMenuScreenState extends State<ProfileMenuScreen> {
                 style: const TextStyle(color: Colors.red, fontSize: 16),
               ),
               onTap: _logout,
+            ),
+            ListTile(
+              title: Text(
+                "Logout All Accounts",
+                style: const TextStyle(color: Colors.red, fontSize: 16),
+              ),
+              onTap: _logoutAllAccounts,
             ),
             const SizedBox(height: 20),
           ],

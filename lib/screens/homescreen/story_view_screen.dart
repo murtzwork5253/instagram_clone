@@ -39,6 +39,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
   bool _isLiked = false;
   bool _likeLoading = false;
 
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +60,25 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     _markStoryAsViewed(widget.stories[_currentIndex].id!);
     _loadTaggedUsers(widget.stories[_currentIndex].id!);
     _checkIfLiked(widget.stories[_currentIndex].id!);
+
+    // FIX: Move precaching to post-frame callback
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _precacheStoryMedia(_currentIndex);
+    });
+  }
+
+  void _precacheStoryMedia(int index) {
+    final context = this.context;
+    final story = widget.stories[index];
+    if (story.mediaUrl != null && story.mediaUrl!.isNotEmpty) {
+      precacheImage(CachedNetworkImageProvider(story.mediaUrl!), context);
+    }
+    if (story.profileImageUrl != null && story.profileImageUrl!.isNotEmpty) {
+      final profileUrl = _buildProfileImageUrl(story.profileImageUrl);
+      if (profileUrl != null) {
+        precacheImage(CachedNetworkImageProvider(profileUrl), context);
+      }
+    }
   }
 
   Future<void> _loadTaggedUsers(String storyId) async {
@@ -129,6 +149,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     _loadTaggedUsers(widget.stories[index].id!);
     _checkIfLiked(widget.stories[index].id!);
     _resumeTimer();
+    _precacheStoryMedia(index);
   }
 
   String _formatTime(DateTime? time) {

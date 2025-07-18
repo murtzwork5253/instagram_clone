@@ -4,6 +4,7 @@ import 'package:Instagram/screens/searchscreen/search_screen_state.dart'; // Thi
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../services/supabase_service.dart'; // Make sure PostData is accessible from here
 
@@ -245,33 +246,17 @@ class _InstagramSearchScreenState extends State<InstagramSearchScreen> {
                             tag: 'searchImage_${post.id}', // Use post.id for unique tag
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(1),
-                              child: Image.network(
-                                mediaUrl,
+                              child: CachedNetworkImage(
+                                imageUrl: mediaUrl,
                                 fit: BoxFit.cover,
-                                loadingBuilder:
-                                    (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Container(
-                                    color: Colors.grey[900],
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                        value: loadingProgress
-                                            .expectedTotalBytes !=
-                                            null
-                                            ? loadingProgress
-                                            .cumulativeBytesLoaded /
-                                            loadingProgress
-                                                .expectedTotalBytes!
-                                            : null,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (context, error, stackTrace) =>
-                                    Container(
-                                      color: Colors.grey[800],
-                                      child: const Icon(Icons.error, color: Colors.white),
-                                    ),
+                                placeholder: (context, url) => Container(
+                                  color: Colors.grey[900],
+                                  child: Center(child: CircularProgressIndicator()),
+                                ),
+                                errorWidget: (context, url, error) => Container(
+                                  color: Colors.grey[800],
+                                  child: Icon(Icons.error, color: Colors.white),
+                                ),
                               ),
                             ),
                           ),

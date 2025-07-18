@@ -1,4 +1,5 @@
 // services/user_tagging_service.dart
+import 'package:Instagram/screens/notificationscreen/service/notification_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_model.dart';
 
@@ -81,6 +82,7 @@ class UserTaggingService {
     required String postId,
     required List<TaggedUser> taggedUsers,
   }) async {
+    final currentUser = await Supabase.instance.client.auth.currentUser;
     try {
       final taggedUsersJson = taggedUsers.map((user) => user.toJson()).toList();
 
@@ -89,6 +91,12 @@ class UserTaggingService {
           .update({'tagged_users': taggedUsersJson})
           .eq('id', postId);
 
+      await NotificationService().createBatchNotifications(
+        recipientIds: taggedUsers.map((user) => user.id).toList(),
+        senderId: currentUser!.id ,
+        type: 'mention',
+        postId: postId,
+      );
       return true;
     } catch (e) {
       print('Error saving tagged users to post: $e');

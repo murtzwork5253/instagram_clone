@@ -1122,7 +1122,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
 
     try {
       final reelProvider = Provider.of<ReelProvider>(context, listen: false);
-      final loadedComments = await reelProvider.getReelComments(widget.reelId);
+      final loadedComments = await reelProvider.getReelCommentsWithLikes(widget.reelId);
 
       if (mounted) {
         setState(() {
@@ -1518,7 +1518,8 @@ class _ReelCommentTileState extends State<ReelCommentTile> {
       _isLiked = !_isLiked;
       _likeCount += _isLiked ? 1 : -1;
     });
-    // Here you can add API call to like/unlike comment
+    final reelProvider = Provider.of<ReelProvider>(context, listen: false);
+    reelProvider.toggleCommentLike( widget.comment['id']);
   }
 
   void _deleteComment() async {
@@ -1600,12 +1601,15 @@ class _ReelCommentTileState extends State<ReelCommentTile> {
     final username = comment['username'] as String;
     final userAvatar = comment['userAvatar'] as String;
     final createdAt = comment['createdAt'] as DateTime;
+    final commentId = comment['id'] as String;
 
     final String contentPreview = commentText.length > 120
         ? commentText.substring(0, 120) + '...'
         : commentText;
 
     final bool isTruncated = commentText.length > 120;
+
+    final reelProvider = Provider.of<ReelProvider>(context, listen: false);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),

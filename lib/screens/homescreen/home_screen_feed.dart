@@ -17,6 +17,10 @@ import '../common/report_dialog.dart';
 import '../notificationscreen/notification_screen.dart';
 import '../user_tagging/user_model.dart';
 import '../user_tagging/user_tagging_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../chatscreen/message_service.dart';
+import '../chatscreen/model/models.dart';
+import 'dart:math';
 
 class InstagramHomeScreen extends StatefulWidget {
   final ValueNotifier<int>? refreshNotifier;
@@ -52,6 +56,11 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
 
   // --- ADDED: Cache for isFollowingUser futures per postId ---
   final Map<String, Future<bool>> _isFollowingFutures = {};
+
+  final ScrollController _scrollController = ScrollController();
+  int _postsPerPage = 10;
+  int _currentMax = 10;
+  bool _isLoadingMore = false;
 
   // Replace the existing initState method with this:
   @override
@@ -115,6 +124,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
       parent: _cameraAnimationController,
       curve: Curves.easeInOut,
     ));
+    _scrollController.addListener(_onScroll);
   }
 
   Future<void> _loadTaggedUsersForAllPosts() async {
@@ -222,7 +232,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                       radius: 22,
                       backgroundColor: Colors.grey[800],
                       backgroundImage: user.profileImageUrl != null
-                          ? NetworkImage(
+                          ? CachedNetworkImageProvider(
                               _buildUserImageUrl(user.profileImageUrl!))
                           : null,
                       child: user.profileImageUrl == null
@@ -333,6 +343,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
     _messageSubscription?.unsubscribe();
     _chatAnimationController.dispose(); // Add this line
     _cameraAnimationController.dispose(); // Add this line
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -848,7 +859,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                     child: CircleAvatar(
                       radius: 42,
                       backgroundColor: Colors.grey[800],
-                      backgroundImage: NetworkImage(displayUrl),
+                      backgroundImage: CachedNetworkImageProvider(displayUrl),
                     ),
                   ),
                 ),
@@ -955,7 +966,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
             },
             leading: CircleAvatar(
               radius: 17,
-              backgroundImage: NetworkImage(imageUrl),
+              backgroundImage: CachedNetworkImageProvider(imageUrl),
               child: imageUrl == null ? Icon(Icons.person) : null,
             ),
             title: Text(
@@ -1117,38 +1128,29 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
 
                     return Transform(
                       transform: transformation,
-                      child: Image.network(
-                        post.imageUrl,
+                      child: CachedNetworkImage(
+                        imageUrl: post.imageUrl,
                         width: double.infinity,
                         height: double.infinity,
                         fit: useOriginalRatio ? BoxFit.contain : BoxFit.cover,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            width: double.infinity,
-                            height: double.infinity,
-                            color: Colors.grey[900],
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes !=
-                                        null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                    : null,
-                              ),
+                        placeholder: (context, url) => Container(
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: Colors.grey[900],
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: 0.0, // Placeholder, actual progress is handled by CachedNetworkImage
                             ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: double.infinity,
-                            height: double.infinity,
-                            color: Colors.grey[900],
-                            child: const Center(
-                              child: Icon(Icons.error, color: Colors.white),
-                            ),
-                          );
-                        },
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: Colors.grey[900],
+                          child: const Center(
+                            child: Icon(Icons.error, color: Colors.white),
+                          ),
+                        ),
                       ),
                     );
                   }(),
@@ -1507,7 +1509,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                           radius: 25,
                           backgroundColor: Colors.grey[800],
                           backgroundImage: user['profile_image_url'] != null
-                              ? NetworkImage(imageUrl)
+                              ? CachedNetworkImageProvider(imageUrl)
                               : null,
                           child: user['profile_image_url'] == null
                               ? Icon(Icons.person, color: Colors.white)
@@ -1611,21 +1613,52 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
   }
 
 // Method to share post to specific user
-  void _sharePostToUser(PostData post, Map<String, dynamic> user) {
-    // TODO: Implement actual sharing logic
-    // This could involve:
-    // 1. Creating a record in a 'shared_posts' table
-    // 2. Sending a notification to the user
-    // 3. Adding to their direct messages
-    // print("THe user Id iw: ${user['id']}");
+  void _sharePostToUser(PostData post, Map<String, dynamic> user) async {
+    final currentUser = AuthService.client().auth.currentUser;
+    if (currentUser == null) return;
+
+    // Prepare shared post data (minimal for chat preview)
+    final sharedPostData = {
+      'post_id': post.id,
+      'user_id': post.userId,
+      'username': post.username,
+      'profile_image_url': post.profileImageUrl,
+      'image_url': post.imageUrl,
+      'caption': post.caption,
+    };
+
+    // Send the message with sharedPost
+    await MessageService().sendMessage(
+      senderId: currentUser.id,
+      receiverId: user['id'],
+      sharedPost: sharedPostData,
+    );
+
+    // Optimistic UI: create a temporary Message object
+    final optimisticMessage = Message(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}',
+      senderId: currentUser.id,
+      receiverId: user['id'],
+      content: null,
+      imageUrl: null,
+      sharedPost: sharedPostData,
+      isRead: false,
+      createdAt: DateTime.now(),
+      seenAt: null,
+    );
+
+    // Navigate to chat with optimistic message
     Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => ChatScreen(
-                  currentUserId: AuthService.client().auth.currentUser!.id,
-                  initialChatUserId: user['id'],
-                  cameFromProfile: true,
-                )));
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          currentUserId: currentUser.id,
+          initialChatUserId: user['id'],
+          cameFromProfile: true,
+          initialMessage: optimisticMessage,
+        ),
+      ),
+    );
   }
 
 // Method to add post to story
@@ -1649,5 +1682,23 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
         : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/post-media/${post.userId}/$imageUrl';
 
     Clipboard.setData(ClipboardData(text: postLink));
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 && !_isLoadingMore) {
+      _loadMorePosts();
+    }
+  }
+
+  void _loadMorePosts() {
+    setState(() {
+      _isLoadingMore = true;
+      _currentMax += _postsPerPage;
+    });
+    Future.delayed(const Duration(milliseconds: 500), () {
+      setState(() {
+        _isLoadingMore = false;
+      });
+    });
   }
 }

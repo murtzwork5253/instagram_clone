@@ -51,19 +51,23 @@ class MessageService {
     required String receiverId,
     String? content,
     String? imageUrl,
+    Map<String, dynamic>? sharedPost,
   }) async {
-    if (content == null && imageUrl == null) {
-      throw ArgumentError('Message must have content or an image.');
+    if (content == null && imageUrl == null && sharedPost == null) {
+      throw ArgumentError('Message must have content, an image, or a shared post.');
     }
 
-    await _supabaseClient.from('messages').insert({
+    final messageData = {
       'sender_id': senderId,
       'receiver_id': receiverId,
       'content': content,
       'image_url': imageUrl,
+      'shared_post': sharedPost,
       'is_read': false,
       'created_at': DateTime.now().toUtc().toIso8601String(),
-    });
+    };
+
+    await _supabaseClient.from('messages').insert(messageData);
   }
 
   Future<int> getUnreadMessageCount(String currentUserId, String otherUserId) async {

@@ -5,6 +5,8 @@ import 'package:Instagram/screens/auth/service/auth_service.dart';
 import 'package:Instagram/screens/auth/login_page.dart';
 import 'package:Instagram/screens/auth/profile_completion_screen.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';
+import 'package:provider/provider.dart';
+import '../../services/insta_data_provider.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
@@ -68,7 +70,10 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
         );
       } else {
-        // Profile complete - redirect to home
+        // Profile complete - prefetch all app data before navigating to home
+        final instaDataProvider = Provider.of<InstaDataProvider>(context, listen: false);
+        await instaDataProvider.reloadData();
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),

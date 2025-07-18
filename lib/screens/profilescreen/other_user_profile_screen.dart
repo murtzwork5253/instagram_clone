@@ -9,6 +9,7 @@ import '../../services/blocked_users_service.dart';
 import 'report_user_dialog.dart';
 
 import '../../services/supabase_service.dart'; // Import FollowersList
+import 'package:cached_network_image/cached_network_image.dart';
 
 class OtherUserProfileScreen extends StatefulWidget {
   final String userId;
@@ -364,7 +365,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
             controller: _tabController,
             children: [
               _buildPostsGrid(),
-              _buildTaggedGrid(),
+              _buildTaggedGrid(widget.userId),
             ],
           ),
         ),
@@ -393,7 +394,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
                 radius: 40,
                 backgroundColor: Colors.grey[800],
                 backgroundImage:
-                avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                avatarUrl != null ? CachedNetworkImageProvider(avatarUrl) : null,
                 child: avatarUrl == null
                     ? Text(
                   profile!['username'] != null &&
@@ -760,7 +761,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
           child: Container(
             decoration: BoxDecoration(
               image: DecorationImage(
-                image: NetworkImage(mediaUrl),
+                image: CachedNetworkImageProvider(mediaUrl),
                 fit: BoxFit.cover,
               ),
             ),
@@ -770,29 +771,197 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     );
   }
 
-  Widget _buildTaggedGrid() {
+  // Replace your _fetchTaggedPosts method with this complete version:
+  Future<List<PostData>> _fetchTaggedPosts(String userId) async {
+    final supabase = Supabase.instance.client;
+    final currentUserId = supabase.auth.currentUser?.id;
+
+    try {
+      // First, let's fetch all posts and filter them in Dart to avoid JSON parsing issues
+      final response = await supabase
+          .from('posts')
+          .select('''
+        id,
+        user_id,
+        caption,
+        location,
+        image_url,
+        created_at,
+        disable_comments,
+        use_original_ratio,
+        image_transformation,
+        original_aspect_ratio,
+        users (
+          username,
+          profile_image_url
+        ),
+        tagged_users
+      ''')
+          .order('created_at', ascending: false);
+
+      // Filter posts where the user is tagged
+      final filteredPosts = (response as List).where((post) {
+        final taggedUsers = post['tagged_users'];
+        if (taggedUsers == null) return false;
+
+        // Handle different possible formats of tagged_users
+        try {
+          if (taggedUsers is List) {
+            // If it's already a List, check if any item has the userId
+            return taggedUsers.any((user) {
+              if (user is Map && user.containsKey('id')) {
+                return user['id'].toString() == userId;
+              }
+              return false;
+            });
+          } else if (taggedUsers is String) {
+            // If it's a string, it might be JSON that needs parsing
+            // But we'll be careful about parsing
+            return taggedUsers.contains(userId);
+          }
+        } catch (e) {
+          print('Error parsing tagged_users for post ${post['id']}: $e');
+          return false;
+        }
+
+        return false;
+      }).toList();
+
+      // Get all post IDs from the filtered posts
+      final postIds = filteredPosts.map((post) => post['id']).toList();
+
+      if (postIds.isEmpty) {
+        return [];
+      }
+
+      // Fetch all likes for these posts
+      final likesResponse = await supabase
+          .from('post_likes')
+          .select('post_id, user_id')
+          .inFilter('post_id', postIds);
+
+      // Fetch all comments for these posts
+      final commentsResponse = await supabase
+          .from('comments')
+          .select('id, post_id')
+          .inFilter('post_id', postIds);
+
+      // Fetch saved posts for the current user
+      List<dynamic> savedResponse = [];
+      if (currentUserId != null) {
+        savedResponse = await supabase
+            .from('saved_posts')
+            .select('post_id')
+            .eq('user_id', currentUserId)
+            .inFilter('post_id', postIds);
+      }
+
+      // Group likes, comments, and saves by post_id for easier lookup
+      final Map<String, List<dynamic>> likesByPost = {};
+      final Map<String, List<dynamic>> commentsByPost = {};
+      final Set<String> savedPostIds = savedResponse.map((save) => save['post_id'].toString()).toSet();
+
+      for (final like in likesResponse as List) {
+        final postId = like['post_id'].toString();
+        likesByPost[postId] = (likesByPost[postId] ?? [])..add(like);
+      }
+
+      for (final comment in commentsResponse as List) {
+        final postId = comment['post_id'].toString();
+        commentsByPost[postId] = (commentsByPost[postId] ?? [])..add(comment);
+      }
+
+      // Map filtered post data to PostData objects with correct counts
+      return filteredPosts.map((post) {
+        final user = post['users'];
+        final postId = post['id'].toString();
+        final likes = likesByPost[postId] ?? [];
+        final comments = commentsByPost[postId] ?? [];
+
+        final bool isLiked = currentUserId != null
+            ? likes.any((like) => like['user_id'] == currentUserId)
+            : false;
+
+        return PostData(
+          id: post['id'],
+          userId: post['user_id'],
+          username: user['username'],
+          profileImageUrl: user['profile_image_url'],
+          imageUrl: post['image_url'],
+          caption: post['caption'],
+          location: post['location'],
+          createdAt: DateTime.parse(post['created_at']),
+          likeCount: likes.length, // Now shows actual like count
+          commentCount: comments.length, // Now shows actual comment count
+          isLiked: isLiked, // Now shows actual like state
+          isSaved: savedPostIds.contains(postId), // Now shows actual save state
+          disableComments: post['disable_comments'] ?? false,
+          use_original_ratio: post['use_original_ratio'],
+          image_transformation: post['image_transformation'],
+          original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
+        );
+      }).toList();
+    } catch (e) {
+      print('Error fetching tagged posts: $e');
+      return [];
+    }
+  }
+
+  Widget _buildTaggedGrid(String userId) {
     final loc = AppLocalizations.of(context)!;
-    // In a real app, you would fetch tagged posts
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.person_pin_outlined,
-            color: Colors.white,
-            size: 70,
-          ),
-          SizedBox(height: 16),
-          Text(
-            loc.noPhotos,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+    return FutureBuilder<List<PostData>>(
+      future: _fetchTaggedPosts(userId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.person_pin_outlined, color: Colors.white, size: 70),
+                SizedBox(height: 16),
+                Text(loc.noPhotos, style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+              ],
             ),
-          ),
-        ],
-      ),
+          );
+        }
+        final taggedPosts = snapshot.data!;
+        return GridView.builder(
+          itemCount: taggedPosts.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
+          itemBuilder: (context, index) {
+            final post = taggedPosts[index];
+            final mediaUrl = post.imageUrl.toString().startsWith('http')
+                ? post.imageUrl
+                : Supabase.instance.client.storage.from('post-media').getPublicUrl(post.imageUrl);
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SinglePostView(
+                      posts: taggedPosts,
+                      initialIndex: index,
+                      Url: post.profileImageUrl ?? '',
+                    ),
+                  ),
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.all(1),
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: CachedNetworkImageProvider(mediaUrl),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert'; // For JSON parsing
 
 // --- Data Models ---
 // Message Model
@@ -27,15 +28,31 @@ class Message {
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
+    print('Raw message JSON: ' + json.toString()); // DEBUG
+    dynamic sharedPostRaw = json['shared_post'];
+    Map<String, dynamic>? sharedPost;
+    if (sharedPostRaw != null) {
+      if (sharedPostRaw is String) {
+        try {
+          sharedPost = Map<String, dynamic>.from(jsonDecode(sharedPostRaw));
+        } catch (_) {
+          sharedPost = null;
+        }
+      } else if (sharedPostRaw is Map) {
+        sharedPost = Map<String, dynamic>.from(sharedPostRaw);
+      }
+    }
+    print('Parsed sharedPost: ' + sharedPost.toString()); // DEBUG
     return Message(
       id: json['id'] as String,
       senderId: json['sender_id'] as String?,
       receiverId: json['receiver_id'] as String?,
       content: json['content'] as String?,
       imageUrl: json['image_url'] as String?,
+      sharedPost: sharedPost,
       isRead: json['is_read'] as bool,
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
-      seenAt: json['seen_at'] != null ? DateTime.parse(json['seen_at'] as String).toLocal() : null, // NEW
+      seenAt: json['seen_at'] != null ? DateTime.parse(json['seen_at'] as String).toLocal() : null,
     );
   }
 
@@ -46,6 +63,7 @@ class Message {
       'receiver_id': receiverId,
       'content': content,
       'image_url': imageUrl,
+      'shared_post': sharedPost,
       'is_read': isRead,
       'created_at': createdAt.toIso8601String(),
       'seen_at': seenAt?.toIso8601String(), // NEW

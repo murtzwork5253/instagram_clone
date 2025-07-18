@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '/screens/chatscreen/model/models.dart'; // NEW: Import the new models file
 import 'message_service.dart'; // NEW: Import the new message service file
 import 'new_chat_dialog.dart'; // NEW: Import the new chat dialog file
+import '../profilescreen/single_post_view.dart';
 
 // --- Enhanced Chat Screen ---
 class ChatScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class ChatScreen extends StatefulWidget {
   final String? initialChatUserId;
   final bool? cameFromProfile; // NEW: Track if came from profile
   final VoidCallback? onMessageRead;
+  final Message? initialMessage; // NEW
 
   const ChatScreen({
     Key? key,
@@ -23,6 +25,7 @@ class ChatScreen extends StatefulWidget {
     this.initialChatUserId,
     this.cameFromProfile,
     this.onMessageRead,
+    this.initialMessage, // NEW
   }) : super(key: key);
 
   @override
@@ -75,6 +78,16 @@ class _ChatScreenState extends State<ChatScreen>
     if (widget.initialChatUserId != null) {
       _selectedChatUserId = widget.initialChatUserId;
       _loadInitialChatUserInfo();
+    }
+
+    // Optimistic UI: Add initialMessage if provided and not already present
+    if (widget.initialMessage != null) {
+      final alreadyExists = _messages.any((m) => m.id == widget.initialMessage!.id);
+      if (!alreadyExists) {
+        setState(() {
+          _messages.add(widget.initialMessage!);
+        });
+      }
     }
   }
 
@@ -253,8 +266,8 @@ class _ChatScreenState extends State<ChatScreen>
           _isFirstLoad = false;
         });
 
-        // Smooth scroll to bottom after loading
-        _scrollToBottomSmooth();
+        // Scroll to first unread or bottom
+        _scrollToFirstUnreadOrBottom();
 
         // Mark messages as read
         _markCurrentChatAsRead();
@@ -267,6 +280,26 @@ class _ChatScreenState extends State<ChatScreen>
         });
       }
     }
+  }
+
+  void _scrollToFirstUnreadOrBottom() {
+    if (_messages.isEmpty) return;
+    final currentUserId = widget.currentUserId;
+    int firstUnreadIndex = _messages.indexWhere((msg) =>
+      msg.isRead == false && msg.receiverId == currentUserId
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        if (firstUnreadIndex != -1) {
+          // Scroll to the first unread message
+          final position = firstUnreadIndex * 80.0; // Approximate message height
+          _scrollController.jumpTo(position);
+        } else {
+          // Scroll to the bottom
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
+      }
+    });
   }
 
   Future<void> _markCurrentChatAsRead() async {
@@ -601,36 +634,233 @@ class _ChatScreenState extends State<ChatScreen>
       return const Center(child: CircularProgressIndicator());
     }
 
+    // Build a list of widgets with date separators
+    List<Widget> messageWidgets = [];
+    DateTime? lastDate;
+    for (int i = 0; i < _messages.length; i++) {
+      final message = _messages[i];
+      final messageDate = DateTime(message.createdAt.year, message.createdAt.month, message.createdAt.day);
+      if (lastDate == null || messageDate != lastDate) {
+        messageWidgets.add(_buildDateSeparator(messageDate));
+        lastDate = messageDate;
+      }
+      messageWidgets.add(_buildAnimatedMessageItem(message, kAlwaysCompleteAnimation));
+    }
+
     return Column(
       children: [
         Expanded(
           child: _messages.isEmpty
               ? const Center(
-            child: Text(
-                'Say hello!',
-                style: TextStyle(color: Colors.white)
-            ),
-          )
-              : AnimatedList(
-            key: _messageListKey,
-            controller: _scrollController,
-            initialItemCount: _messages.length,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            itemBuilder: (context, index, animation) {
-              if (index >= _messages.length) return const SizedBox.shrink();
-
-              final message = _messages[index];
-              return _buildAnimatedMessageItem(message, animation);
-            },
-          ),
+                  child: Text('Say hello!', style: TextStyle(color: Colors.white)),
+                )
+              : ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  children: messageWidgets,
+                ),
         ),
         _buildMessageInput(),
       ],
     );
   }
 
+  // Helper for always-complete animation (for non-animated list)
+  static final kAlwaysCompleteAnimation = AlwaysStoppedAnimation<double>(1.0);
+
+  Widget _buildDateSeparator(DateTime date) {
+    final now = DateTime.now();
+    String label;
+    if (date.year == now.year && date.month == now.month && date.day == now.day) {
+      label = 'Today';
+    } else if (date.year == now.year && date.month == now.month && date.day == now.day - 1) {
+      label = 'Yesterday';
+    } else {
+      label = DateFormat('MMMM d, yyyy').format(date);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey[800],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAnimatedMessageItem(Message message, Animation<double> animation) {
     final isMe = message.senderId == widget.currentUserId;
+
+    Widget messageContent;
+    if (message.sharedPost != null) {
+      // Render shared post preview card
+      final shared = message.sharedPost!;
+      final String imageUrl = (shared['image_url'] ?? '').toString();
+      final String username = (shared['username'] ?? '');
+      final String caption = (shared['caption'] ?? '');
+      final String? profileImageUrl = shared['profile_image_url'];
+      final String postId = shared['post_id'] ?? '';
+      final String userId = shared['user_id'] ?? '';
+
+      messageContent = GestureDetector(
+        onTap: () async {
+          // final post = PostData(
+          //   id: postId,
+          //   userId: userId,
+          //   username: username,
+          //   profileImageUrl: profileImageUrl,
+          //   imageUrl: imageUrl,
+          //   caption: caption,
+          //   location: '',
+          //   createdAt: DateTime.now(),
+          //   likeCount: 0,
+          //   commentCount: 0,
+          //   isLiked: false,
+          //   isSaved: false,
+          //   disableComments: false,
+          //   use_original_ratio: false,
+          //   image_transformation: '',
+          //   original_aspect_ratio: 1.0,
+          // );
+          // Navigator.push(
+          //   context,
+          //   MaterialPageRoute(
+          //     builder: (_) => SinglePostView(
+          //       posts: [post],
+          //       initialIndex: 0,
+          //       Url: profileImageUrl ?? '',
+          //     ),
+          //   ),
+          // );
+        },
+        child: Container(
+          width: 260,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey[800]!, width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => OtherUserProfileScreen(userId: userId),
+                        ),
+                      );
+                    },
+                    child: CircleAvatar(
+                      radius: 16,
+                      backgroundImage: (profileImageUrl != null && profileImageUrl.isNotEmpty)
+                          ? NetworkImage(profileImageUrl.startsWith('http') ? profileImageUrl : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$profileImageUrl')
+                          : null,
+                      backgroundColor: Colors.grey[800],
+                      child: (profileImageUrl == null || profileImageUrl.isEmpty)
+                          ? const Icon(Icons.person, color: Colors.white, size: 18)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => OtherUserProfileScreen(userId: userId),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        username,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: imageUrl.isNotEmpty
+                    ? Image.network(
+                        imageUrl,
+                        width: double.infinity,
+                        height: 180,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: Colors.grey[800],
+                          height: 180,
+                          child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
+                        ),
+                      )
+                    : Container(
+                        color: Colors.grey[800],
+                        height: 180,
+                        child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
+                      ),
+              ),
+              if (caption.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  caption,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 6),
+              Text(
+                'Shared a post',
+                style: TextStyle(color: Colors.blue[200], fontSize: 12, fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else if (message.content != null && message.content!.isNotEmpty) {
+      // Render text message
+      messageContent = Text(
+        message.content!,
+        style: const TextStyle(color: Colors.white, fontSize: 16),
+      );
+    } else if (message.imageUrl != null && message.imageUrl!.isNotEmpty) {
+      // Render image message (if you support it)
+      messageContent = Image.network(
+        message.imageUrl!,
+        width: 200,
+        height: 200,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          color: Colors.grey[800],
+          width: 200,
+          height: 200,
+          child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
+        ),
+      );
+    } else {
+      // Fallback for empty/unknown message
+      messageContent = const SizedBox.shrink();
+    }
 
     return SlideTransition(
       position: animation.drive(
@@ -645,7 +875,9 @@ class _ChatScreenState extends State<ChatScreen>
             margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: isMe ? Colors.blue[700] : Colors.grey[700],
+              color: message.sharedPost != null
+                  ? (isMe ? Colors.blue[900] : Colors.grey[850])
+                  : (isMe ? Colors.blue[700] : Colors.grey[700]),
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(12),
                 topRight: const Radius.circular(12),
@@ -656,19 +888,10 @@ class _ChatScreenState extends State<ChatScreen>
             child: Column(
               crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                if (message.content != null)
-                  Text(
-                    message.content!,
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                if (message.imageUrl != null)
-                  Text(
-                    'Image: ${message.imageUrl!}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                messageContent,
                 const SizedBox(height: 4),
                 Text(
-                  _formatMessageTime(message.createdAt),
+                  DateFormat('h:mm a').format(message.createdAt),
                   style: TextStyle(
                     color: isMe ? Colors.blue[100] : Colors.grey[300],
                     fontSize: 10,
@@ -982,6 +1205,7 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  // Update _getLastMessagePreview to show 'Shared a post' if last message is a shared post
   String _getLastMessagePreview(ChatRoom chatRoom) {
     if (chatRoom.lastMessage == null) {
       return 'Start a conversation';
@@ -990,8 +1214,11 @@ class _ChatScreenState extends State<ChatScreen>
     final message = chatRoom.lastMessage!;
     final isFromCurrentUser = message.senderId == widget.currentUserId;
 
-    String preview = '';
+    if (message.sharedPost != null) {
+      return isFromCurrentUser ? 'You shared a post' : 'Shared a post';
+    }
 
+    String preview = '';
     if (message.imageUrl != null) {
       preview = isFromCurrentUser ? 'You sent a photo' : 'Sent a photo';
     } else if (message.content != null) {
@@ -999,7 +1226,6 @@ class _ChatScreenState extends State<ChatScreen>
           ? 'You: ${message.content!}'
           : message.content!;
     }
-
     return preview.isEmpty ? 'New message' : preview;
   }
 

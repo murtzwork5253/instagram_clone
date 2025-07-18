@@ -109,6 +109,7 @@ class ReelProvider extends ChangeNotifier {
 
   // Enhanced fetchReels with comment count from comments table
   Future<void> fetchReels() async {
+    _updateCurrentUserId();
     isLoading = true;
     notifyListeners();
 
@@ -208,20 +209,20 @@ class ReelProvider extends ChangeNotifier {
     }
 
     final currentReel = reels[index];
-    final bool newIsLiked = !currentReel.isLiked;
-    final int newLikesCount = newIsLiked ? currentReel.likes + 1 : currentReel.likes - 1;
+    final bool newReelIsLiked = !currentReel.isLiked;
+    final int newLikesCount = newReelIsLiked ? currentReel.likes + 1 : currentReel.likes - 1;
 
-    print('Toggling like for reel: $reelId, user: $_currentUserId, newIsLiked: $newIsLiked');
+    print('Toggling like for reel: $reelId, user: $_currentUserId, newIsLiked: $newReelIsLiked');
 
     // Optimistic update
     reels[index] = currentReel.copyWith(
-        isLiked: newIsLiked,
+        isLiked: newReelIsLiked,
         likes: newLikesCount
     );
     notifyListeners();
 
     try {
-      if (newIsLiked) {
+      if (newReelIsLiked) {
         print('Attempting to insert like...');
         final response = await supabase.from('reel_likes').upsert({
           'reel_id': reelId,
@@ -246,7 +247,7 @@ class ReelProvider extends ChangeNotifier {
           .eq('id', reelId);
       print('Reels update response: $updateResponse');
 
-      print('Successfully ${newIsLiked ? 'liked' : 'unliked'} reel: $reelId');
+      print('Successfully ${newReelIsLiked ? 'liked' : 'unliked'} reel: $reelId');
     } catch (e) {
       print('Detailed error: $e');
       print('Error type: ${e.runtimeType}');
@@ -260,9 +261,10 @@ class ReelProvider extends ChangeNotifier {
       reels[index] = currentReel;
       notifyListeners();
 
-      throw Exception('Failed to ${newIsLiked ? 'like' : 'unlike'} reel: ${e.toString()}');
+      throw Exception('Failed to ${newReelIsLiked ? 'like' : 'unlike'} reel: ${e.toString()}');
     }
   }
+
 
   // Follow/Unfollow user
   Future<void> toggleUserFollow(String userId, String username) async {
@@ -411,21 +413,116 @@ class ReelProvider extends ChangeNotifier {
     }
   }
 
-  // Get comments for a reel
-  Future<List<Map<String, dynamic>>> getReelComments(String reelId, {int limit = 50, int offset = 0}) async {
+  // Add this method to your ReelProvider class
+
+// Toggle comment like with optimistic updates
+  Future<void> toggleCommentLike(String commentId, {
+    Function(String)? onError,
+    Function()? onSuccess,
+  }) async {
+    if (_currentUserId == null) {
+      onError?.call('User not authenticated');
+      return;
+    }
+
+    try {
+      // First check current like status
+      final existingLike = await supabase
+          .from('comment_likes')
+          .select('id')
+          .eq('comment_id', commentId)
+          .eq('user_id', _currentUserId!)
+          .maybeSingle();
+
+      final bool isCurrentlyLiked = existingLike != null;
+      final bool newLikeStatus = !isCurrentlyLiked;
+
+      print('Toggling comment like: $commentId, user: $_currentUserId, newStatus: $newLikeStatus');
+
+      if (newLikeStatus) {
+        // Like the comment
+        await supabase.from('comment_likes').upsert({
+          'comment_id': commentId,
+          'user_id': _currentUserId,
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        }, onConflict: 'comment_id,user_id');
+
+        print('Successfully liked comment: $commentId');
+      } else {
+        // Unlike the comment
+        await supabase
+            .from('comment_likes')
+            .delete()
+            .eq('comment_id', commentId)
+            .eq('user_id', _currentUserId!);
+
+        print('Successfully unliked comment: $commentId');
+      }
+
+      onSuccess?.call();
+    } catch (e) {
+      print('Error toggling comment like: $e');
+      final existingLike = await supabase
+          .from('comment_likes')
+          .select('id')
+          .eq('comment_id', commentId)
+          .eq('user_id', _currentUserId!)
+          .maybeSingle();
+      final errorMessage = 'Failed to ${existingLike != null ? 'unlike' : 'like'} comment: ${e.toString()}';
+      onError?.call(errorMessage);
+      throw Exception(errorMessage);
+    }
+  }
+
+// Helper method to get comment like status and count
+  Future<Map<String, dynamic>> getCommentLikeInfo(String commentId) async {
+    try {
+      // Get total likes count
+      final likesResponse = await supabase
+          .from('comment_likes')
+          .select('id, user_id')
+          .eq('comment_id', commentId);
+
+      final likes = likesResponse as List;
+      final likesCount = likes.length;
+
+      // Check if current user liked this comment
+      final isLiked = _currentUserId != null &&
+          likes.any((like) => like['user_id'] == _currentUserId);
+
+      return {
+        'likesCount': likesCount,
+        'isLiked': isLiked,
+      };
+    } catch (e) {
+      print('Error getting comment like info: $e');
+      return {
+        'likesCount': 0,
+        'isLiked': false,
+      };
+    }
+  }
+
+// Enhanced getReelComments method with like information
+  Future<List<Map<String, dynamic>>> getReelCommentsWithLikes(String reelId, {int limit = 50, int offset = 0}) async {
     try {
       final response = await supabase
           .from('comments')
           .select('''
-            *,
-            users!comments_user_id_fkey(username, profile_image_url)
-          ''')
+          *,
+          users!comments_user_id_fkey(username, profile_image_url),
+          comment_likes(id, user_id)
+        ''')
           .eq('reel_id', reelId)
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
 
       return (response as List).map((comment) {
         final userData = comment['users'] as Map<String, dynamic>?;
+        final likes = comment['comment_likes'] as List? ?? [];
+        final likesCount = likes.length;
+        final isLiked = _currentUserId != null &&
+            likes.any((like) => like['user_id'] == _currentUserId);
 
         return {
           'id': comment['id'],
@@ -436,12 +533,13 @@ class ReelProvider extends ChangeNotifier {
               'avatars'
           ),
           'createdAt': DateTime.parse(comment['created_at']),
-          'userId': comment['user_id'], // FIXED: Add user ID for better handling
-          'likes': comment['likes'] ?? 0, // FIXED: Add likes count if available
+          'userId': comment['user_id'],
+          'likesCount': likesCount,
+          'isLiked': isLiked,
         };
       }).toList();
     } catch (e) {
-      print('Error fetching comments: $e');
+      print('Error fetching comments with likes: $e');
       throw Exception('Failed to load comments. Please try again.');
     }
   }

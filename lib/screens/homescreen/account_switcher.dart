@@ -1,6 +1,7 @@
 // Replace the existing account_switcher.dart content with this:
 
 import 'package:Instagram/screens/homescreen/home_screen.dart';
+import 'package:Instagram/screens/reels_screen/reel_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -95,6 +96,8 @@ class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
           // Import your main page/home page here
           final provider = Provider.of<InstaDataProvider>(context,listen: false);
           provider.reloadData();
+          final reelprovi = Provider.of<ReelProvider>(context,listen: false);
+          reelprovi.fetchReels();
           // Replace 'HomePage' with your actual main page widget
           Navigator.pushAndRemoveUntil(
             context,

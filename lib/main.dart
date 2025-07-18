@@ -98,112 +98,61 @@ Future<void> testEnvLoad() async {
 //   return null;
 // }
 //
-// Future<void> _saveFCMTokenToDatabase(String userId, String token) async {
-//   try {
-//     await Supabase.instance.client
-//         .from('users')
-//         .update({
-//       'fcm_token': token,
-//       'fcm_token_updated_at': DateTime.now().toIso8601String(),
-//     })
-//         .eq('id', userId);
-//     print('FCM token saved to database');
-//   } catch (e) {
-//     print('Error saving FCM token to database: $e');
-//   }
-// }
-//
-// void _handleForegroundMessage(RemoteMessage message) {
-//   final notification = message.notification;
-//   if (notification != null) {
-//     final context = navigatorKey.currentContext;
-//     if (context != null) {
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(
-//           content: Column(
-//             mainAxisSize: MainAxisSize.min,
-//             crossAxisAlignment: CrossAxisAlignment.start,
-//             children: [
-//               Text(
-//                 notification.title ?? 'Notification',
-//                 style: TextStyle(fontWeight: FontWeight.bold),
-//               ),
-//               if (notification.body != null)
-//                 Text(notification.body!),
-//             ],
-//           ),
-//           duration: const Duration(seconds: 3),
-//           action: SnackBarAction(
-//             label: 'View',
-//             onPressed: () => _handleNotificationTap(message),
-//           ),
-//         ),
-//       );
-//     }
-//   }
-// }
-//
-// void _handleNotificationTap(RemoteMessage message) {
-//   final data = message.data;
-//   final context = navigatorKey.currentContext;
-//
-//   if (context != null && data.isNotEmpty) {
-//     // Add a small delay to ensure the app is fully loaded
-//     Future.delayed(Duration(milliseconds: 500), () {
-//       try {
-//         // Navigate based on notification payload
-//         if (data['type'] == 'post' && data['postId'] != null) {
-//           // Navigate to specific post
-//           Navigator.pushNamed(
-//             context,
-//             '/post/${data['postId']}',
-//             arguments: {'postId': data['postId']},
-//           );
-//         } else if (data['type'] == 'profile' && data['userId'] != null) {
-//           // Navigate to user profile
-//           Navigator.pushNamed(
-//             context,
-//             '/profile/${data['userId']}',
-//             arguments: {'userId': data['userId']},
-//           );
-//         } else if (data['type'] == 'chat' && data['chatId'] != null) {
-//           // Navigate to chat
-//           Navigator.pushNamed(
-//             context,
-//             '/chat/${data['chatId']}',
-//             arguments: {'chatId': data['chatId']},
-//           );
-//         } else {
-//           // Default navigation - maybe to notifications page
-//           Navigator.pushNamed(context, '/notifications');
-//         }
-//       } catch (e) {
-//         print('Error handling notification tap: $e');
-//       }
-//     });
-//   }
-// }
+Future<void> _saveFCMTokenToDatabase(String userId, String token) async {
+  try {
+    await Supabase.instance.client
+        .from('users')
+        .update({
+      'fcm_token': token,
+      'fcm_token_updated_at': DateTime.now().toIso8601String(),
+    })
+        .eq('id', userId);
+    print('FCM token saved to database');
+  } catch (e) {
+    print('Error saving FCM token to database: $e');
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables first
   await testEnvLoad();
+
+  // Request permissions
   await _requestAllPermissions();
+
+  // Initialize Firebase
   await Firebase.initializeApp();
-  // OneSignal.initialize("ba1e8b57-044c-42dd-8998-f3556dc20030");
-  // String? token = await FirebaseMessaging.instance.getToken();
-  // print("FCM Token: $token");
+
+  // Initialize Supabase BEFORE accessing it
   await Supabase.initialize(
     url: dotenv.env['BASE_URL'] ?? '',
     anonKey: dotenv.env['API_KEY'] ?? '',
     debug: true,
   );
 
-  // Obtain a list of the available cameras on the device.
+  // Now safely get FCM token and save it
+  try {
+    String? token = await FirebaseMessaging.instance.getToken();
+    print("FCM Token: $token");
+
+    // Check if user is authenticated before saving token
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null && token != null) {
+      await _saveFCMTokenToDatabase(user.id, token);
+    } else {
+      print("No authenticated user found or token is null");
+    }
+  } catch (e) {
+    print("Error getting or saving FCM token: $e");
+  }
+
+  // Initialize cameras
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {
     print('Error fetching cameras: $e');
-    // Handle error, e.g., show a dialog to the user
   }
 
   // Initialize push notifications
@@ -231,16 +180,16 @@ Future<void> _requestAllPermissions() async {
     Permission.notification,
     Permission.videos,  // iOS 17+
     Permission.audio,
-    Permission.sensors,
-    Permission.location,
-    Permission.bluetooth,
-    Permission.accessMediaLocation,
-    Permission.manageExternalStorage, // Android 11+
-    Permission.activityRecognition,
-    Permission.sms,
-    Permission.contacts,
-    Permission.calendar,
-    Permission.phone,
+    // Permission.sensors,
+    // Permission.location,
+    // Permission.bluetooth,
+    // Permission.accessMediaLocation,
+    // Permission.manageExternalStorage, // Android 11+
+    // Permission.activityRecognition,
+    // Permission.sms,
+    // Permission.contacts,
+    // Permission.calendar,
+    // Permission.phone,
   ];
   Map<Permission, PermissionStatus> statuses = await permissions.request();
   // If any permission is denied, show a dialog
