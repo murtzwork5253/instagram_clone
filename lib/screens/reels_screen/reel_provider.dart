@@ -17,6 +17,11 @@ class ReelProvider extends ChangeNotifier {
 
   String? _currentUserId;
 
+  // --- NEW: State holder for comments ---
+  List<Map<String, dynamic>> _currentComments = [];
+  List<Map<String, dynamic>> get currentComments => _currentComments;
+  // --- END NEW ---
+
   late final StreamSubscription<AuthState> _authStateSubscription; // New subscription to listen for auth changes
 
   ReelProvider() {
@@ -368,6 +373,7 @@ class ReelProvider extends ChangeNotifier {
       // Use only RPC function for consistency
       await supabase.rpc('increment_comment_count', params: {'reel_id': reelId});
 
+      await getReelCommentsWithLikes(reelId);
       // REFRESH the specific reel data instead of optimistic update
       await _refreshSingleReel(reelId);
     } catch (e) {
@@ -416,61 +422,42 @@ class ReelProvider extends ChangeNotifier {
   // Add this method to your ReelProvider class
 
 // Toggle comment like with optimistic updates
-  Future<void> toggleCommentLike(String commentId, {
-    Function(String)? onError,
-    Function()? onSuccess,
-  }) async {
+  Future<void> toggleCommentLike(String commentId) async {
     if (_currentUserId == null) {
-      onError?.call('User not authenticated');
-      return;
+      throw Exception('User not authenticated');
     }
 
+    final commentIndex = _currentComments.indexWhere((c) => c['id'] == commentId);
+    if (commentIndex == -1) return; // Comment not in the current list
+
+    final comment = _currentComments[commentIndex];
+    final bool originalLikeState = comment['is_liked'] ?? false;
+    final int originalLikeCount = comment['likes'] ?? 0;
+
+    // 1. Optimistic Update: Instantly update the UI
+    comment['is_liked'] = !originalLikeState;
+    comment['likes'] = originalLikeState ? originalLikeCount - 1 : originalLikeCount + 1;
+    notifyListeners();
+
+    // 2. Database Operation
     try {
-      // First check current like status
-      final existingLike = await supabase
-          .from('comment_likes')
-          .select('id')
-          .eq('comment_id', commentId)
-          .eq('user_id', _currentUserId!)
-          .maybeSingle();
-
-      final bool isCurrentlyLiked = existingLike != null;
-      final bool newLikeStatus = !isCurrentlyLiked;
-
-      print('Toggling comment like: $commentId, user: $_currentUserId, newStatus: $newLikeStatus');
-
-      if (newLikeStatus) {
-        // Like the comment
+      if (!originalLikeState) { // New state is "liked"
         await supabase.from('comment_likes').upsert({
           'comment_id': commentId,
           'user_id': _currentUserId,
-          'created_at': DateTime.now().toUtc().toIso8601String(),
-        }, onConflict: 'comment_id,user_id');
-
-        print('Successfully liked comment: $commentId');
-      } else {
-        // Unlike the comment
+        });
+      } else { // New state is "unliked"
         await supabase
             .from('comment_likes')
             .delete()
-            .eq('comment_id', commentId)
-            .eq('user_id', _currentUserId!);
-
-        print('Successfully unliked comment: $commentId');
+            .match({'comment_id': commentId, 'user_id': _currentUserId!});
       }
-
-      onSuccess?.call();
     } catch (e) {
-      print('Error toggling comment like: $e');
-      final existingLike = await supabase
-          .from('comment_likes')
-          .select('id')
-          .eq('comment_id', commentId)
-          .eq('user_id', _currentUserId!)
-          .maybeSingle();
-      final errorMessage = 'Failed to ${existingLike != null ? 'unlike' : 'like'} comment: ${e.toString()}';
-      onError?.call(errorMessage);
-      throw Exception(errorMessage);
+      // 3. Revert on Error
+      comment['is_liked'] = originalLikeState;
+      comment['likes'] = originalLikeCount;
+      notifyListeners();
+      throw Exception('Failed to update like status.');
     }
   }
 
@@ -503,24 +490,22 @@ class ReelProvider extends ChangeNotifier {
     }
   }
 
-// Enhanced getReelComments method with like information
-  Future<List<Map<String, dynamic>>> getReelCommentsWithLikes(String reelId, {int limit = 50, int offset = 0}) async {
+  /// Fetches comments for a reel and stores them in the provider's state.
+  Future<void> getReelCommentsWithLikes(String reelId) async {
     try {
       final response = await supabase
           .from('comments')
           .select('''
           *,
           users!comments_user_id_fkey(username, profile_image_url),
-          comment_likes(id, user_id)
+          comment_likes(user_id)
         ''')
           .eq('reel_id', reelId)
-          .order('created_at', ascending: false)
-          .range(offset, offset + limit - 1);
+          .order('created_at', ascending: false);
 
-      return (response as List).map((comment) {
+      final commentsList = (response as List).map((comment) {
         final userData = comment['users'] as Map<String, dynamic>?;
         final likes = comment['comment_likes'] as List? ?? [];
-        final likesCount = likes.length;
         final isLiked = _currentUserId != null &&
             likes.any((like) => like['user_id'] == _currentUserId);
 
@@ -529,15 +514,17 @@ class ReelProvider extends ChangeNotifier {
           'comment': comment['content'] ?? '',
           'username': userData?['username'] ?? 'Unknown User',
           'userAvatar': _getPublicImageUrl(
-              userData?['profile_image_url'] as String?,
-              'avatars'
-          ),
+              userData?['profile_image_url'] as String?, 'avatars'),
           'createdAt': DateTime.parse(comment['created_at']),
           'userId': comment['user_id'],
-          'likesCount': likesCount,
-          'isLiked': isLiked,
+          'likes': likes.length, // Changed from likesCount
+          'is_liked': isLiked, // Changed from isLiked
         };
       }).toList();
+
+      _currentComments = commentsList;
+      notifyListeners(); // Notify UI that comments are ready
+
     } catch (e) {
       print('Error fetching comments with likes: $e');
       throw Exception('Failed to load comments. Please try again.');
@@ -584,6 +571,7 @@ class ReelProvider extends ChangeNotifier {
       }
 
       print('Successfully deleted comment from reel: $reelId');
+      await getReelCommentsWithLikes(reelId);
       onSuccess?.call();
 
     } catch (e) {
