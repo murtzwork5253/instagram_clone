@@ -281,7 +281,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Also, add error handling to your main fetch method:
   Future<Map<String, dynamic>> _fetchMyProfileData(String userId) async {
     final supabase = Supabase.instance.client;
-    final currentUserId = supabase.auth.currentUser!.id;
+    final currentUser = supabase.auth.currentUser;
+    if (currentUser == null) {
+      // Session/user is not available, return empty data
+      return {
+        'users': {},
+        'posts': <PostData>[],
+        'followers': [],
+        'following': [],
+      };
+    }
+    final currentUserId = currentUser.id;
 
     try {
       // Fetch user profile data
@@ -416,7 +426,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Replace your _fetchTaggedPosts method with this complete version:
   Future<List<PostData>> _fetchTaggedPosts(String userId) async {
     final supabase = Supabase.instance.client;
-    final currentUserId = supabase.auth.currentUser?.id;
+    final currentUser = supabase.auth.currentUser;
+    if (currentUser == null) {
+      // Session/user is not available, return empty list
+      return [];
+    }
+    final currentUserId = currentUser.id;
 
     try {
       // First, let's fetch all posts and filter them in Dart to avoid JSON parsing issues

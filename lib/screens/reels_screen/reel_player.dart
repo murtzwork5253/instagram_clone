@@ -33,17 +33,18 @@ class ReelPlayer extends StatefulWidget {
 
 class _ReelPlayerState extends State<ReelPlayer>
     with SingleTickerProviderStateMixin {
-  late VideoPlayerController _videoController;
+  // late VideoPlayerController _videoController;
+  VideoPlayerController? _videoController; // MODIFIED: Make it nullable
   ChewieController? _chewieController;
   bool isLiked = false;
-  bool _isInitialized = false;
+  // bool _isInitialized = false;
   String? _error;
   AudioPlayer? _audioPlayer;
   bool _hasMusic = false;
   List<TaggedUser> _taggedUsers = [];
   final UserTaggingService _taggingService = UserTaggingService();
 
-  bool _isDisposed = false;
+  // bool _isDisposed = false;
 
   // AppBar animation
   late AnimationController _appBarAnimationController;
@@ -54,13 +55,43 @@ class _ReelPlayerState extends State<ReelPlayer>
   @override
   void initState() {
     super.initState();
-    _initializeVideo();
+    // MODIFIED: Get controller from provider
+    _videoController = Provider.of<ReelProvider>(context, listen: false)
+        .getControllerForReel(widget.reel.id);
+
+    // If the controller was pre-loaded and is ready, build Chewie
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      _buildChewieController();
+    } else {
+      // If it wasn't preloaded for some reason, initialize it now
+      _initializeVideo();
+    }
+
     _setupAppBarAnimation();
     _loadTaggedUsers();
 
-    // Show app bar initially for first reel
     if (widget.isFirstReel) {
       _showAppBar();
+    }
+  }
+
+  // NEW: A separate method to build the Chewie controller
+  void _buildChewieController() {
+    if (_videoController == null) return;
+
+    // Set video volume before creating Chewie controller
+    _handleVideoAudio();
+
+    _chewieController = ChewieController(
+      videoPlayerController: _videoController!,
+      autoPlay: false, // VisibilityDetector will handle this
+      looping: true,
+      showControls: false,
+    );
+
+    // This ensures the widget rebuilds once Chewie is ready
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -97,10 +128,10 @@ class _ReelPlayerState extends State<ReelPlayer>
   }
 
   void _toggleMute() {
-    if (_videoController.value.isInitialized) {
-      final currentVolume = _videoController.value.volume;
+    if (_videoController!.value.isInitialized) {
+      final currentVolume = _videoController!.value.volume;
       final newVolume = currentVolume > 0 ? 0.0 : 1.0;
-      _videoController.setVolume(newVolume);
+      _videoController!.setVolume(newVolume);
 
       // Update reel's mute state in provider if needed
       Provider.of<ReelProvider>(context, listen: false)
@@ -121,29 +152,30 @@ class _ReelPlayerState extends State<ReelPlayer>
     }
   }
 
-  // Replace your _initializeVideo method with this:
+  // MODIFIED: _initializeVideo is now a fallback
   Future<void> _initializeVideo() async {
     try {
-      _videoController = VideoPlayerController.network(widget.reel.videoUrl);
-      await _videoController.initialize();
+      final reelProvider = Provider.of<ReelProvider>(context, listen: false);
 
-      // Important: Set video volume BEFORE creating Chewie controller
-      _handleVideoAudio();
+      // Request the provider to load the controller for this reel.
+      // This will either create it or return the existing initialization future.
+      await reelProvider.preloadController(widget.reel.id);
 
-      _chewieController = ChewieController(
-        videoPlayerController: _videoController,
-        autoPlay: widget.isFirstReel, // Auto-play first reel
-        looping: true,
-        showControls: false,
-      );
+      // By the time we get here, the controller should be in the map.
+      _videoController = reelProvider.getControllerForReel(widget.reel.id);
 
-      setState(() {
-        _isInitialized = true;
-      });
+      if (_videoController != null && _videoController!.value.isInitialized) {
+        _buildChewieController();
+      } else {
+        // This case might happen if preloading fails.
+        setState(() => _error = 'Failed to load video.');
+      }
     } catch (e) {
-      setState(() {
-        _error = 'Failed to load video: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load video: $e';
+        });
+      }
     }
   }
 
@@ -263,69 +295,44 @@ class _ReelPlayerState extends State<ReelPlayer>
   }
 
 
+  // IMPORTANT MODIFICATION IN onVisibilityChanged
   void _onVisibilityChanged(VisibilityInfo info) async {
-    print('📱 Reel ${widget.reel.id} visibility: ${info.visibleFraction}');
+    if (!mounted) return;
 
-    if (!mounted || _isDisposed) {
-      print('⚠️ Widget or controller already disposed for reel ${widget.reel.id}');
-      return;
-    }
+    // Use the controller from the state
+    final controller = _videoController;
 
-    if (_isInitialized && _videoController.value.isInitialized) {
+    if (controller != null && controller.value.isInitialized) {
       if (info.visibleFraction > 0.8) {
-        print('👁️ Reel ${widget.reel.id} became visible (${info.visibleFraction})');
-
-        if (!_videoController.value.isPlaying) {
+        if (!controller.value.isPlaying) {
           try {
-            _handleVideoAudio(); // Set volume
-            await _videoController.play();
+            await controller.play();
             print('✅ Video started for reel ${widget.reel.id}');
-
-            await Future.delayed(const Duration(milliseconds: 300));
           } catch (e) {
             print('❌ Error starting video for reel ${widget.reel.id}: $e');
           }
         }
-
-        if (widget.isFirstReel) {
-          _showAppBar();
-        }
-
-      } else if (info.visibleFraction < 0.2) {
-        print('👁️ Reel ${widget.reel.id} became hidden (${info.visibleFraction})');
-
-        if (_videoController.value.isPlaying) {
+      } else { // Handles any visibility less than fully visible
+        if (controller.value.isPlaying) {
           try {
-            await _videoController.pause();
+            await controller.pause();
             print('⏸️ Video paused for reel ${widget.reel.id}');
           } catch (e) {
             print('❌ Error pausing video for reel ${widget.reel.id}: $e');
           }
         }
-
-        if (_hasMusic && _audioPlayer != null && _audioPlayer!.playing) {
-          try {
-            await _audioPlayer!.pause();
-            print('⏸️ Audio paused for reel ${widget.reel.id}');
-          } catch (e) {
-            print('❌ Error pausing audio for reel ${widget.reel.id}: $e');
-          }
-        }
       }
-    } else {
-      print(
-          '⚠️ Reel ${widget.reel.id} - Not ready (initialized: $_isInitialized, video initialized: ${_videoController.value.isInitialized})');
     }
   }
 
   void _handleVideoAudio() {
-    if (_videoController.value.isInitialized) {
+    if (_videoController!.value.isInitialized) {
       // Mute original video if reel has background music
       if (_hasMusic) {
-        _videoController.setVolume(0.0);
+        _videoController!.setVolume(0.0);
         print('🔇 Video muted (has background music)');
       } else {
-        _videoController.setVolume(widget.reel.isVideoMuted ? 0.0 : 1.0);
+        _videoController!.setVolume(widget.reel.isVideoMuted ? 0.0 : 1.0);
         print(
             '🔊 Video volume set to: ${widget.reel.isVideoMuted ? 0.0 : 1.0}');
       }
@@ -391,12 +398,12 @@ class _ReelPlayerState extends State<ReelPlayer>
                       ),
                     ),
                   )
-                else if (_isInitialized && _chewieController != null)
+                else if (_chewieController != null && _videoController!.value.isInitialized)
                   Chewie(controller: _chewieController!)
                 else
                   Container(
                     color: Colors.black,
-                    child: const Center(child: CircularProgressIndicator()),
+                    child: const Center(child: CircularProgressIndicator(color: Colors.white,)),
                   ),
 
                 // // Tagged Users List
@@ -507,8 +514,8 @@ class _ReelPlayerState extends State<ReelPlayer>
   void dispose() {
     _appBarAnimationController.dispose();
     _chewieController?.dispose();
-    _isDisposed = true;
-    _videoController.dispose();
+    // _isDisposed = true;
+    // _videoController.dispose();
     super.dispose();
   }
 }

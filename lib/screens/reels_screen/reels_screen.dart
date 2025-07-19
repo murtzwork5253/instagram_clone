@@ -20,10 +20,27 @@ class _ReelsScreenState extends State<ReelsScreen>
 // Add these variables to your ReelScreen class
   AnimationController? _appBarController;
   Animation<double>? _appBarAnimation;
+  // NEW: Add a PageController
+  late PageController _pageController;
+  int _currentPage = 0;
+
 
   @override
   void initState() {
     super.initState();
+    // NEW: Initialize PageController
+    _pageController = PageController();
+
+    // NEW: Add listener to trigger preloading
+    _pageController.addListener(() {
+      final newPage = _pageController.page?.round();
+      if (newPage != null && newPage != _currentPage) {
+        _currentPage = newPage;
+        // Tell the provider to preload reels around the new page
+        Provider.of<ReelProvider>(context, listen: false)
+            .preloadAdjacentReels(_currentPage);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ReelProvider>(context, listen: false).fetchReels();
     });
@@ -46,6 +63,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   // Don't forget to dispose
   @override
   void dispose() {
+    // NEW: Dispose the PageController
+    _pageController.dispose();
     _appBarController?.dispose();
     super.dispose();
   }
@@ -81,19 +100,19 @@ class _ReelsScreenState extends State<ReelsScreen>
           backgroundColor: Colors.black,
           body: Stack(
             children: [
-              // Main PageView content
+              // MODIFIED: Add the controller to PageView
               PageView.builder(
+                controller: _pageController, // MODIFIED
                 scrollDirection: Axis.vertical,
                 itemCount: reels.length,
                 itemBuilder: (ctx, index) {
                   final reel = reels[index];
                   return ReelPlayer(
                     reel: reel,
-                    isFirstReel: index == 0, // Pass if it's the first reel
+                    isFirstReel: index == 0,
                   );
                 },
               ),
-
               // Floating AppBar positioned at top
               Positioned(
                 top: 0,

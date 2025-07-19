@@ -727,6 +727,22 @@ class _AccountScreenState extends State<AccountScreen> {
       final client = Supabase.instance.client;
 
       // Optional: Delete related content like posts, comments, reels etc.
+      await client.from('story_views').delete().eq('viewer_id', userId);
+      await client.from('story_likes').delete().eq('user_id', userId);
+      await client.from('stories').delete().eq('user_id', userId);
+      await client.from('saved_posts').delete().eq('user_id', userId);
+      await client.from('reels').delete().eq('user_id', userId);
+      await client.from('reel_likes').delete().eq('user_id', userId);
+      await client.from('posts').delete().eq('user_id', userId);
+      await client.from('post_likes').delete().eq('user_id', userId);
+      await client.from('notifications').delete().eq('sender_id', userId);
+      await client.from('messages').delete().eq('sender_id', userId);
+      await client.from('messages').delete().eq('receiver_id', userId);
+      await client.from('notifications').delete().eq('recipient_id', userId);
+      await client.from('followers').delete().eq('follower_id', userId);
+      await client.from('followers').delete().eq('following_id', userId);
+      await client.from('comments').delete().eq('user_id', userId);
+      await client.from('comment_likes').delete().eq('user_id', userId);
       await client.from('users').delete().eq('id', userId);
 
       _showErrorSnackBar('Your account has been deleted');
@@ -735,7 +751,7 @@ class _AccountScreenState extends State<AccountScreen> {
       await client.auth.signOut();
 
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+        Navigator.of(context).pushNamedAndRemoveUntil(MaterialPageRoute(builder: (_) => LoginPage()).settings.name!, (route) => false);
       }
     } catch (e) {
       _showErrorSnackBar('Failed to delete account: $e');

@@ -45,6 +45,7 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     _passwordFocusNode.addListener(_onPasswordFocusChange);
+    _initDeepLinks();
   }
 
   Future<void> _initDeepLinks() async {
@@ -126,11 +127,15 @@ class _LoginPageState extends State<LoginPage> {
         );
       } else {
         _showSuccessMessage("Twitter Sign-In Successful");
+        // --- ADD THIS LINE ---
+        await AccountManager.instance.storeCurrentAccount();
+
         final provider = Provider.of<InstaDataProvider>(context, listen: false);
         await provider.refreshFeed();
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),
+          (route) => false,
         );
       }
     } catch (e) {
@@ -264,27 +269,30 @@ class _LoginPageState extends State<LoginPage> {
 
       final redirectUrl = 'com.supabase.instagramclone://login-callback';
 
+      // Inform the user before initiating the OAuth flow
+      _showMessage(
+          'Redirecting to Twitter for authentication...');
+
       final authResponse = await AuthService.client().auth.signInWithOAuth(
-            supabase.OAuthProvider.twitter,
-            redirectTo: redirectUrl,
-            scopes: 'email',
-          );
+        supabase.OAuthProvider.twitter,
+        redirectTo: redirectUrl,
+        // The 'scopes' parameter is not standard for Supabase Twitter OAuth
+        // and might cause issues. It's often better to omit it unless
+        // you have a specific reason and have configured it in your provider.
+      );
 
       if (!authResponse) {
         throw Exception('Failed to start Twitter authentication flow');
       }
-
-      // We'll show a message about checking the browser
-      _showMessage(
-          'Please complete authentication in browser. You\'ll be redirected back automatically.');
     } on supabase.AuthException catch (e) {
       _showErrorMessage('Twitter sign-in error: ${e.message}');
+      _setLoading(false); // Ensure loading is stopped on error
     } catch (e) {
       _showErrorMessage(
           'Twitter sign-in failed: ${_getReadableErrorMessage(e)}');
-    } finally {
-      _setLoading(false);
+      _setLoading(false); // Ensure loading is stopped on error
     }
+    // No finally block needed if you handle loading state in error cases
   }
 
   Future<void> _handleSuccessfulOAuth(supabase.User user, String email,

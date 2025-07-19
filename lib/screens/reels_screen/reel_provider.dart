@@ -5,6 +5,7 @@ import 'package:Instagram/screens/reels_screen/reel_modal.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:video_player/video_player.dart';
 
 import '../auth/service/auth_service.dart';
 import '../../services/blocked_users_service.dart';
@@ -20,6 +21,11 @@ class ReelProvider extends ChangeNotifier {
   // --- NEW: State holder for comments ---
   List<Map<String, dynamic>> _currentComments = [];
   List<Map<String, dynamic>> get currentComments => _currentComments;
+  // --- END NEW ---
+
+  // --- NEW: Video Controller Management ---
+  final Map<String, VideoPlayerController> _videoControllers = {};
+  final Map<String, Future<void>> _initFutures = {};
   // --- END NEW ---
 
   late final StreamSubscription<AuthState> _authStateSubscription; // New subscription to listen for auth changes
@@ -74,7 +80,73 @@ class ReelProvider extends ChangeNotifier {
   @override // Good practice to override dispose if you implement it
   void dispose() {
     _authStateSubscription.cancel(); // Crucial: Cancel the stream subscription to prevent memory leaks!
+    _videoControllers.forEach((_, controller) {
+      controller.dispose();
+    });
+    _videoControllers.clear();
     super.dispose();
+  }
+
+  // --- NEW: Method to get or create a controller ---
+  VideoPlayerController? getControllerForReel(String reelId) {
+    return _videoControllers[reelId];
+  }
+
+  // --- NEW: Preloading Logic ---
+  Future<void> preloadController(String reelId) async {
+    // If a controller or an initialization future already exists, don't do anything.
+    if (_videoControllers.containsKey(reelId) || _initFutures.containsKey(reelId)) {
+      return;
+    }
+
+    final reel = reels.firstWhere((r) => r.id == reelId, orElse: () => throw Exception("Reel not found for preloading"));
+
+    final controller = VideoPlayerController.network(reel.videoUrl);
+
+    // Store the initialization future.
+    final initFuture = controller.initialize().then((_) {
+      // Once initialized, store the controller and remove the future from the map.
+      _videoControllers[reelId] = controller;
+      _initFutures.remove(reelId);
+      print("✅ Preloaded and initialized reel: ${reel.id}");
+    }).catchError((error) {
+      print("❌ Error preloading reel ${reel.id}: $error");
+      _initFutures.remove(reelId); // Also remove on error
+      controller.dispose(); // Clean up the failed controller
+    });
+
+    _initFutures[reelId] = initFuture;
+  }
+
+  // --- NEW: Method to handle preloading adjacent reels ---
+  void preloadAdjacentReels(int currentIndex) {
+    if (currentIndex < 0 || currentIndex >= reels.length) return;
+
+    // Preload the next reel
+    if (currentIndex + 1 < reels.length) {
+      preloadController(reels[currentIndex + 1].id);
+    }
+
+    // Preload the previous reel
+    if (currentIndex - 1 >= 0) {
+      preloadController(reels[currentIndex - 1].id);
+    }
+
+    // --- Optional: Advanced Cleanup Logic ---
+    // Dispose controllers that are too far away to save memory
+    final activeReelIds = {
+      if (currentIndex < reels.length) reels[currentIndex].id,
+      if (currentIndex + 1 < reels.length) reels[currentIndex + 1].id,
+      if (currentIndex - 1 >= 0) reels[currentIndex - 1].id,
+    };
+
+    _videoControllers.keys.toList().forEach((reelId) {
+      if (!activeReelIds.contains(reelId)) {
+        _videoControllers[reelId]?.dispose();
+        _videoControllers.remove(reelId);
+        print("🗑️ Disposed of off-screen reel controller: $reelId");
+      }
+    });
   }
 
   void _getCurrentUserId() {
@@ -182,6 +254,14 @@ class ReelProvider extends ChangeNotifier {
           isVideoMuted: data['is_video_muted'] ?? false,
         );
       }).toList();
+
+      // MODIFIED: After fetching reels, preload the first two
+      if (reels.isNotEmpty) {
+        await preloadController(reels[0].id);
+        if (reels.length > 1) {
+          await preloadController(reels[1].id);
+        }
+      }
 
       print('✅ Fetched ${reels.length} reels');
     } catch (e, st) {
