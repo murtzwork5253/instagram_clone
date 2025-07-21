@@ -12,7 +12,6 @@ import 'l10n/app_localizations.dart';
 import 'providers/language_provider.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/push_notification_service.dart';
-import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 // Create a global navigator key that can be used throughout the app
@@ -24,80 +23,14 @@ Future<void> testEnvLoad() async {
   await dotenv.load(fileName: ".env");
 }
 
-// Future<void> _setupPushNotifications() async {
-//   try {
-//     // Request permissions (iOS and Android 13+)
-//     NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
-//       alert: true,
-//       badge: true,
-//       sound: true,
-//       provisional: false,
-//     );
-//
-//     // Check if permission was granted
-//     if (settings.authorizationStatus == AuthorizationStatus.denied) {
-//       print('User denied notification permissions');
-//       return;
-//     }
-//
-//     // Get and save FCM token with retry logic
-//     final user = Supabase.instance.client.auth.currentUser;
-//     if (user != null) {
-//       String? token = await _getTokenWithRetry();
-//       if (token != null) {
-//         await _saveFCMTokenToDatabase(user.id, token);
-//       }
-//     }
-//
-//     // Listen for token refresh
-//     FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-//       final user = Supabase.instance.client.auth.currentUser;
-//       if (user != null) {
-//         await _saveFCMTokenToDatabase(user.id, newToken);
-//       }
-//     });
-//
-//     // Listen for foreground messages
-//     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-//       _handleForegroundMessage(message);
-//     });
-//
-//     // Listen for notification taps (when app is in background)
-//     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-//       _handleNotificationTap(message);
-//     });
-//
-//     // Handle notification tap when app is terminated
-//     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-//     if (initialMessage != null) {
-//       _handleNotificationTap(initialMessage);
-//     }
-//
-//   } catch (e) {
-//     print('Error setting up push notifications: $e');
-//     // App should continue to work even if push notifications fail
-//   }
-// }
-//
-// Future<String?> _getTokenWithRetry({int maxRetries = 3}) async {
-//   for (int i = 0; i < maxRetries; i++) {
-//     try {
-//       final token = await FirebaseMessaging.instance.getToken();
-//       if (token != null) {
-//         print('FCM Token obtained: ${token.substring(0, 20)}...');
-//         return token;
-//       }
-//     } catch (e) {
-//       print('Attempt ${i + 1} failed to get FCM token: $e');
-//       if (i < maxRetries - 1) {
-//         await Future.delayed(Duration(seconds: 2 * (i + 1))); // Exponential backoff
-//       }
-//     }
-//   }
-//   print('Failed to get FCM token after $maxRetries attempts');
-//   return null;
-// }
-//
+// Background message handler - must be top level function
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print('Handling a background message: ${message.messageId}');
+  // Additional background processing can be added here
+}
+
 Future<void> _saveFCMTokenToDatabase(String userId, String token) async {
   try {
     await Supabase.instance.client
@@ -107,32 +40,13 @@ Future<void> _saveFCMTokenToDatabase(String userId, String token) async {
       'fcm_token_updated_at': DateTime.now().toIso8601String(),
     })
         .eq('id', userId);
-    print('FCM token saved to database');
+    print('FCM token saved to database for user: $userId');
   } catch (e) {
     print('Error saving FCM token to database: $e');
   }
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Load environment variables first
-  await testEnvLoad();
-
-  // Request permissions
-  await _requestAllPermissions();
-
-  // Initialize Firebase
-  await Firebase.initializeApp();
-
-  // Initialize Supabase BEFORE accessing it
-  await Supabase.initialize(
-    url: dotenv.env['BASE_URL'] ?? '',
-    anonKey: dotenv.env['API_KEY'] ?? '',
-    debug: true,
-  );
-
-  // Now safely get FCM token and save it
+Future<void> _setupInitialFCMToken() async {
   try {
     String? token = await FirebaseMessaging.instance.getToken();
     print("FCM Token: $token");
@@ -142,21 +56,66 @@ void main() async {
     if (user != null && token != null) {
       await _saveFCMTokenToDatabase(user.id, token);
     } else {
-      print("No authenticated user found or token is null");
+      print("No authenticated user found or token is null - will save token after login");
     }
+
+    // Listen for token refresh
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      print("FCM Token refreshed: $newToken");
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser != null) {
+        await _saveFCMTokenToDatabase(currentUser.id, newToken);
+      }
+    });
+
   } catch (e) {
     print("Error getting or saving FCM token: $e");
   }
+}
 
-  // Initialize cameras
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   try {
-    cameras = await availableCameras();
-  } on CameraException catch (e) {
-    print('Error fetching cameras: $e');
-  }
+    // Load environment variables first
+    await testEnvLoad();
 
-  // Initialize push notifications
-  await PushNotificationService.initialize(navigatorKey);
+    // Initialize Firebase FIRST
+    await Firebase.initializeApp();
+    print("Firebase initialized successfully");
+
+    // Set background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // Initialize Supabase
+    await Supabase.initialize(
+      url: dotenv.env['BASE_URL'] ?? '',
+      anonKey: dotenv.env['API_KEY'] ?? '',
+      debug: true,
+    );
+    print("Supabase initialized successfully");
+
+    // Request permissions after Firebase is initialized
+    await _requestAllPermissions();
+
+    // Setup FCM token handling
+    await _setupInitialFCMToken();
+
+    // Initialize cameras
+    try {
+      cameras = await availableCameras();
+      print("Cameras initialized: ${cameras.length} cameras found");
+    } on CameraException catch (e) {
+      print('Error fetching cameras: $e');
+    }
+
+    // Initialize push notifications service
+    await PushNotificationService.initialize(navigatorKey);
+    print("Push notification service initialized");
+
+  } catch (e) {
+    print("Error during initialization: $e");
+  }
 
   runApp(
     MultiProvider(
@@ -171,7 +130,7 @@ void main() async {
 }
 
 Future<void> _requestAllPermissions() async {
-  // List of all permissions you might need
+  // List of permissions needed for Instagram-like app
   final permissions = [
     Permission.camera,
     Permission.microphone,
@@ -180,23 +139,27 @@ Future<void> _requestAllPermissions() async {
     Permission.notification,
     Permission.videos,  // iOS 17+
     Permission.audio,
-    // Permission.sensors,
-    // Permission.location,
-    // Permission.bluetooth,
-    // Permission.accessMediaLocation,
-    // Permission.manageExternalStorage, // Android 11+
-    // Permission.activityRecognition,
-    // Permission.sms,
-    // Permission.contacts,
-    // Permission.calendar,
-    // Permission.phone,
   ];
-  Map<Permission, PermissionStatus> statuses = await permissions.request();
-  // If any permission is denied, show a dialog
-  if (statuses.values.any((status) => status.isDenied || status.isPermanentlyDenied)) {
-    // Optionally, show a dialog or guide user to settings
-    // For now, print to console
-    print('Some permissions were denied. Please enable them in app settings.');
+
+  try {
+    Map<Permission, PermissionStatus> statuses = await permissions.request();
+
+    // Check which permissions were denied
+    List<Permission> deniedPermissions = [];
+    statuses.forEach((permission, status) {
+      if (status.isDenied || status.isPermanentlyDenied) {
+        deniedPermissions.add(permission);
+      }
+    });
+
+    if (deniedPermissions.isNotEmpty) {
+      print('Denied permissions: ${deniedPermissions.map((p) => p.toString()).join(', ')}');
+      // You can show a dialog here explaining why permissions are needed
+    } else {
+      print('All permissions granted successfully');
+    }
+  } catch (e) {
+    print('Error requesting permissions: $e');
   }
 }
 
@@ -233,14 +196,6 @@ class MyApp extends StatelessWidget {
             Locale('en'), // English
             Locale('es'), // Spanish
             Locale('gu'), // Gujarati
-            // Locale('fr'), // French
-            // Locale('de'), // German
-            // Locale('it'), // Italian
-            // Locale('pt'), // Portuguese
-            // Locale('ja'), // Japanese
-            // Locale('ko'), // Korean
-            // Locale('zh'), // Chinese
-            // Locale('hi'), // Hindi
           ],
           home: const SplashScreen(),
           debugShowCheckedModeBanner: false,

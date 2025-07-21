@@ -28,8 +28,8 @@ class NotificationService {
           shouldNotify = preferences.likes;
           break;
         case 'post_comment':
-        case 'comment':
         case 'reel_comment':
+        case 'comment':
           shouldNotify = preferences.comments;
           break;
         case 'follow':
@@ -107,9 +107,9 @@ class NotificationService {
           case 'comment_like':
             shouldNotify = preferences.likes;
             break;
-          case 'comment':
           case 'post_comment':
           case 'reel_comment':
+          case 'comment':
             shouldNotify = preferences.comments;
             break;
           case 'follow':

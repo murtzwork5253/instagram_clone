@@ -11,30 +11,185 @@ class PushNotificationService {
   static late GlobalKey<NavigatorState> _navigatorKey;
   static Map<String, RealtimeChannel> _notificationChannels = {};
   static List<String> _loggedInUserIds = [];
+  static String? _currentFCMToken;
 
   static Future<void> initialize(GlobalKey<NavigatorState> navigatorKey) async {
     _navigatorKey = navigatorKey;
 
-    await Firebase.initializeApp();
-    FirebaseMessaging messaging = FirebaseMessaging.instance;
-
-    // Request permissions (Android 13+ and iOS)
-    await messaging.requestPermission();
-
-    // Initialize local notifications
-    await _initializeLocalNotifications();
-
-    // Handle token refresh
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      _storeFCMTokenForAllUsers(newToken);
-    });
-
-    // Handle background/terminated app launch from notification
-    FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
-      if (message != null) {
-        _handleNotificationTap(message.data);
+    try {
+      // Ensure Firebase is initialized
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp();
       }
-    });
+
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+      // Request permissions
+      NotificationSettings settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        print('User denied notification permissions');
+        return;
+      }
+
+      // Initialize local notifications
+      await _initializeLocalNotifications();
+
+      // Get and store FCM token
+      _currentFCMToken = await messaging.getToken();
+      print('FCM Token initialized: ${_currentFCMToken?.substring(0, 20)}...');
+
+      // Handle foreground messages (from server)
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        print('Received foreground message: ${message.messageId}');
+        _handleForegroundMessage(message);
+      });
+
+      // Handle background message taps (from server)
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        print('App opened from background notification: ${message.messageId}');
+        _handleNotificationTap(message.data);
+      });
+
+      // Handle app launch from notification (from server)
+      FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+        if (message != null) {
+          print('App opened from terminated state notification: ${message.messageId}');
+          _handleNotificationTap(message.data);
+        }
+      });
+
+      // Handle token refresh
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        print('FCM Token refreshed: ${newToken.substring(0, 20)}...');
+        _currentFCMToken = newToken;
+        _updateFCMTokenForAllUsers(newToken);
+      });
+
+      print('Push notification service initialized successfully');
+    } catch (e) {
+      print('Error initializing push notification service: $e');
+    }
+  }
+
+  static Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    try {
+      // Extract notification content from message data or notification payload
+      String title = message.notification?.title ??
+          message.data['title'] ??
+          _getDefaultTitle(message.data);
+
+      String body = message.notification?.body ??
+          message.data['body'] ??
+          _getDefaultBody(message.data);
+
+      print('Showing notification - Title: $title, Body: $body');
+
+      // Show local notification when app is in foreground (server-sent messages only)
+      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        'high_importance_channel',
+        'High Importance Notifications',
+        channelDescription: 'This channel is used for important notifications.',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+        icon: '@mipmap/ic_launcher',
+      );
+
+      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      const NotificationDetails notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      await _localNotificationsPlugin.show(
+        message.hashCode,
+        title,
+        body,
+        notificationDetails,
+        payload: jsonEncode(message.data),
+      );
+    } catch (e) {
+      print('Error handling foreground message: $e');
+    }
+  }
+
+  // Generate appropriate title based on notification type
+  static String _getDefaultTitle(Map<String, dynamic> data) {
+    final type = data['type'];
+    final senderName = data['sender_name'] ?? 'Someone';
+
+    switch (type) {
+      case 'like':
+        return '$senderName liked your post';
+      case 'post_comment':
+        return '$senderName commented on your post';
+      case 'reel_like':
+        return '$senderName liked your reel';
+      case 'reel_comment':
+        return '$senderName commented on your reel';
+      case 'follow':
+        return '$senderName started following you';
+      case 'mention':
+        return '$senderName mentioned you';
+      case 'story':
+        return '$senderName viewed your story';
+      case 'story_like':
+        return '$senderName liked your story';
+      default:
+        return 'New Notification';
+    }
+  }
+
+  // Generate appropriate body based on notification type
+  static String _getDefaultBody(Map<String, dynamic> data) {
+    final type = data['type'];
+    final senderName = data['sender_name'] ?? 'Someone';
+    final commentText = data['comment_text'];
+
+    switch (type) {
+      case 'like':
+        return 'Your post received a new like';
+      case 'post_comment':
+        if (commentText != null && commentText.isNotEmpty) {
+          // Truncate comment if too long
+          final truncated = commentText.length > 50
+              ? '${commentText.substring(0, 50)}...'
+              : commentText;
+          return '"$truncated"';
+        }
+        return 'Someone commented on your post';
+      case 'reel_like':
+        return 'Your reel received a new like';
+      case 'reel_comment':
+        if (commentText != null && commentText.isNotEmpty) {
+          final truncated = commentText.length > 50
+              ? '${commentText.substring(0, 50)}...'
+              : commentText;
+          return '"$truncated"';
+        }
+        return 'Someone commented on your reel';
+      case 'follow':
+        return 'You have a new follower';
+      case 'mention':
+        return 'You were mentioned in a post';
+      case 'story':
+        return 'Someone viewed your story';
+      case 'story_like':
+        return 'Someone liked your story';
+      default:
+        return 'You have a new notification';
+    }
   }
 
   static Future<void> _initializeLocalNotifications() async {
@@ -58,8 +213,12 @@ class PushNotificationService {
       onDidReceiveNotificationResponse: (NotificationResponse response) async {
         final payload = response.payload;
         if (payload != null) {
-          final data = jsonDecode(payload);
-          _handleNotificationTap(data);
+          try {
+            final data = jsonDecode(payload);
+            _handleNotificationTap(data);
+          } catch (e) {
+            print('Error parsing notification payload: $e');
+          }
         }
       },
     );
@@ -77,89 +236,60 @@ class PushNotificationService {
         ?.createNotificationChannel(channel);
   }
 
-  // NEW METHOD: Add a user to notification listening
+  // Add user to notification listeners and store FCM token
   static Future<void> addUserToNotificationListener(String userId) async {
     if (_loggedInUserIds.contains(userId)) {
-      print('User $userId already has notification listener');
+      print('User $userId already registered for notifications');
       return;
     }
 
     try {
-      // Store FCM token for this user
-      String? token = await FirebaseMessaging.instance.getToken();
-      await _storeFCMTokenForUser(token, userId);
+      // Store FCM token for this user (for server-side notifications)
+      if (_currentFCMToken != null) {
+        await _storeFCMTokenForUser(_currentFCMToken!, userId);
+      }
 
       // Add to logged in users list
       _loggedInUserIds.add(userId);
-
-      // Create notification channel for this user
-      final channel = Supabase.instance.client
-          .channel('notifications:$userId')
-          .onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'notifications',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'recipient_id',
-          value: userId,
-        ),
-        callback: (payload) {
-          _handleRealtimeNotification(payload.newRecord, userId);
-        },
-      )
-          .subscribe();
-
-      _notificationChannels[userId] = channel;
-      print('Added notification listener for user: $userId');
+      print('Added user $userId to notification listeners');
     } catch (e) {
       print('Error adding user to notification listener: $e');
     }
   }
 
-  // NEW METHOD: Remove a user from notification listening
+  // Remove user from notification listeners
   static Future<void> removeUserFromNotificationListener(String userId) async {
-    if (!_loggedInUserIds.contains(userId)) {
-      print('User $userId not in notification listeners');
-      return;
-    }
-
     try {
-      // Unsubscribe from channel
-      if (_notificationChannels.containsKey(userId)) {
-        await _notificationChannels[userId]!.unsubscribe();
-        _notificationChannels.remove(userId);
-      }
-
       // Remove from logged in users list
       _loggedInUserIds.remove(userId);
-
-      print('Removed notification listener for user: $userId');
+      print('Removed user $userId from notification listeners');
     } catch (e) {
       print('Error removing user from notification listener: $e');
     }
   }
 
-  // NEW METHOD: Update notification listeners for all stored accounts
+  // Update notification listeners for all stored accounts
   static Future<void> updateNotificationListenersForAllAccounts(List<String> userIds) async {
     print('Updating notification listeners for all accounts: $userIds');
 
-    // Remove listeners for users no longer logged in
-    final usersToRemove = _loggedInUserIds.where((id) => !userIds.contains(id)).toList();
-    for (String userId in usersToRemove) {
-      await removeUserFromNotificationListener(userId);
-    }
+    try {
+      // Remove listeners for users no longer logged in
+      final usersToRemove = _loggedInUserIds.where((id) => !userIds.contains(id)).toList();
+      for (String userId in usersToRemove) {
+        await removeUserFromNotificationListener(userId);
+      }
 
-    // Add listeners for new users
-    for (String userId in userIds) {
-      await addUserToNotificationListener(userId);
+      // Add listeners for new users
+      for (String userId in userIds) {
+        await addUserToNotificationListener(userId);
+      }
+    } catch (e) {
+      print('Error updating notification listeners for all accounts: $e');
     }
   }
 
-  // Store FCM token for a specific user
-  static Future<void> _storeFCMTokenForUser(String? token, String userId) async {
-    if (token == null) return;
-
+  // Store FCM token for a specific user (used by server to send notifications)
+  static Future<void> _storeFCMTokenForUser(String token, String userId) async {
     try {
       await Supabase.instance.client
           .from('users')
@@ -168,173 +298,16 @@ class PushNotificationService {
         'fcm_token_updated_at': DateTime.now().toIso8601String(),
       })
           .eq('id', userId);
+      print('FCM token stored for user $userId');
     } catch (e) {
       print('Error storing FCM token for user $userId: $e');
     }
   }
 
-  // Store FCM token for all logged-in users
-  static Future<void> _storeFCMTokenForAllUsers(String? token) async {
-    if (token == null) return;
-
+  // Update FCM token for all logged-in users
+  static Future<void> _updateFCMTokenForAllUsers(String token) async {
     for (String userId in _loggedInUserIds) {
       await _storeFCMTokenForUser(token, userId);
-    }
-  }
-
-  static Future<void> _handleRealtimeNotification(Map<String, dynamic> notification, String recipientUserId) async {
-    try {
-      // Fetch additional details for the notification
-      final notificationDetails = await _getNotificationDetails(notification);
-
-      // Show local notification with recipient context
-      await _showLocalNotification(notificationDetails, recipientUserId);
-
-    } catch (e) {
-      print('Error handling realtime notification: $e');
-    }
-  }
-
-  static Future<Map<String, dynamic>> _getNotificationDetails(Map<String, dynamic> notification) async {
-    try {
-      // Get sender details
-      Map<String, dynamic>? sender;
-      if (notification['sender_id'] != null) {
-        sender = await Supabase.instance.client
-            .from('users')
-            .select('id, full_name, profile_image_url, username')
-            .eq('id', notification['sender_id'])
-            .maybeSingle();
-      }
-
-      // Get recipient details
-      Map<String, dynamic>? recipient;
-      if (notification['recipient_id'] != null) {
-        recipient = await Supabase.instance.client
-            .from('users')
-            .select('id, full_name, profile_image_url, username')
-            .eq('id', notification['recipient_id'])
-            .maybeSingle();
-      }
-
-      // Get post details if applicable
-      Map<String, dynamic>? post;
-      if (notification['post_id'] != null) {
-        post = await Supabase.instance.client
-            .from('posts')
-            .select('id, caption, image_url')
-            .eq('id', notification['post_id'])
-            .maybeSingle();
-      }
-
-      return {
-        ...notification,
-        'sender': sender,
-        'recipient': recipient,
-        'post': post,
-      };
-    } catch (e) {
-      print('Error getting notification details: $e');
-      return notification;
-    }
-  }
-
-  static Future<void> _showLocalNotification(Map<String, dynamic> notificationData, String recipientUserId) async {
-    final String title = _generateNotificationTitle(notificationData, recipientUserId);
-    final String body = _generateNotificationBody(notificationData, recipientUserId);
-
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'high_importance_channel',
-      'High Importance Notifications',
-      channelDescription: 'This channel is used for important notifications.',
-      importance: Importance.high,
-      priority: Priority.high,
-      showWhen: true,
-      icon: '@mipmap/ic_launcher',
-    );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _localNotificationsPlugin.show(
-      '${notificationData['id']}_$recipientUserId'.hashCode,
-      title,
-      body,
-      notificationDetails,
-      payload: jsonEncode({
-        'type': notificationData['type'],
-        'sender_id': notificationData['sender_id'],
-        'post_id': notificationData['post_id'],
-        'notification_id': notificationData['id'],
-        'recipient_id': recipientUserId,
-      }),
-    );
-  }
-
-  static String _generateNotificationTitle(Map<String, dynamic> data, String recipientUserId) {
-    final senderName = data['sender']?['full_name'] ?? data['sender']?['username'] ?? 'Someone';
-    final recipientName = data['recipient']?['username'] ?? 'Account';
-    final type = data['type'] ?? '';
-
-    switch (type) {
-      case 'like':
-        return '($recipientName) $senderName liked your post';
-      case 'post_comment':
-        return '($recipientName) $senderName commented on your post';
-      case 'reel_comment':
-        return '($recipientName) $senderName commented on your reel';
-      case 'follow':
-        return '($recipientName) $senderName started following you';
-      case 'mention':
-        return '($recipientName) $senderName mentioned you';
-      case 'story':
-        return '($recipientName) $senderName viewed your story';
-      case 'reel_like':
-        return '($recipientName) $senderName liked your reel';
-      case 'story_like':
-        return '($recipientName) $senderName liked your story';
-      case 'comment_like':
-        return '($recipientName) $senderName liked your comment';
-      default:
-        return '($recipientName) New notification';
-    }
-  }
-
-  static String _generateNotificationBody(Map<String, dynamic> data, String recipientUserId) {
-    final type = data['type'] ?? '';
-    final postContent = data['post']?['caption'];
-    final senderName = data['sender']?['full_name'] ?? data['sender']?['username'] ?? 'Someone';
-
-    switch (type) {
-      case 'like':
-      case 'reel_like':
-        return postContent != null && postContent.isNotEmpty
-            ? '"${postContent.length > 50 ? postContent.substring(0, 50) + '...' : postContent}"'
-            : 'Check out your post';
-      case 'post_comment':
-        return 'Tap to see the comment';
-      case 'reel_comment':
-        return 'Tap to see the comment';
-      case 'follow':
-        return 'Tap to view $senderName\'s profile';
-      case 'mention':
-        return 'You were mentioned in a post by $senderName';
-      case 'story':
-        return 'Your story has a new view';
-      case 'story_like':
-        return '$senderName liked your story';
-      case 'comment_like':
-        return 'Your comment received a like';
-      default:
-        return 'You have a new notification';
     }
   }
 
@@ -346,28 +319,41 @@ class PushNotificationService {
     final senderId = data['sender_id'];
     final recipientId = data['recipient_id'];
 
-    // You might want to switch to the account that received the notification
-    // before navigating to the relevant screen
+    print('Handling notification tap - Type: $type, PostId: $postId, SenderId: $senderId');
 
+    // Navigate based on notification type
     switch (type) {
       case 'like':
-      case 'comment':
+      case 'post_comment':
       case 'reel_like':
+      case 'reel_comment':
         if (postId != null) {
+          // Navigate to post/reel detail screen
           Navigator.pushNamed(
             _navigatorKey.currentContext!,
-            '/post_detail',
-            arguments: {'postId': postId, 'switchToAccount': recipientId},
+            '/post_detail', // Make sure this route exists
+            arguments: {
+              'postId': postId,
+              'userId': recipientId,
+            },
           );
+        } else {
+          _navigateToNotifications(recipientId);
         }
         break;
       case 'follow':
         if (senderId != null) {
+          // Navigate to sender's profile
           Navigator.pushNamed(
             _navigatorKey.currentContext!,
-            '/profile',
-            arguments: {'userId': senderId, 'switchToAccount': recipientId},
+            '/profile', // Make sure this route exists
+            arguments: {
+              'userId': senderId,
+              'currentUserId': recipientId,
+            },
           );
+        } else {
+          _navigateToNotifications(recipientId);
         }
         break;
       case 'mention':
@@ -375,76 +361,49 @@ class PushNotificationService {
           Navigator.pushNamed(
             _navigatorKey.currentContext!,
             '/post_detail',
-            arguments: {'postId': postId, 'switchToAccount': recipientId},
+            arguments: {
+              'postId': postId,
+              'userId': recipientId,
+            },
           );
+        } else {
+          _navigateToNotifications(recipientId);
         }
         break;
       case 'story':
       case 'story_like':
-        Navigator.pushNamed(
-          _navigatorKey.currentContext!,
-          '/story_view',
-          arguments: {'userId': senderId, 'switchToAccount': recipientId},
-        );
+        if (senderId != null) {
+          // Navigate to story view
+          Navigator.pushNamed(
+            _navigatorKey.currentContext!,
+            '/story_view', // Make sure this route exists
+            arguments: {
+              'userId': senderId,
+              'currentUserId': recipientId,
+            },
+          );
+        } else {
+          _navigateToNotifications(recipientId);
+        }
         break;
       default:
-        Navigator.pushNamed(
-          _navigatorKey.currentContext!,
-          '/notifications',
-          arguments: {'switchToAccount': recipientId},
-        );
+        _navigateToNotifications(recipientId);
     }
   }
 
-  // Method to send notification to specific user
-  static Future<void> sendNotificationToUser({
-    required String recipientId,
-    required String senderId,
-    required String type,
-    String? postId,
-  }) async {
-    try {
-      // First create the notification in your database
-      await Supabase.instance.client.from('notifications').insert({
-        'recipient_id': recipientId,
-        'sender_id': senderId,
-        'type': type,
-        'post_id': postId,
-        'is_read': false,
-      });
-
-      // The real-time listener will automatically handle showing the notification
-      // to the recipient if they're logged in on this device
-
-    } catch (e) {
-      print('Error sending notification: $e');
-    }
-  }
-
-  // Method to send notification to multiple users
-  static Future<void> sendNotificationToMultipleUsers({
-    required List<String> recipientIds,
-    required String senderId,
-    required String type,
-    String? postId,
-  }) async {
-    try {
-      final notifications = recipientIds.map((recipientId) => {
-        'recipient_id': recipientId,
-        'sender_id': senderId,
-        'type': type,
-        'post_id': postId,
-        'is_read': false,
-      }).toList();
-
-      await Supabase.instance.client.from('notifications').insert(notifications);
-    } catch (e) {
-      print('Error sending notifications to multiple users: $e');
-    }
+  static void _navigateToNotifications(String? userId) {
+    Navigator.pushNamed(
+      _navigatorKey.currentContext!,
+      '/notifications', // Make sure this route exists
+      arguments: {'userId': userId},
+    );
   }
 
   // Get list of currently listening user IDs
   static List<String> get listeningUserIds => List.from(_loggedInUserIds);
+
+  // Get current FCM token
+  static String? get currentFCMToken => _currentFCMToken;
 
   // Clean up resources
   static Future<void> dispose() async {
@@ -460,6 +419,6 @@ class PushNotificationService {
     if (count == 0) {
       await _localNotificationsPlugin.cancelAll();
     }
-    // For iOS badge count, you might need to use a plugin like flutter_app_badger
+    // For iOS badge count, you might need to use flutter_app_badger plugin
   }
 }
