@@ -10,8 +10,9 @@ import '../../services/supabase_service.dart';
 import '../common/report_dialog.dart';
 
 // Function to show comment section as modal sheet
-void showCommentSection(BuildContext context, String postId) {
-  showModalBottomSheet(
+Future<int?> showCommentSection(BuildContext context, String postId) {
+  // Return the result of the modal sheet
+  return showModalBottomSheet<int>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -202,254 +203,269 @@ class _CommentSectionState extends State<CommentSection> {
             : null);
 
     final loc = AppLocalizations.of(context)!;
-    return SafeArea(
-      child: LayoutBuilder(builder: (context, constraints) {
-        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-        return AnimatedPadding(
-          duration: Duration(milliseconds: 250),
-          padding: EdgeInsets.only(bottom: bottomInset),
-          curve: Curves.easeOut,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              // height: MediaQuery.of(context).size.height * 0.9,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
+    return PopScope(
+      // Set canPop to false to prevent the system from automatically closing the modal.
+      canPop: false,
+      // This callback is triggered when a pop is attempted.
+      onPopInvoked: (bool didPop) {
+        // If the pop was already handled (which it won't be because canPop is false), do nothing.
+        if (didPop) {
+          return;
+        }
+        // Since we prevented the default pop, we handle it manually here,
+        // passing back the current number of comments as the result.
+        Navigator.pop(context, _comments.length);
+      },
+      child: SafeArea(
+        child: LayoutBuilder(builder: (context, constraints) {
+          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          return AnimatedPadding(
+            duration: Duration(milliseconds: 250),
+            padding: EdgeInsets.only(bottom: bottomInset),
+            curve: Curves.easeOut,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                // height: MediaQuery.of(context).size.height * 0.9,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
                 ),
-              ),
-              child: Column(
-                children: [
-                  // Handle bar
-                  Container(
-                    margin: EdgeInsets.symmetric(vertical: 8),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade600,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  // Header
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom:
-                            BorderSide(color: Colors.grey.shade800, width: 0.5),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          loc.comments,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Last refreshed indicator
-                  if (_lastRefreshed != null)
+                child: Column(
+                  children: [
+                    // Handle bar
                     Container(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      width: double.infinity,
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Last updated ${_formatLastUpdated(_lastRefreshed!)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
+                      margin: EdgeInsets.symmetric(vertical: 8),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade600,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    // Header
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom:
+                          BorderSide(color: Colors.grey.shade800, width: 0.5),
                         ),
                       ),
-                    ),
-                  // Comments list
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: _loadComments,
-                      child: _isLoading
-                          ? Center(
-                              child: CircularProgressIndicator(
-                                  color: Colors.white))
-                          : _comments.isEmpty
-                              ? Center(
-                                  child: ListView(
-                                    physics:
-                                        const AlwaysScrollableScrollPhysics(),
-                                    children: [
-                                      Container(
-                                        height:
-                                            MediaQuery.of(context).size.height /
-                                                3,
-                                        alignment: Alignment.center,
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.chat_bubble_outline,
-                                              size: 50,
-                                              color: Colors.grey.shade600,
-                                            ),
-                                            SizedBox(height: 16),
-                                            Text(
-                                              loc.noComments,
-                                              style: TextStyle(
-                                                color: Colors.grey.shade600,
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                            SizedBox(height: 8),
-                                            Text(
-                                              'Start the conversation.',
-                                              style: TextStyle(
-                                                color: Colors.grey.shade700,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : ListView.builder(
-                                  controller: widget.scrollController,
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  padding: EdgeInsets.symmetric(vertical: 8),
-                                  itemCount: _comments.length,
-                                  itemBuilder: (context, index) {
-                                    final comment = _comments[index];
-                                    if (currentUser == null) {
-                                      return Center(
-                                        child: Padding(
-                                          padding: EdgeInsets.all(20),
-                                          child: Text(
-                                            'Please sign in to view comments.',
-                                            style:
-                                                TextStyle(color: Colors.grey),
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return AnimatedSwitcher(
-                                      duration: Duration(milliseconds: 300),
-                                      child: CommentTile(
-                                        key: ValueKey(comment.id),
-                                        // Needed for animation
-                                        comment: comment,
-                                        commentLikes: _commentLikes,
-                                        currentUserId: currentUser.id,
-                                        dataProvider: dataProvider,
-                                      ),
-                                    );
-                                  },
-                                ),
-                    ),
-                  ),
-                  // Add comment section
-                  Container(
-                    padding: EdgeInsets.only(
-                        left: 16, right: 16, top: 12, bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      border: Border(
-                        top:
-                            BorderSide(color: Colors.grey.shade800, width: 0.5),
-                      ),
-                    ),
-                    child: SafeArea(
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Current user profile image
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundImage: resolvedImageUrl != null
-                                ? NetworkImage(resolvedImageUrl)
-                                : null,
-                            backgroundColor: Colors.grey.shade700,
-                            child: resolvedImageUrl == null
-                                ? Icon(Icons.person,
-                                    color: Colors.white, size: 20)
-                                : null,
-                          ),
-                          SizedBox(width: 12),
-                          // Comment text field
-                          Expanded(
-                            child: Container(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade900,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.grey.shade800),
-                              ),
-                              child: TextField(
-                                controller: _commentController,
-                                style: TextStyle(color: Colors.white),
-                                decoration: InputDecoration(
-                                  hintText:
-                                      'Add a comment as ${currentUser?.username ?? "user"}...',
-                                  border: InputBorder.none,
-                                  hintStyle:
-                                      TextStyle(color: Colors.grey.shade600),
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                                maxLines: null,
-                                textInputAction: TextInputAction.send,
-                                onSubmitted: (_) {
-                                  if (_canPost) _addComment();
-                                },
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          // Post button
-                          GestureDetector(
-                            onTap:
-                                (_canPost && !_isPosting) ? _addComment : null,
-                            child: Container(
-                              padding: EdgeInsets.all(8),
-                              child: _isPosting
-                                  ? SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                                Colors.blue),
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.send,
-                                      color: _canPost
-                                          ? Colors.blue
-                                          : Colors.grey.shade600,
-                                      size: 24,
-                                    ),
+                          Text(
+                            loc.comments,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    // Last refreshed indicator
+                    if (_lastRefreshed != null)
+                      Container(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        width: double.infinity,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Last updated ${_formatLastUpdated(_lastRefreshed!)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    // Comments list
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _loadComments,
+                        child: _isLoading
+                            ? Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.white))
+                            : _comments.isEmpty
+                            ? Center(
+                          child: ListView(
+                            physics:
+                            const AlwaysScrollableScrollPhysics(),
+                            children: [
+                              Container(
+                                height:
+                                MediaQuery.of(context).size.height /
+                                    3,
+                                alignment: Alignment.center,
+                                child: Column(
+                                  mainAxisAlignment:
+                                  MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.chat_bubble_outline,
+                                      size: 50,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      loc.noComments,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Start the conversation.',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade700,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                            : ListView.builder(
+                          controller: widget.scrollController,
+                          physics:
+                          const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          itemCount: _comments.length,
+                          itemBuilder: (context, index) {
+                            final comment = _comments[index];
+                            if (currentUser == null) {
+                              return Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Text(
+                                    'Please sign in to view comments.',
+                                    style:
+                                    TextStyle(color: Colors.grey),
+                                  ),
+                                ),
+                              );
+                            }
+                            return AnimatedSwitcher(
+                              duration: Duration(milliseconds: 300),
+                              child: CommentTile(
+                                key: ValueKey(comment.id),
+                                // Needed for animation
+                                comment: comment,
+                                commentLikes: _commentLikes,
+                                currentUserId: currentUser.id,
+                                dataProvider: dataProvider,
+                                onDelete: _loadComments,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    // Add comment section
+                    Container(
+                      padding: EdgeInsets.only(
+                          left: 16, right: 16, top: 12, bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        border: Border(
+                          top:
+                          BorderSide(color: Colors.grey.shade800, width: 0.5),
+                        ),
+                      ),
+                      child: SafeArea(
+                        child: Row(
+                          children: [
+                            // Current user profile image
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundImage: resolvedImageUrl != null
+                                  ? NetworkImage(resolvedImageUrl)
+                                  : null,
+                              backgroundColor: Colors.grey.shade700,
+                              child: resolvedImageUrl == null
+                                  ? Icon(Icons.person,
+                                  color: Colors.white, size: 20)
+                                  : null,
+                            ),
+                            SizedBox(width: 12),
+                            // Comment text field
+                            Expanded(
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade900,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.grey.shade800),
+                                ),
+                                child: TextField(
+                                  controller: _commentController,
+                                  style: TextStyle(color: Colors.white),
+                                  decoration: InputDecoration(
+                                    hintText:
+                                    'Add a comment as ${currentUser?.username ?? "user"}...',
+                                    border: InputBorder.none,
+                                    hintStyle:
+                                    TextStyle(color: Colors.grey.shade600),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                  maxLines: null,
+                                  textInputAction: TextInputAction.send,
+                                  onSubmitted: (_) {
+                                    if (_canPost) _addComment();
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            // Post button
+                            GestureDetector(
+                              onTap:
+                              (_canPost && !_isPosting) ? _addComment : null,
+                              child: Container(
+                                padding: EdgeInsets.all(8),
+                                child: _isPosting
+                                    ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor:
+                                    AlwaysStoppedAnimation<Color>(
+                                        Colors.blue),
+                                  ),
+                                )
+                                    : Icon(
+                                  Icons.send,
+                                  color: _canPost
+                                      ? Colors.blue
+                                      : Colors.grey.shade600,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
     );
   }
 }
@@ -460,6 +476,7 @@ class CommentTile extends StatefulWidget {
   final Map<String, List<String>> commentLikes;
   final String currentUserId;
   final InstaDataProvider dataProvider;
+  final VoidCallback onDelete;
 
   const CommentTile({
     Key? key,
@@ -467,6 +484,7 @@ class CommentTile extends StatefulWidget {
     required this.commentLikes,
     required this.currentUserId,
     required this.dataProvider,
+    required this.onDelete,
   }) : super(key: key);
 
   @override
@@ -724,11 +742,7 @@ class _CommentTileState extends State<CommentTile> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Comment deleted successfully')),
       );
-      // Pop the comment section if this comment is part of a list that should update
-      // or if the comment section itself should close after deletion.
-      // If you're on a screen that only shows *one* comment, this is appropriate.
-      // If it's a list, you might just want the list to rebuild, not pop the screen.
-      Navigator.of(context).pop();
+      widget.onDelete(); // Call the onDelete callback
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete comment: $e')),

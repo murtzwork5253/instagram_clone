@@ -727,29 +727,72 @@ class InstaDataProvider extends ChangeNotifier {
   }
 
 // Method to get saved posts for current user
+  // In your InstaDataProvider
   Future<List<PostData>> getSavedPosts() async {
     try {
-      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      final supabase = Supabase.instance.client;
+      final currentUserId = supabase.auth.currentUser?.id;
       if (currentUserId == null) return [];
 
-      // Get saved posts with post details and user profile
-      final response = await Supabase.instance.client
+      // 1. Get saved posts with nested post and user details (your efficient query)
+      final response = await supabase
           .from('saved_posts')
           .select('''
-          created_at,
           posts:post_id(
-            *,
+            id, user_id, caption, location, image_url, created_at,
+            disable_comments, use_original_ratio, image_transformation, original_aspect_ratio,
             users:user_id(username, profile_image_url)
           )
         ''')
           .eq('user_id', currentUserId)
           .order('created_at', ascending: false);
 
-      final List<PostData> savedPosts = [];
+      if (response.isEmpty) {
+        return [];
+      }
 
+      // 2. Extract post IDs to fetch their likes and comments
+      final postIds = response
+          .map((item) => item['posts']?['id'])
+          .where((id) => id != null)
+          .toList();
+
+      if (postIds.isEmpty) {
+        return [];
+      }
+
+      // 3. Fetch all likes and comments for these posts in parallel for efficiency
+      final [likesResponse, commentsResponse] = await Future.wait([
+        supabase.from('post_likes').select('post_id, user_id').inFilter('post_id', postIds),
+        supabase.from('comments').select('id, post_id').inFilter('post_id', postIds)
+      ]);
+
+      // 4. Process likes and comments into lookup maps for quick access
+      final Map<String, List<dynamic>> likesByPost = {};
+      for (final like in likesResponse as List) {
+        final postId = like['post_id'].toString();
+        likesByPost.putIfAbsent(postId, () => []).add(like);
+      }
+
+      final Map<String, List<dynamic>> commentsByPost = {};
+      for (final comment in commentsResponse as List) {
+        final postId = comment['post_id'].toString();
+        commentsByPost.putIfAbsent(postId, () => []).add(comment);
+      }
+
+      // 5. Build the final list of PostData, now with accurate interaction data
+      final List<PostData> savedPosts = [];
       for (final item in response) {
         final postData = item['posts'];
         if (postData != null) {
+          final postId = postData['id'].toString();
+          final likes = likesByPost[postId] ?? [];
+          final comments = commentsByPost[postId] ?? [];
+          final bool isLiked = likes.any((like) => like['user_id'] == currentUserId);
+
+          // Construct the PostData object using the complete data
+          // Note: This assumes your PostData class constructor matches the one used
+          // in your current_user_profile.dart file.
           final post = PostData(
             id: postData['id'],
             userId: postData['user_id'],
@@ -759,10 +802,14 @@ class InstaDataProvider extends ChangeNotifier {
             caption: postData['caption'],
             location: postData['location'],
             createdAt: DateTime.tryParse(postData['created_at'] ?? '') ?? DateTime.now(),
-            likeCount: 0, // You might want to fetch this separately
-            commentCount: 0, // You might want to fetch this separately
-            isLiked: false, // You might want to fetch this separately
-            isSaved: true, // Always true for saved posts
+            likeCount: likes.length,      // <-- Now using correct data
+            commentCount: comments.length,// <-- Now using correct data
+            isLiked: isLiked,             // <-- Now using correct data
+            isSaved: true,
+            disableComments: postData['disable_comments'] ?? false,
+            use_original_ratio: postData['use_original_ratio'],
+            image_transformation: postData['image_transformation'],
+            original_aspect_ratio: (postData['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
           );
           savedPosts.add(post);
         }

@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '/screens/chatscreen/model/models.dart' as models;
 
@@ -228,5 +231,34 @@ class MessageService {
     });
 
     return chatRooms;
+  }
+
+  // Add this method inside the MessageService class
+
+  /// Uploads an image to Supabase Storage and returns the public URL.
+  Future<String?> uploadChatImage({
+    required XFile imageFile,
+    required String userId,
+  }) async {
+    try {
+      final String fileExtension = imageFile.path.split('.').last;
+      final String fileName = '${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
+      final String filePath = '$userId/$fileName';
+
+      await _supabaseClient.storage.from('messages').upload(
+        filePath,
+        File(imageFile.path),
+      );
+
+      final String publicUrl = _supabaseClient.storage
+          .from('messages')
+          .getPublicUrl(filePath);
+
+      return publicUrl;
+
+    } catch (e) {
+      print('Error uploading chat image: $e');
+      return null;
+    }
   }
 }

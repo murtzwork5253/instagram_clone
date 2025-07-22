@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import 'package:google_sign_in/google_sign_in.dart';
@@ -201,6 +202,7 @@ class _LoginPageState extends State<LoginPage> {
         await provider.refreshFeed();
 
         if (mounted) {
+          await Permission.notification.request();
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const HomeDashboard()),
@@ -332,6 +334,7 @@ class _LoginPageState extends State<LoginPage> {
         final provider = Provider.of<InstaDataProvider>(context, listen: false);
         await provider.refreshFeed();
         await AccountManager.instance.storeCurrentAccount(); // Add this line
+        await Permission.notification.request();
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const HomeDashboard()),

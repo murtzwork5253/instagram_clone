@@ -33,9 +33,6 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.0
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.9.0
   riverpod: ^2.6.1
@@ -53,7 +50,7 @@ dependencies:
   country_code_picker: ^3.3.0
   image_picker: ^1.1.2
   uuid: ^4.5.1
-  permission_handler: ^12.0.0+1
+  permission_handler: ^12.0.1
   pull_to_refresh: ^2.0.0
   flutter_svg: ^2.1.0
   camera: ^0.11.1
@@ -65,7 +62,6 @@ dependencies:
   share_plus: ^11.0.0
   dotted_border: ^3.0.1
   photo_manager: ^3.7.1
-  flutter_riverpod: ^2.6.1
   cached_network_image: ^3.4.1
   flutter_image_compress: ^2.4.0
   flutter_dotenv: ^5.2.1
@@ -78,7 +74,6 @@ dependencies:
   firebase_core: ^3.15.1
   firebase_messaging: ^15.2.9
   flutter_local_notifications: ^19.3.0
-  onesignal_flutter: ^5.3.4
 
 dev_dependencies:
   flutter_test:

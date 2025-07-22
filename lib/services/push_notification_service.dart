@@ -142,10 +142,12 @@ class PushNotificationService {
         return '$senderName started following you';
       case 'mention':
         return '$senderName mentioned you';
-      case 'story':
-        return '$senderName viewed your story';
+      // case 'story':
+      //   return '$senderName viewed your story';
       case 'story_like':
         return '$senderName liked your story';
+      case 'messages':
+        return '$senderName sends you a new message';
       default:
         return 'New Notification';
     }
@@ -183,10 +185,12 @@ class PushNotificationService {
         return 'You have a new follower';
       case 'mention':
         return 'You were mentioned in a post';
-      case 'story':
-        return 'Someone viewed your story';
+      // case 'story':
+      //   return 'Someone viewed your story';
       case 'story_like':
         return 'Someone liked your story';
+      case 'messages':
+        return 'You have a new message';
       default:
         return 'You have a new notification';
     }
@@ -370,7 +374,7 @@ class PushNotificationService {
           _navigateToNotifications(recipientId);
         }
         break;
-      case 'story':
+      // case 'story':
       case 'story_like':
         if (senderId != null) {
           // Navigate to story view

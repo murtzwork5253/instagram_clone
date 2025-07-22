@@ -181,10 +181,10 @@ packages:
     dependency: transitive
     description:
       name: camera_avfoundation
-      sha256: "9e02b36c9c09a01edcb0f2bfc58a94ed38bbbf37907759d651707bb0f327a365"
+      sha256: b389be4a325742a3950e50475067d95a3de2fb32ba3f31bfcc62b0b6d19907a6
       url: "https://pub.dev"
     source: hosted
-    version: "0.9.20+3"
+    version: "0.9.20+4"
   camera_platform_interface:
     dependency: transitive
     description:
@@ -619,14 +619,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.28"
-  flutter_riverpod:
-    dependency: "direct main"
-    description:
-      name: flutter_riverpod
-      sha256: "9532ee6db4a943a1ed8383072a2e3eeda041db5657cdf6d2acecf3c21ecbe7e1"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.6.1"
   flutter_secure_storage:
     dependency: transitive
     description:
@@ -849,10 +841,10 @@ packages:
     dependency: transitive
     description:
       name: image_picker_android
-      sha256: "317a5d961cec5b34e777b9252393f2afbd23084aa6e60fcf601dcf6341b9ebeb"
+      sha256: "6fae381e6af2bbe0365a5e4ce1db3959462fa0c4d234facf070746024bb80c8d"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.12+23"
+    version: "0.8.12+24"
   image_picker_for_web:
     dependency: transitive
     description:
@@ -1037,14 +1029,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
-  onesignal_flutter:
-    dependency: "direct main"
-    description:
-      name: onesignal_flutter
-      sha256: b5bb43bf496ddb5e3975ba54c6477cc2d1fcd18fb3698f195d2e0bfd376ddafd
-      url: "https://pub.dev"
-    source: hosted
-    version: "5.3.4"
   package_info_plus:
     dependency: transitive
     description:

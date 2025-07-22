@@ -29,7 +29,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     try {
       await Supabase.instance.client.auth.resetPasswordForEmail(
         _emailController.text.trim(),
-        redirectTo: 'your-app://reset-password', // Configure your deep link
+        redirectTo: 'com.supabase.instagramclone://login-callback', // Configure your deep link
       );
 
       setState(() => _emailSent = true);

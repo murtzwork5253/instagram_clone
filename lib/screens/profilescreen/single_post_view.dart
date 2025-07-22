@@ -1,6 +1,10 @@
+import 'dart:math';
+
+import 'package:Instagram/screens/chatscreen/chat_screen.dart';
 import 'package:Instagram/screens/commentscreen/comment_section.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +13,8 @@ import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/service/auth_service.dart';
+import '../chatscreen/message_service.dart';
+import '../chatscreen/model/models.dart';
 import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart';
 import '../user_tagging/user_model.dart';
@@ -321,7 +327,7 @@ class _SinglePostViewState extends State<SinglePostView> {
                           ],
                           GestureDetector(
                             onTap: () {
-                              _showShareOptions(post, context);
+                              _showShareOptions(post);
                             },
                             child: Image.asset(
                               "assets/icon/shareicon.png",
@@ -540,7 +546,7 @@ class _SinglePostViewState extends State<SinglePostView> {
               title: Text('Share', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
-                _showShareOptions(post, context);
+                _showShareOptions(post);
               },
             ),
             if (post.userId != currentUserId)
@@ -646,76 +652,238 @@ class _SinglePostViewState extends State<SinglePostView> {
     );
   }
 
-  void _showShareOptions(PostData post, BuildContext context) {
+  void _showShareOptions(PostData post) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              'Share',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          Divider(color: Colors.grey),
-          Container(
-            height: 100,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              children: List.generate(
-                8,
-                    (index) => Container(
-                  width: 70,
-                  margin: EdgeInsets.symmetric(horizontal: 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircleAvatar(
-                        radius: 30,
-                        backgroundColor: Colors.grey[800],
-                        child: Icon(Icons.person, color: Colors.white),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'User ${index + 1}',
-                        style: TextStyle(color: Colors.white),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.3,
+        builder: (context, scrollController) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Share',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
                 ),
               ),
             ),
-          ),
-          Divider(color: Colors.grey),
-          ListTile(
-            leading: Icon(Icons.add_circle_outline, color: Colors.white),
-            title: Text('Add post to your story', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.send, color: Colors.white),
-            title: Text('Send post', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-        ],
+            Divider(color: Colors.grey),
+
+            // Users list for sharing
+            Expanded(
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: _getFollowingUsers(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(child: CircularProgressIndicator());
+                  }
+
+                  if (snapshot.hasError ||
+                      !snapshot.hasData ||
+                      snapshot.data!.isEmpty) {
+                    return Center(
+                      child: Text(
+                        'No users found',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    itemCount: snapshot.data!.length,
+                    itemBuilder: (context, index) {
+                      final user = snapshot.data![index];
+                      final String imageUrl =
+                      _buildUserImageUrl(user['profile_image_url']);
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          radius: 25,
+                          backgroundColor: Colors.grey[800],
+                          backgroundImage: user['profile_image_url'] != null
+                              ? CachedNetworkImageProvider(imageUrl)
+                              : null,
+                          child: user['profile_image_url'] == null
+                              ? Icon(Icons.person, color: Colors.white)
+                              : null,
+                        ),
+                        title: Text(
+                          user['username'] ?? 'Unknown User',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        subtitle: user['full_name'] != null
+                            ? Text(
+                          user['full_name'],
+                          style: TextStyle(color: Colors.grey),
+                        )
+                            : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          _sharePostToUser(post, user);
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+
+            Divider(color: Colors.grey),
+
+            // Add to story option
+            ListTile(
+              leading: Icon(Icons.add_circle_outline, color: Colors.white),
+              title: Text('Add post to your story',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _addPostToStory(post);
+              },
+            ),
+
+            // Send via other methods
+            ListTile(
+              leading: Icon(Icons.copy, color: Colors.white),
+              title: Text('Copy link', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _copyPostLink(post);
+              },
+            ),
+
+            SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 16),
+          ],
+        ),
       ),
     );
+  }
+
+// Helper method to get following users
+  Future<List<Map<String, dynamic>>> _getFollowingUsers() async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return [];
+
+      final response =
+      await Supabase.instance.client.from('followers').select('''
+          following_id,
+          users!followers_following_id_fkey (
+            id,
+            username,
+            full_name,
+            profile_image_url
+          )
+        ''').eq('follower_id', currentUserId);
+
+      return response.map<Map<String, dynamic>>((item) {
+        final profile = item['users'];
+        return {
+          'id': profile['id'],
+          'username': profile['username'],
+          'full_name': profile['full_name'],
+          'profile_image_url': profile['profile_image_url'],
+        };
+      }).toList();
+    } catch (e) {
+      print('Error fetching following users: $e');
+      return [];
+    }
+  }
+
+// Helper method to build user image URL
+//   String _buildUserImageUrl(String? profileImageUrl) {
+//     if (profileImageUrl == null) return '';
+//
+//     final bool isFullUrl =
+//         Uri.tryParse(profileImageUrl)?.hasAbsolutePath == true &&
+//             (profileImageUrl.startsWith('http://') ||
+//                 profileImageUrl.startsWith('https://'));
+//
+//     return isFullUrl
+//         ? profileImageUrl
+//         : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$profileImageUrl';
+//   }
+
+// Method to share post to specific user
+  void _sharePostToUser(PostData post, Map<String, dynamic> user) async {
+    final currentUser = AuthService.client().auth.currentUser;
+    if (currentUser == null) return;
+
+    // Prepare shared post data (minimal for chat preview)
+    final sharedPostData = {
+      'post_id': post.id,
+      'user_id': post.userId,
+      'username': post.username,
+      'profile_image_url': post.profileImageUrl,
+      'image_url': post.imageUrl,
+      'caption': post.caption,
+    };
+
+    // Send the message with sharedPost
+    await MessageService().sendMessage(
+      senderId: currentUser.id,
+      receiverId: user['id'],
+      sharedPost: sharedPostData,
+    );
+
+    // Optimistic UI: create a temporary Message object
+    final optimisticMessage = Message(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}',
+      senderId: currentUser.id,
+      receiverId: user['id'],
+      content: null,
+      imageUrl: null,
+      sharedPost: sharedPostData,
+      isRead: false,
+      createdAt: DateTime.now(),
+      seenAt: null,
+    );
+
+    // Navigate to chat with optimistic message
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          currentUserId: currentUser.id,
+          initialChatUserId: user['id'],
+          cameFromProfile: true,
+          initialMessage: optimisticMessage,
+        ),
+      ),
+    );
+  }
+
+// Method to add post to story
+  void _addPostToStory(PostData post) {
+    // Navigate to story creation screen with the post data
+    // Navigator.push(
+    //   context,
+    //   MaterialPageRoute(
+    //     builder: (context) => StoryPreviewScreen(
+    //       sharedPost: post,
+    //     ),
+    //   ),
+    // );
+  }
+
+// Method to copy post link
+  void _copyPostLink(PostData post) {
+    final imageUrl = post.imageUrl;
+    final postLink = imageUrl.startsWith('http') && imageUrl.startsWith('https')
+        ? imageUrl
+        : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/post-media/${post.userId}/$imageUrl';
+
+    Clipboard.setData(ClipboardData(text: postLink));
   }
 }

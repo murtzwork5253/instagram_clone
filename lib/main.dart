@@ -12,7 +12,6 @@ import 'l10n/app_localizations.dart';
 import 'providers/language_provider.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/push_notification_service.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 // Create a global navigator key that can be used throughout the app
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -95,8 +94,7 @@ void main() async {
     );
     print("Supabase initialized successfully");
 
-    // Request permissions after Firebase is initialized
-    await _requestAllPermissions();
+    
 
     // Setup FCM token handling
     await _setupInitialFCMToken();
@@ -129,39 +127,7 @@ void main() async {
   );
 }
 
-Future<void> _requestAllPermissions() async {
-  // List of permissions needed for Instagram-like app
-  final permissions = [
-    Permission.camera,
-    Permission.microphone,
-    Permission.storage, // Android < 13
-    Permission.photos,  // iOS
-    Permission.notification,
-    Permission.videos,  // iOS 17+
-    Permission.audio,
-  ];
 
-  try {
-    Map<Permission, PermissionStatus> statuses = await permissions.request();
-
-    // Check which permissions were denied
-    List<Permission> deniedPermissions = [];
-    statuses.forEach((permission, status) {
-      if (status.isDenied || status.isPermanentlyDenied) {
-        deniedPermissions.add(permission);
-      }
-    });
-
-    if (deniedPermissions.isNotEmpty) {
-      print('Denied permissions: ${deniedPermissions.map((p) => p.toString()).join(', ')}');
-      // You can show a dialog here explaining why permissions are needed
-    } else {
-      print('All permissions granted successfully');
-    }
-  } catch (e) {
-    print('Error requesting permissions: $e');
-  }
-}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

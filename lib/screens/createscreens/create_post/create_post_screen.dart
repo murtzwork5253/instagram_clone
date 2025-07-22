@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // For MissingPluginException
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
@@ -336,25 +337,34 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
   }
 
   Future<void> _pickImageFromCamera() async {
-    try {
-      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
-      if (pickedFile != null) {
-        if (mounted) {
-          setState(() {
-            _selectedMedia = pickedFile;
-            _currentStage = PostCreationStage.postDetails; // Move to details stage
-          });
+    final cameraStatus = await Permission.camera.request();
+    if (cameraStatus.isGranted) {
+      try {
+        final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
+        if (pickedFile != null) {
+          if (mounted) {
+            setState(() {
+              _selectedMedia = pickedFile;
+              _currentStage = PostCreationStage.postDetails; // Move to details stage
+            });
+          }
+        }
+      } catch (e) {
+        debugPrint('Error picking image from camera: $e');
+        if (mounted && e is MissingPluginException) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Camera permission denied or plugin not configured.')),
+          );
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to open camera: $e')),
+          );
         }
       }
-    } catch (e) {
-      debugPrint('Error picking image from camera: $e');
-      if (mounted && e is MissingPluginException) {
+    } else {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission denied or plugin not configured.')),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to open camera: $e')),
+          const SnackBar(content: Text('Camera permission is required to take photos.')),
         );
       }
     }

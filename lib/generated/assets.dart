@@ -13,6 +13,7 @@ class Assets {
   static const String authSignupWithEmailScreen = 'lib/screens/auth/signup_with_email_screen.dart';
   static const String authSignupWithMobileScreen = 'lib/screens/auth/signup_with_mobile_screen.dart';
   static const String chatscreenChatScreen = 'lib/screens/chatscreen/chat_screen.dart';
+  static const String chatscreenFullScreenImageViewer = 'lib/screens/chatscreen/full_screen_image_viewer.dart';
   static const String chatscreenMessageService = 'lib/screens/chatscreen/message_service.dart';
   static const String chatscreenNewChatDialog = 'lib/screens/chatscreen/new_chat_dialog.dart';
   static const String commentscreenCommentSection = 'lib/screens/commentscreen/comment_section.dart';
@@ -56,6 +57,7 @@ class Assets {
   static const String imagesReelblack = 'assets/images/reelblack.png';
   static const String imagesUser = 'assets/images/user.png';
   static const String imagesVideo = 'assets/images/video.png';
+  static const String instagramClone = '.env';
   static const String l10nAppEn = 'lib/l10n/app_en.arb';
   static const String l10nAppEs = 'lib/l10n/app_es.arb';
   static const String l10nAppGu = 'lib/l10n/app_gu.arb';
@@ -66,7 +68,6 @@ class Assets {
   static const String libMain = 'lib/main.dart';
   static const String modelModels = 'lib/screens/chatscreen/model/models.dart';
   static const String modelNotificationModel = 'lib/screens/notificationscreen/model/notification_model.dart';
-  static const String moonApp = '.env';
   static const String notificationscreenNotificationScreen = 'lib/screens/notificationscreen/notification_screen.dart';
   static const String profilescreenBlockedUsersScreen = 'lib/screens/profilescreen/blocked_users_screen.dart';
   static const String profilescreenCurrentUserProfile = 'lib/screens/profilescreen/current_user_profile.dart';
@@ -83,7 +84,7 @@ class Assets {
   static const String reelsScreenReelPlayer = 'lib/screens/reels_screen/reel_player.dart';
   static const String reelsScreenReelProvider = 'lib/screens/reels_screen/reel_provider.dart';
   static const String reelsScreenReelsScreen = 'lib/screens/reels_screen/reels_screen.dart';
-  static const String savedPsotsSavedPostScreen = 'lib/screens/saved-psots/saved_post_screen.dart';
+  static const String savedPostsSavedPostScreen = 'lib/screens/saved_posts/saved_post_screen.dart';
   static const String screensRegisterPage = 'lib/screens/register_page.dart';
   static const String searchscreenSearchScreen = 'lib/screens/searchscreen/search_screen.dart';
   static const String searchscreenSearchScreenState = 'lib/screens/searchscreen/search_screen_state.dart';
@@ -92,6 +93,7 @@ class Assets {
   static const String servicesAccountManager = 'lib/services/account_manager.dart';
   static const String servicesBlockedUsersService = 'lib/services/blocked_users_service.dart';
   static const String servicesInstaDataProvider = 'lib/services/insta_data_provider.dart';
+  static const String servicesPushNotificationService = 'lib/services/push_notification_service.dart';
   static const String servicesReportService = 'lib/services/report_service.dart';
   static const String servicesReportUserService = 'lib/services/report_user_service.dart';
   static const String servicesSupabaseService = 'lib/services/supabase_service.dart';

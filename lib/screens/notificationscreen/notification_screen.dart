@@ -126,6 +126,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
           _navigateToPost(notification.postId!);
         }
         break;
+      case 'messages':
+        // Handle messages notification
+        break;
+      default:
+        break;
     }
   }
 
@@ -264,6 +269,8 @@ class NotificationTile extends StatelessWidget {
         return '$senderName liked your reel';
       case 'story_like':
         return '$senderName liked your story';
+      case 'reel_comment':
+        return '$senderName commented on your reel';
       case 'comment':
         return '$senderName commented on your post';
       case 'comment_like':
@@ -274,6 +281,8 @@ class NotificationTile extends StatelessWidget {
         return '$senderName mentioned you in a post';
       case 'story':
         return '$senderName posted a new story';
+      case 'messages':
+        return '$senderName sent you a message';
       default:
         return 'New notification';
     }
@@ -336,6 +345,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           follows: _preferences!.follows,
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'comments':
@@ -346,6 +356,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           follows: _preferences!.follows,
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'follows':
@@ -356,6 +367,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           follows: value,
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'mentions':
@@ -366,6 +378,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           follows: _preferences!.follows,
           mentions: value,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'stories':
@@ -376,6 +389,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           follows: _preferences!.follows,
           mentions: _preferences!.mentions,
           stories: value,
+          messages: _preferences!.messages,
+        );
+        break;
+      case 'messages':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: _preferences!.likes,
+          comments: _preferences!.comments,
+          follows: _preferences!.follows,
+          mentions: _preferences!.mentions,
+          stories: _preferences!.stories,
+          messages: value,
         );
         break;
       default:
@@ -408,7 +433,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           ),
           SwitchListTile(
             title: const Text('Comments'),
-            subtitle: const Text('Get notified when someone comments on your posts'),
+            subtitle: const Text('Get notified when someone comments on your posts/reel'),
             value: _preferences!.comments,
             onChanged: (value) => _updatePreference('comments', value),
           ),
@@ -426,9 +451,15 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           ),
           SwitchListTile(
             title: const Text('Stories'),
-            subtitle: const Text('Get notified when someone posts a story'),
+            subtitle: const Text('Get notified when someone likes your story'),
             value: _preferences!.stories,
             onChanged: (value) => _updatePreference('stories', value),
+          ),
+          SwitchListTile(
+            title: const Text('Messages'),
+            subtitle: const Text('Get notified when someone sends you a message'),
+            value: _preferences!.messages,
+            onChanged: (value) => _updatePreference('messages', value),
           ),
         ],
       ),

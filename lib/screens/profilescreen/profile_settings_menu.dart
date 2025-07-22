@@ -1,6 +1,5 @@
 // profile_settings_menu.dart
 import 'package:Instagram/screens/homescreen/home_screen.dart';
-import 'package:Instagram/screens/saved-psots/saved_post_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
@@ -21,6 +20,8 @@ import '../auth/service/auth_service.dart';
 import '../profilescreen/blocked_users_screen.dart';
 import 'package:Instagram/screens/notificationscreen/service/notification_service.dart';
 import 'package:Instagram/screens/notificationscreen/model/notification_model.dart';
+
+import '../saved_posts/saved_post_screen.dart';
 
 // Import all the new screens
 // import 'screens/account_screen.dart';
@@ -805,6 +806,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           follows: _preferences!.follows,
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'comments':
@@ -815,6 +817,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           follows: _preferences!.follows,
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'follows':
@@ -825,6 +828,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           follows: value,
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'mentions':
@@ -835,6 +839,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           follows: _preferences!.follows,
           mentions: value,
           stories: _preferences!.stories,
+          messages: _preferences!.messages,
         );
         break;
       case 'stories':
@@ -845,6 +850,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           follows: _preferences!.follows,
           mentions: _preferences!.mentions,
           stories: value,
+          messages: _preferences!.messages,
+        );
+        break;
+      case 'messages':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: _preferences!.likes,
+          comments: _preferences!.comments,
+          follows: _preferences!.follows,
+          mentions: _preferences!.mentions,
+          stories: _preferences!.stories,
+          messages: value,
         );
         break;
       default:
@@ -912,6 +929,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       onChanged: (value) => _updatePreference('stories', value),
                       activeColor: Colors.blue,
                       secondary: const Icon(Icons.history, color: Colors.white),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Messages', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Get notified when someone sends you a message', style: TextStyle(color: Colors.grey)),
+                      value: _preferences!.messages,
+                      onChanged: (value) => _updatePreference('messages', value),
+                      activeColor: Colors.blue,
+                      secondary: const Icon(Icons.message, color: Colors.white),
                     ),
                   ],
                 ),

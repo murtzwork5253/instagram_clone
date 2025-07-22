@@ -1,15 +1,15 @@
-import 'dart:ffi';
 
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '/screens/chatscreen/model/models.dart'; // NEW: Import the new models file
+import 'full_screen_image_viewer.dart';
 import 'message_service.dart'; // NEW: Import the new message service file
 import 'new_chat_dialog.dart'; // NEW: Import the new chat dialog file
-import '../profilescreen/single_post_view.dart';
 
 // --- Enhanced Chat Screen ---
 class ChatScreen extends StatefulWidget {
@@ -78,6 +78,10 @@ class _ChatScreenState extends State<ChatScreen>
     if (widget.initialChatUserId != null) {
       _selectedChatUserId = widget.initialChatUserId;
       _loadInitialChatUserInfo();
+
+      if(_cameFromProfile){
+        _loadMessages();
+      }
     }
 
     // Optimistic UI: Add initialMessage if provided and not already present
@@ -282,6 +286,78 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  // Add these methods inside the _ChatScreenState class
+
+  Future<void> _pickAndSendImage(ImageSource source) async {
+    if (_selectedChatUserId == null) return;
+
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source,
+      imageQuality: 70, // Compress image to reduce file size
+      maxWidth: 1080,    // Resize image for faster uploads
+    );
+
+    if (image != null) {
+      // Show a temporary loading indicator if needed
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Uploading image...')),
+      );
+
+      final imageUrl = await _messageService.uploadChatImage(
+        imageFile: image,
+        userId: widget.currentUserId,
+      );
+
+      if (imageUrl != null) {
+        await _messageService.sendMessage(
+          senderId: widget.currentUserId,
+          receiverId: _selectedChatUserId!,
+          imageUrl: imageUrl,
+          content: '📷 Photo', // Optional: add content for notifications
+        );
+        _loadMessages(); // Refresh messages after sending
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to upload image. Please try again.')),
+          );
+        }
+      }
+    }
+  }
+
+  void _showImageSourceDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.white),
+                title: const Text('Gallery', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _pickAndSendImage(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera, color: Colors.white),
+                title: const Text('Camera', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _pickAndSendImage(ImageSource.camera);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _scrollToFirstUnreadOrBottom() {
     if (_messages.isEmpty) return;
     final currentUserId = widget.currentUserId;
@@ -344,6 +420,7 @@ class _ChatScreenState extends State<ChatScreen>
         receiverId: _selectedChatUserId!,
         content: messageText,
       );
+      _loadMessages();
 
       // Note: Real-time subscription will handle adding the message to UI
     } catch (e) {
@@ -712,34 +789,6 @@ class _ChatScreenState extends State<ChatScreen>
 
       messageContent = GestureDetector(
         onTap: () async {
-          // final post = PostData(
-          //   id: postId,
-          //   userId: userId,
-          //   username: username,
-          //   profileImageUrl: profileImageUrl,
-          //   imageUrl: imageUrl,
-          //   caption: caption,
-          //   location: '',
-          //   createdAt: DateTime.now(),
-          //   likeCount: 0,
-          //   commentCount: 0,
-          //   isLiked: false,
-          //   isSaved: false,
-          //   disableComments: false,
-          //   use_original_ratio: false,
-          //   image_transformation: '',
-          //   original_aspect_ratio: 1.0,
-          // );
-          // Navigator.push(
-          //   context,
-          //   MaterialPageRoute(
-          //     builder: (_) => SinglePostView(
-          //       posts: [post],
-          //       initialIndex: 0,
-          //       Url: profileImageUrl ?? '',
-          //     ),
-          //   ),
-          // );
         },
         child: Container(
           width: 260,
@@ -837,25 +886,64 @@ class _ChatScreenState extends State<ChatScreen>
           ),
         ),
       );
-    } else if (message.content != null && message.content!.isNotEmpty) {
+    }
+    else if (message.imageUrl != null && message.imageUrl!.isNotEmpty) {
+      print("DEUBG: Image URL is : ${message.imageUrl}");
+      messageContent = GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FullScreenImageViewer(
+                imageUrl: message.imageUrl!,
+                heroTag: 'image_${message.id}', // Unique tag for the Hero animation
+              ),
+            ),
+          );
+        },
+        child: Hero(
+          tag: 'image_${message.id}', // Must be the same unique tag
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12.0),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.65, // Max width 65% of screen
+                maxHeight: MediaQuery.of(context).size.height * 0.4, // Max height 40% of screen
+              ),
+              child: Image.network(
+                message.imageUrl!,
+                fit: BoxFit.cover,
+                // Show a loading indicator while the image is downloading
+                loadingBuilder: (BuildContext context, Widget child, ImageChunkEvent? loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  );
+                },
+                // Show an error icon if the image fails to load
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: Colors.grey[800],
+                  child: const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Icon(Icons.broken_image, color: Colors.white, size: 40),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    else if (message.content != null && message.content!.isNotEmpty) {
       // Render text message
       messageContent = Text(
         message.content!,
         style: const TextStyle(color: Colors.white, fontSize: 16),
-      );
-    } else if (message.imageUrl != null && message.imageUrl!.isNotEmpty) {
-      // Render image message (if you support it)
-      messageContent = Image.network(
-        message.imageUrl!,
-        width: 200,
-        height: 200,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => Container(
-          color: Colors.grey[800],
-          width: 200,
-          height: 200,
-          child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
-        ),
       );
     } else {
       // Fallback for empty/unknown message
@@ -917,11 +1005,7 @@ class _ChatScreenState extends State<ChatScreen>
           children: [
             IconButton(
               icon: const Icon(Icons.camera_alt, color: Colors.blueAccent),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Image sending coming soon!')),
-                );
-              },
+              onPressed: _showImageSourceDialog,
             ),
             Expanded(
               child: TextField(
