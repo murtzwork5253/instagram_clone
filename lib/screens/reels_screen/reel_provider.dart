@@ -94,28 +94,55 @@ class ReelProvider extends ChangeNotifier {
 
   // --- NEW: Preloading Logic ---
   Future<void> preloadController(String reelId) async {
-    // If a controller or an initialization future already exists, don't do anything.
+    // If controller already exists or is being initialized, return
     if (_videoControllers.containsKey(reelId) || _initFutures.containsKey(reelId)) {
       return;
     }
 
-    final reel = reels.firstWhere((r) => r.id == reelId, orElse: () => throw Exception("Reel not found for preloading"));
+    try {
+      final reel = reels.firstWhere(
+              (r) => r.id == reelId,
+          orElse: () => throw Exception("Reel not found for preloading")
+      );
 
-    final controller = VideoPlayerController.network(reel.videoUrl);
+      final controller = VideoPlayerController.networkUrl(Uri.parse(reel.videoUrl));
 
-    // Store the initialization future.
-    final initFuture = controller.initialize().then((_) {
-      // Once initialized, store the controller and remove the future from the map.
-      _videoControllers[reelId] = controller;
+      // Store the initialization future
+      final initFuture = controller.initialize().timeout(
+        Duration(seconds: 10), // Add timeout
+        onTimeout: () {
+          controller.dispose();
+          throw Exception('Video initialization timeout');
+        },
+      ).then((_) {
+        if (controller.value.isInitialized) {
+          _videoControllers[reelId] = controller;
+          print("✅ Successfully preloaded reel: $reelId");
+        }
+      }).catchError((error) {
+        print("❌ Error preloading reel $reelId: $error");
+        controller.dispose();
+      }).whenComplete(() {
+        _initFutures.remove(reelId);
+      });
+
+      _initFutures[reelId] = initFuture;
+
+      // For the first reel, wait for initialization to complete
+      if (reels.isNotEmpty && reels[0].id == reelId) {
+        await initFuture;
+      }
+
+    } catch (e) {
+      print("❌ Exception in preloadController for $reelId: $e");
       _initFutures.remove(reelId);
-      print("✅ Preloaded and initialized reel: ${reel.id}");
-    }).catchError((error) {
-      print("❌ Error preloading reel ${reel.id}: $error");
-      _initFutures.remove(reelId); // Also remove on error
-      controller.dispose(); // Clean up the failed controller
-    });
+    }
+  }
 
-    _initFutures[reelId] = initFuture;
+  // Add this new method to your ReelProvider class
+  bool isControllerReady(String reelId) {
+    final controller = _videoControllers[reelId];
+    return controller != null && controller.value.isInitialized;
   }
 
   // --- NEW: Method to handle preloading adjacent reels ---
@@ -264,6 +291,22 @@ class ReelProvider extends ChangeNotifier {
       }
 
       print('✅ Fetched ${reels.length} reels');
+      if (reels.isNotEmpty) {
+        // Preload first reel with higher priority
+        await preloadController(reels[0].id);
+        print('🎯 Priority preloaded first reel: ${reels[0].id}');
+
+        // Preload second and third reels in background
+        if (reels.length > 1) {
+          preloadController(reels[1].id); // Don't await, run in background
+          print('⏳ Background preloading second reel: ${reels[1].id}');
+        }
+
+        if (reels.length > 2) {
+          preloadController(reels[2].id); // Don't await, run in background
+          print('⏳ Background preloading third reel: ${reels[2].id}');
+        }
+      }
     } catch (e, st) {
       print('❌ Error fetching reels: $e');
       print(st);

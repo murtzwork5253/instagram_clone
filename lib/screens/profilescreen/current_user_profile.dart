@@ -802,7 +802,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: OutlinedButton(
-              onPressed: () {},
+              onPressed: () {
+                _showErrorSnackBar("Share profile not implemented yet");
+              },
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.white24),
                 padding: const EdgeInsets.symmetric(vertical: 10),

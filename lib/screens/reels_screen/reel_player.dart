@@ -55,15 +55,18 @@ class _ReelPlayerState extends State<ReelPlayer>
   @override
   void initState() {
     super.initState();
-    // MODIFIED: Get controller from provider
+
+    // Get controller from provider - it should be preloaded
     _videoController = Provider.of<ReelProvider>(context, listen: false)
         .getControllerForReel(widget.reel.id);
 
-    // If the controller was pre-loaded and is ready, build Chewie
+    // If controller exists and is initialized, build Chewie immediately
     if (_videoController != null && _videoController!.value.isInitialized) {
       _buildChewieController();
+      print('✅ Using preloaded controller for reel ${widget.reel.id}');
     } else {
-      // If it wasn't preloaded for some reason, initialize it now
+      // If not preloaded, initialize it now
+      print('⚠️ Controller not preloaded for reel ${widget.reel.id}, initializing...');
       _initializeVideo();
     }
 
@@ -77,14 +80,14 @@ class _ReelPlayerState extends State<ReelPlayer>
 
   // NEW: A separate method to build the Chewie controller
   void _buildChewieController() {
-    if (_videoController == null) return;
+    if (_videoController == null || !_videoController!.value.isInitialized) return;
 
     // Set video volume before creating Chewie controller
     _handleVideoAudio();
 
     _chewieController = ChewieController(
       videoPlayerController: _videoController!,
-      autoPlay: false, // VisibilityDetector will handle this
+      autoPlay: widget.isFirstReel, // Auto-play first reel immediately
       looping: true,
       showControls: false,
     );
@@ -92,6 +95,15 @@ class _ReelPlayerState extends State<ReelPlayer>
     // This ensures the widget rebuilds once Chewie is ready
     if (mounted) {
       setState(() {});
+
+      // For first reel, ensure it starts playing immediately
+      if (widget.isFirstReel) {
+        Future.delayed(Duration(milliseconds: 100), () {
+          if (mounted && _videoController != null) {
+            _videoController!.play();
+          }
+        });
+      }
     }
   }
 
@@ -299,27 +311,28 @@ class _ReelPlayerState extends State<ReelPlayer>
   void _onVisibilityChanged(VisibilityInfo info) async {
     if (!mounted) return;
 
-    // Use the controller from the state
     final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) {
+      print('⚠️ Controller not ready for reel ${widget.reel.id}');
+      return;
+    }
 
-    if (controller != null && controller.value.isInitialized) {
-      if (info.visibleFraction > 0.8) {
-        if (!controller.value.isPlaying) {
-          try {
-            await controller.play();
-            print('✅ Video started for reel ${widget.reel.id}');
-          } catch (e) {
-            print('❌ Error starting video for reel ${widget.reel.id}: $e');
-          }
+    if (info.visibleFraction > 0.8) {
+      if (!controller.value.isPlaying) {
+        try {
+          await controller.play();
+          print('✅ Video started for reel ${widget.reel.id}');
+        } catch (e) {
+          print('❌ Error starting video for reel ${widget.reel.id}: $e');
         }
-      } else { // Handles any visibility less than fully visible
-        if (controller.value.isPlaying) {
-          try {
-            await controller.pause();
-            print('⏸️ Video paused for reel ${widget.reel.id}');
-          } catch (e) {
-            print('❌ Error pausing video for reel ${widget.reel.id}: $e');
-          }
+      }
+    } else {
+      if (controller.value.isPlaying) {
+        try {
+          await controller.pause();
+          print('⏸️ Video paused for reel ${widget.reel.id}');
+        } catch (e) {
+          print('❌ Error pausing video for reel ${widget.reel.id}: $e');
         }
       }
     }

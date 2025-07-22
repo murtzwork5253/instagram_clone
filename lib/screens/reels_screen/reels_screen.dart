@@ -17,37 +17,31 @@ class ReelsScreen extends StatefulWidget {
 
 class _ReelsScreenState extends State<ReelsScreen>
     with TickerProviderStateMixin {
-// Add these variables to your ReelScreen class
   AnimationController? _appBarController;
   Animation<double>? _appBarAnimation;
-  // NEW: Add a PageController
   late PageController _pageController;
   int _currentPage = 0;
-
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    // NEW: Initialize PageController
     _pageController = PageController();
 
-    // NEW: Add listener to trigger preloading
     _pageController.addListener(() {
       final newPage = _pageController.page?.round();
       if (newPage != null && newPage != _currentPage) {
         _currentPage = newPage;
-        // Tell the provider to preload reels around the new page
         Provider.of<ReelProvider>(context, listen: false)
             .preloadAdjacentReels(_currentPage);
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ReelProvider>(context, listen: false).fetchReels();
-    });
+
     _appBarController = AnimationController(
       duration: const Duration(milliseconds: 300),
-      vsync: this, // Make sure your class extends TickerProviderStateMixin
+      vsync: this,
     );
+
     _appBarAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
@@ -56,14 +50,51 @@ class _ReelsScreenState extends State<ReelsScreen>
       curve: Curves.easeInOut,
     ));
 
-    // Start the animation or control it based on your logic
-    _appBarController?.forward();
+    // Initialize reels data first, then mark as initialized
+    _initializeReels();
   }
 
-  // Don't forget to dispose
+  Future<void> _initializeReels() async {
+    try {
+      final reelProvider = Provider.of<ReelProvider>(context, listen: false);
+
+      // Fetch reels first
+      await reelProvider.fetchReels();
+
+      // Wait a bit longer for the first reel to be properly preloaded
+      if (reelProvider.reels.isNotEmpty) {
+        // Keep checking if first reel is ready, with timeout
+        int attempts = 0;
+        while (!reelProvider.isControllerReady(reelProvider.reels[0].id) && attempts < 20) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          attempts++;
+        }
+
+        if (reelProvider.isControllerReady(reelProvider.reels[0].id)) {
+          print('✅ First reel controller is ready');
+        } else {
+          print('⚠️ First reel controller not ready after timeout, but continuing...');
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+        _appBarController?.forward();
+      }
+    } catch (e) {
+      print('Error initializing reels: $e');
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
-    // NEW: Dispose the PageController
     _pageController.dispose();
     _appBarController?.dispose();
     super.dispose();
@@ -73,7 +104,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget build(BuildContext context) {
     return Consumer<ReelProvider>(
       builder: (context, reelsProvider, child) {
-        if (reelsProvider.isLoading) {
+        if (reelsProvider.isLoading || !_isInitialized) {
           return const Scaffold(
             backgroundColor: Colors.black,
             body: Center(
@@ -100,16 +131,24 @@ class _ReelsScreenState extends State<ReelsScreen>
           backgroundColor: Colors.black,
           body: Stack(
             children: [
-              // MODIFIED: Add the controller to PageView
               PageView.builder(
-                controller: _pageController, // MODIFIED
+                controller: _pageController,
                 scrollDirection: Axis.vertical,
                 itemCount: reels.length,
+                onPageChanged: (index) {
+                  // Additional callback for page changes
+                  setState(() {
+                    _currentPage = index;
+                  });
+
+                  // Preload adjacent reels
+                  reelsProvider.preloadAdjacentReels(index);
+                },
                 itemBuilder: (ctx, index) {
                   final reel = reels[index];
                   return ReelPlayer(
                     reel: reel,
-                    isFirstReel: index == 0,
+                    isFirstReel: index == 0, // Pass index for debugging
                   );
                 },
               ),
@@ -119,12 +158,10 @@ class _ReelsScreenState extends State<ReelsScreen>
                 left: 0,
                 right: 0,
                 child: AnimatedBuilder(
-                  animation:
-                      _appBarAnimation ?? const AlwaysStoppedAnimation(1.0),
+                  animation: _appBarAnimation ?? const AlwaysStoppedAnimation(1.0),
                   builder: (context, child) {
                     return Container(
-                      height:
-                          MediaQuery.of(context).padding.top + kToolbarHeight,
+                      height: MediaQuery.of(context).padding.top + kToolbarHeight,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
@@ -168,7 +205,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                                     context,
                                     MaterialPageRoute(
                                       builder: (context) =>
-                                          const CreatePostScreen(initialTabIndex: 2,),
+                                      const CreatePostScreen(initialTabIndex: 2),
                                     ),
                                   );
                                 },
