@@ -1,3 +1,4 @@
+import 'package:Instagram/screens/homescreen/story_views_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -34,6 +35,9 @@ class _StoryViewScreenState extends State<StoryViewScreen>
   bool _showUI = true;
   List<TaggedUser> _taggedUsers = [];
   final UserTaggingService _taggingService = UserTaggingService();
+  // Story views feature state
+  List<StoryViewer> _topViewers = [];
+  int _totalViewsCount = 0;
 
   // Like feature state
   bool _isLiked = false;
@@ -60,6 +64,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     _markStoryAsViewed(widget.stories[_currentIndex].id!);
     _loadTaggedUsers(widget.stories[_currentIndex].id!);
     _checkIfLiked(widget.stories[_currentIndex].id!);
+    _loadStoryViewers(widget.stories[_currentIndex].id!);
 
     // FIX: Move precaching to post-frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -148,6 +153,7 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     _markStoryAsViewed(widget.stories[index].id!);
     _loadTaggedUsers(widget.stories[index].id!);
     _checkIfLiked(widget.stories[index].id!);
+    _loadStoryViewers(widget.stories[index].id!);
     _resumeTimer();
     _precacheStoryMedia(index);
   }
@@ -167,6 +173,40 @@ class _StoryViewScreenState extends State<StoryViewScreen>
       return '${difference.inMinutes}m';
     } else {
       return 'Just now';
+    }
+  }
+
+  Future<void> _loadStoryViewers(String storyId) async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) return;
+
+      final response = await Supabase.instance.client
+          .rpc('get_story_viewers', params: {
+        'story_id_param': storyId,
+        'current_user_id': currentUserId,
+      });
+
+      print('Story viewers for $storyId: $response'); // Debug log
+
+      final viewersList = <StoryViewer>[];
+      for (final item in response) {
+        viewersList.add(StoryViewer(
+          viewerId: item['viewer_id'],
+          username: item['username'] ?? 'Unknown',
+          profileImageUrl: item['profile_image_url'],
+          viewedAt: DateTime.parse(item['viewed_at']),
+        ));
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalViewsCount = viewersList.length;
+          _topViewers = viewersList.take(3).toList();
+        });
+      }
+    } catch (e) {
+      print('Error loading story viewers: $e');
     }
   }
 
@@ -321,8 +361,39 @@ class _StoryViewScreenState extends State<StoryViewScreen>
     final story = widget.stories[_currentIndex];
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
+    if (currentUserId != null && currentUserId != story.userId) {
+      _recordStoryView(storyId, currentUserId);
+    }
     Provider.of<InstaDataProvider>(context, listen: false)
         .viewStory(storyId, story.userId);
+
+  }
+
+  Future<void> _recordStoryView(String storyId, String viewerId) async {
+    try {
+      // print('Attempting to record story view - Story ID: $storyId, Viewer ID: $viewerId');
+
+      final result = await Supabase.instance.client
+          .from('story_views')
+          .upsert({
+        'story_id': storyId,
+        'viewer_id': viewerId,
+        'viewed_at': DateTime.now().toIso8601String(),
+      });
+
+      // print('Story view recorded successfully: $result');
+
+      // Verify the record was created
+      final verification = await Supabase.instance.client
+          .from('story_views')
+          .select('*')
+          .eq('story_id', storyId)
+          .eq('viewer_id', viewerId);
+
+      // print('Verification of recorded view: $verification');
+    } catch (e) {
+      print('Error recording story view: $e');
+    }
   }
 
   String? _buildProfileImageUrl(String? url) {
@@ -625,9 +696,92 @@ class _StoryViewScreenState extends State<StoryViewScreen>
                 ),
               ),
             ),
+
+            //Bottom Left Story Views
+            Visibility(
+              visible: currentStory.isMe && _showUI,
+              child: Positioned(
+                bottom: 40,
+                left: 20,
+                child: GestureDetector(
+                  onTap: () async {
+                    _pauseTimer();
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => StoryViewsScreen(
+                          storyId: currentStory.id!,
+                        ),
+                      ),
+                    );
+                    _resumeTimer();
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min, // Add this
+                    children: [
+                      // Top 3 viewers profile pics
+                      if (_topViewers.isNotEmpty)
+                        SizedBox( // Wrap Container with SizedBox to give it constraints
+                          width: 80, // Set a fixed width
+                          height: 30,
+                          child: Stack(
+                            children: [
+                              for (int i = 0; i < _topViewers.length && i < 3; i++)
+                                Positioned(
+                                  left: i * 20.0,
+                                  child: Container(
+                                    width: 30, // Add explicit width
+                                    height: 30, // Add explicit height
+                                    child: CircleAvatar(
+                                      radius: 15,
+                                      backgroundColor: Colors.white,
+                                      child: CircleAvatar(
+                                        radius: 13,
+                                        backgroundImage: _topViewers[i].profileImageUrl != null
+                                            ? CachedNetworkImageProvider(
+                                            _buildProfileImageUrl(_topViewers[i].profileImageUrl)!)
+                                            : null,
+                                        child: _topViewers[i].profileImageUrl == null
+                                            ? const Icon(Icons.person, size: 15, color: Colors.grey)
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _totalViewsCount > 0 ? 'Views' : 'Views',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
+class StoryViewer {
+  final String viewerId;
+  final String username;
+  final String? profileImageUrl;
+  final DateTime viewedAt;
+
+  StoryViewer({
+    required this.viewerId,
+    required this.username,
+    this.profileImageUrl,
+    required this.viewedAt,
+  });
 }

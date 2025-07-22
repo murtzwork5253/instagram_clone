@@ -37,6 +37,7 @@ class Assets {
   static const String homescreenHomeScreen = 'lib/screens/homescreen/home_screen.dart';
   static const String homescreenHomeScreenFeed = 'lib/screens/homescreen/home_screen_feed.dart';
   static const String homescreenStoryViewScreen = 'lib/screens/homescreen/story_view_screen.dart';
+  static const String homescreenStoryViewsScreen = 'lib/screens/homescreen/story_views_screen.dart';
   static const String iconAddPostIcon = 'assets/icon/add_post_icon.png';
   static const String iconFacebook = 'assets/icon/facebook.png';
   static const String iconIcon = 'assets/icon/Icon.png';
