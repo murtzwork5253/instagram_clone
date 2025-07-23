@@ -261,4 +261,72 @@ class MessageService {
       return null;
     }
   }
+
+  // Add these methods to your MessageService class
+
+  /// Deletes all messages between two users and removes their chat room
+  Future<void> deleteChatRoom({
+    required String currentUserId,
+    required String otherUserId,
+  }) async {
+    try {
+      // Delete all messages between the two users
+      await _supabaseClient
+          .from('messages')
+          .delete()
+          .or('and(sender_id.eq.$currentUserId,receiver_id.eq.$otherUserId),and(sender_id.eq.$otherUserId,receiver_id.eq.$currentUserId)');
+
+      print('Chat room deleted successfully between $currentUserId and $otherUserId');
+    } catch (e) {
+      print('Error deleting chat room: $e');
+      throw Exception('Failed to delete chat room: $e');
+    }
+  }
+
+  /// Deletes a specific message by ID (optional - for future use)
+  Future<void> deleteMessage(String messageId) async {
+    try {
+      await _supabaseClient
+          .from('messages')
+          .delete()
+          .eq('id', messageId);
+
+      print('Message deleted successfully: $messageId');
+    } catch (e) {
+      print('Error deleting message: $e');
+      throw Exception('Failed to delete message: $e');
+    }
+  }
+
+  /// Deletes a single message by ID (only if current user is the sender)
+  Future<bool> deleteSingleMessage({
+    required String messageId,
+    required String currentUserId,
+  }) async {
+    try {
+      // First check if the current user is the sender of this message
+      final messageCheck = await _supabaseClient
+          .from('messages')
+          .select('sender_id')
+          .eq('id', messageId)
+          .single();
+
+      if (messageCheck['sender_id'] != currentUserId) {
+        throw Exception('You can only delete your own messages');
+      }
+
+      // Delete the message
+      await _supabaseClient
+          .from('messages')
+          .delete()
+          .eq('id', messageId);
+
+      print('Single message deleted successfully: $messageId');
+      return true;
+    } catch (e) {
+      print('Error deleting single message: $e');
+      return false;
+    }
+  }
+
 }

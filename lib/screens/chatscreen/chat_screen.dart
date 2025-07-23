@@ -1,4 +1,4 @@
-
+import 'dart:async';
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,7 +51,11 @@ class _ChatScreenState extends State<ChatScreen>
   bool _isLoadingMessages = false;
   RealtimeChannel? _messagesSubscription;
   bool _cameFromProfile = false; // NEW: Track navigation source
-
+  // Image loading tracking
+  final Set<String> _loadingImages = <String>{};
+  final Set<String> _loadedImages = <String>{};
+  bool _shouldScrollAfterImagesLoad = false;
+  Timer? _scrollDelayTimer;
 
   // For smooth message animations
   final GlobalKey<AnimatedListState> _messageListKey = GlobalKey<AnimatedListState>();
@@ -102,6 +106,7 @@ class _ChatScreenState extends State<ChatScreen>
     _messageController.dispose();
     _scrollController.dispose();
     _messagesSubscription?.unsubscribe();
+    _scrollDelayTimer?.cancel();
     super.dispose();
   }
 
@@ -245,11 +250,17 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   // Load messages initially without stream
+  // Replace the existing _loadMessages method
+
   Future<void> _loadMessages() async {
     if (_selectedChatUserId == null) return;
 
     setState(() {
       _isLoadingMessages = true;
+      // Reset image tracking
+      _loadingImages.clear();
+      _loadedImages.clear();
+      _shouldScrollAfterImagesLoad = false;
     });
 
     try {
@@ -270,8 +281,29 @@ class _ChatScreenState extends State<ChatScreen>
           _isFirstLoad = false;
         });
 
-        // Scroll to first unread or bottom
-        _scrollToFirstUnreadOrBottom();
+        // Check if there are images in messages
+        final hasImages = _messages.any((msg) =>
+        msg.imageUrl != null && msg.imageUrl!.isNotEmpty);
+
+        if (hasImages) {
+          // Set flag to scroll after images load
+          _shouldScrollAfterImagesLoad = true;
+
+          // Also set a fallback timer in case some images fail to trigger callbacks
+          Timer(const Duration(seconds: 3), () {
+            if (_shouldScrollAfterImagesLoad && mounted) {
+              print('Fallback scroll triggered after 3 seconds');
+              _performDelayedScroll();
+            }
+          });
+        } else {
+          // No images, scroll immediately but with small delay for ListView to build
+          Timer(const Duration(milliseconds: 300), () {
+            if (mounted) {
+              _executeScroll();
+            }
+          });
+        }
 
         // Mark messages as read
         _markCurrentChatAsRead();
@@ -284,6 +316,16 @@ class _ChatScreenState extends State<ChatScreen>
         });
       }
     }
+  }
+
+  // Improved scroll method
+  void _scrollToAppropriatePosition() {
+    // This method is now mainly used for immediate scrolling without images
+    Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _executeScroll();
+      }
+    });
   }
 
   // Add these methods inside the _ChatScreenState class
@@ -358,25 +400,9 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  void _scrollToFirstUnreadOrBottom() {
-    if (_messages.isEmpty) return;
-    final currentUserId = widget.currentUserId;
-    int firstUnreadIndex = _messages.indexWhere((msg) =>
-      msg.isRead == false && msg.receiverId == currentUserId
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        if (firstUnreadIndex != -1) {
-          // Scroll to the first unread message
-          final position = firstUnreadIndex * 80.0; // Approximate message height
-          _scrollController.jumpTo(position);
-        } else {
-          // Scroll to the bottom
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        }
-      }
-    });
-  }
+  // void _scrollToFirstUnreadOrBottom() {
+  //   _scrollToAppropriatePosition(); // Use the new improved method
+  // }
 
   Future<void> _markCurrentChatAsRead() async {
     if (_selectedChatUserId == null) return;
@@ -394,15 +420,18 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  // Update _scrollToBottomSmooth for new message arrivals
   void _scrollToBottomSmooth() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      Timer(const Duration(milliseconds: 100), () {
+        if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     });
   }
 
@@ -676,6 +705,8 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  // Replace the existing _showDeleteChatDialog method in ChatScreen
+
   void _showDeleteChatDialog() {
     showDialog(
       context: context,
@@ -683,7 +714,7 @@ class _ChatScreenState extends State<ChatScreen>
         backgroundColor: Colors.grey[900],
         title: const Text('Delete Chat', style: TextStyle(color: Colors.white)),
         content: Text(
-          'Are you sure you want to delete this chat with ${_selectedChatUsername}?',
+          'Are you sure you want to delete this chat with ${_selectedChatUsername}? This will permanently delete all messages and cannot be undone.',
           style: TextStyle(color: Colors.grey[300]),
         ),
         actions: [
@@ -692,18 +723,70 @@ class _ChatScreenState extends State<ChatScreen>
             child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // TODO: Implement delete chat functionality
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Delete chat feature coming soon!')),
-              );
+            onPressed: () async {
+              Navigator.of(context).pop(); // Close dialog first
+              await _deleteChatRoom();
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
+  }
+
+// Add this new method to handle chat deletion
+  Future<void> _deleteChatRoom() async {
+    if (_selectedChatUserId == null) return;
+
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deleting chat...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Delete the chat room
+      await _messageService.deleteChatRoom(
+        currentUserId: widget.currentUserId,
+        otherUserId: _selectedChatUserId!,
+      );
+
+      // Clear current chat state
+      setState(() {
+        _selectedChatUserId = null;
+        _selectedChatUsername = null;
+        _selectedChatUserProfileUrl = null;
+        _messages.clear();
+      });
+
+      // Refresh chat rooms list
+      await _loadChatRooms();
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chat deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Call onMessageRead to update parent if needed
+      widget.onMessageRead?.call();
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildChatMessages() {
@@ -888,7 +971,13 @@ class _ChatScreenState extends State<ChatScreen>
       );
     }
     else if (message.imageUrl != null && message.imageUrl!.isNotEmpty) {
-      print("DEUBG: Image URL is : ${message.imageUrl}");
+      print("DEBUG: Image URL is : ${message.imageUrl}");
+
+      // Track this image as loading if not already loaded
+      if (!_loadedImages.contains(message.id)) {
+        _loadingImages.add(message.id);
+      }
+
       messageContent = GestureDetector(
         onTap: () {
           Navigator.push(
@@ -896,26 +985,29 @@ class _ChatScreenState extends State<ChatScreen>
             MaterialPageRoute(
               builder: (_) => FullScreenImageViewer(
                 imageUrl: message.imageUrl!,
-                heroTag: 'image_${message.id}', // Unique tag for the Hero animation
+                heroTag: 'image_${message.id}',
               ),
             ),
           );
         },
         child: Hero(
-          tag: 'image_${message.id}', // Must be the same unique tag
+          tag: 'image_${message.id}',
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12.0),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.65, // Max width 65% of screen
-                maxHeight: MediaQuery.of(context).size.height * 0.4, // Max height 40% of screen
+                maxWidth: MediaQuery.of(context).size.width * 0.65,
+                maxHeight: MediaQuery.of(context).size.height * 0.4,
               ),
               child: Image.network(
                 message.imageUrl!,
                 fit: BoxFit.cover,
-                // Show a loading indicator while the image is downloading
                 loadingBuilder: (BuildContext context, Widget child, ImageChunkEvent? loadingProgress) {
-                  if (loadingProgress == null) return child;
+                  if (loadingProgress == null) {
+                    // Image loaded successfully
+                    _onImageLoaded(message.id);
+                    return child;
+                  }
                   return Center(
                     child: CircularProgressIndicator(
                       color: Colors.white,
@@ -925,14 +1017,17 @@ class _ChatScreenState extends State<ChatScreen>
                     ),
                   );
                 },
-                // Show an error icon if the image fails to load
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: Colors.grey[800],
-                  child: const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Icon(Icons.broken_image, color: Colors.white, size: 40),
-                  ),
-                ),
+                errorBuilder: (context, error, stackTrace) {
+                  // Remove from loading set on error
+                  _onImageLoadError(message.id);
+                  return Container(
+                    color: Colors.grey[800],
+                    child: const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Icon(Icons.broken_image, color: Colors.white, size: 40),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -957,41 +1052,225 @@ class _ChatScreenState extends State<ChatScreen>
       ),
       child: FadeTransition(
         opacity: animation,
-        child: Align(
-          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: message.sharedPost != null
-                  ? (isMe ? Colors.blue[900] : Colors.grey[850])
-                  : (isMe ? Colors.blue[700] : Colors.grey[700]),
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(12),
-                topRight: const Radius.circular(12),
-                bottomLeft: isMe ? const Radius.circular(12) : const Radius.circular(0),
-                bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(12),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                messageContent,
-                const SizedBox(height: 4),
-                Text(
-                  DateFormat('h:mm a').format(message.createdAt),
-                  style: TextStyle(
-                    color: isMe ? Colors.blue[100] : Colors.grey[300],
-                    fontSize: 10,
-                  ),
+        child: GestureDetector(
+          onLongPress: () {
+            // Only allow deletion of own messages
+            if (message.senderId == widget.currentUserId) {
+              HapticFeedback.mediumImpact();
+              _showMessageDeleteDialog(message);
+            }
+          },
+          child: Align(
+            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: message.sharedPost != null
+                    ? (isMe ? Colors.blue[900] : Colors.grey[850])
+                    : (isMe ? Colors.blue[700] : Colors.grey[700]),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(12),
+                  topRight: const Radius.circular(12),
+                  bottomLeft: isMe ? const Radius.circular(12) : const Radius.circular(0),
+                  bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(12),
                 ),
-              ],
+              ),
+              child: Column(
+                crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  messageContent,
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('h:mm a').format(message.createdAt),
+                    style: TextStyle(
+                      color: isMe ? Colors.blue[100] : Colors.grey[300],
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  // Add these methods to your _ChatScreenState class
+
+  // Replace the image loading callback methods with this even safer version
+
+  void _onImageLoaded(String messageId) {
+    // Use Future.microtask to ensure we're not in build context
+    Future.microtask(() {
+      if (mounted) {
+        _loadingImages.remove(messageId);
+        _loadedImages.add(messageId);
+
+        // Check if all images are loaded and we need to scroll
+        if (_shouldScrollAfterImagesLoad && _loadingImages.isEmpty) {
+          _performDelayedScroll();
+        }
+      }
+    });
+  }
+
+  void _onImageLoadError(String messageId) {
+    // Use Future.microtask to ensure we're not in build context
+    Future.microtask(() {
+      if (mounted) {
+        _loadingImages.remove(messageId);
+        // Don't add to loaded images since it failed
+
+        // Still check if we need to scroll (treat error as "loaded" for scroll purposes)
+        if (_shouldScrollAfterImagesLoad && _loadingImages.isEmpty) {
+          _performDelayedScroll();
+        }
+      }
+    });
+  }
+
+// Update _performDelayedScroll to not use setState directly
+  void _performDelayedScroll() {
+    _shouldScrollAfterImagesLoad = false;
+
+    // Cancel any existing timer
+    _scrollDelayTimer?.cancel();
+
+    // Wait a bit more for any final adjustments
+    _scrollDelayTimer = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) {
+        _executeScroll();
+      }
+    });
+  }
+
+  void _executeScroll() {
+    if (!mounted || !_scrollController.hasClients) return;
+
+    try {
+      final currentUserId = widget.currentUserId;
+
+      // Find first unread message from other user
+      int firstUnreadIndex = -1;
+      for (int i = 0; i < _messages.length; i++) {
+        final msg = _messages[i];
+        if (!msg.isRead &&
+            msg.receiverId == currentUserId &&
+            msg.senderId == _selectedChatUserId) {
+          firstUnreadIndex = i;
+          break;
+        }
+      }
+
+      final maxScrollExtent = _scrollController.position.maxScrollExtent;
+
+      if (firstUnreadIndex != -1 && maxScrollExtent > 0) {
+        // Scroll to first unread message with some padding
+        final targetPosition = (maxScrollExtent * 0.7).clamp(0.0, maxScrollExtent);
+
+        _scrollController.animateTo(
+          targetPosition,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        // No unread messages, scroll to bottom
+        _scrollController.animateTo(
+          maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    } catch (e) {
+      print('Error during delayed scroll: $e');
+    }
+  }
+
+  void _showMessageDeleteDialog(Message message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Delete Message', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to delete this message? This action cannot be undone.',
+          style: TextStyle(color: Colors.grey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _deleteSingleMessage(message);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSingleMessage(Message message) async {
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deleting message...'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 1),
+        ),
+      );
+
+      final success = await _messageService.deleteSingleMessage(
+        messageId: message.id,
+        currentUserId: widget.currentUserId,
+      );
+
+      if (success) {
+        // Remove message from local list
+        setState(() {
+          _messages.removeWhere((m) => m.id == message.id);
+        });
+
+        // Refresh chat rooms to update last message if needed
+        _loadChatRooms();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Message deleted'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to delete message'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
 
   Widget _buildMessageInput() {
     return Padding(
@@ -1134,8 +1413,8 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  // Replace the existing _buildChatRoomItem method in ChatScreen
   Widget _buildChatRoomItem(ChatRoom chatRoom, int index) {
-
     final String displayUrl;
     if(chatRoom.otherUserProfileUrl == null){
       displayUrl = '';
@@ -1162,6 +1441,7 @@ class _ChatScreenState extends State<ChatScreen>
             chatRoom.otherUsername,
             chatRoom.otherUserProfileUrl,
           ),
+          onLongPress: () => _showDeleteChatFromListDialog(chatRoom), // Add long press
           child: Container(
             padding: const EdgeInsets.all(12),
             child: Row(
@@ -1210,20 +1490,6 @@ class _ChatScreenState extends State<ChatScreen>
                         ],
                       ),
                       const SizedBox(height: 4),
-                      // Text(
-                      //   _getLastMessagePreview(chatRoom),
-                      //   style: TextStyle(
-                      //     color: hasUnreadMessages
-                      //         ? Colors.white.withOpacity(0.9)
-                      //         : Colors.grey[400],
-                      //     fontSize: 14,
-                      //     fontWeight: hasUnreadMessages
-                      //         ? FontWeight.w500
-                      //         : FontWeight.normal,
-                      //   ),
-                      //   maxLines: 1,
-                      //   overflow: TextOverflow.ellipsis,
-                      // ),
                       // Time and status
                       Text(
                         chatRoom.status.displayText, // Use the new status display
@@ -1244,14 +1510,7 @@ class _ChatScreenState extends State<ChatScreen>
                 Container(
                   margin: const EdgeInsets.only(left: 8),
                   child: IconButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Camera feature coming soon!'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    },
+                    onPressed: () => _sendCameraImageToChat(chatRoom), // Updated functionality
                     icon: Icon(
                       Icons.camera_alt_outlined,
                       color: Colors.grey[500],
@@ -1270,6 +1529,148 @@ class _ChatScreenState extends State<ChatScreen>
         ),
       ),
     );
+  }
+
+  // Add this new method for delete dialog from chat list
+  void _showDeleteChatFromListDialog(ChatRoom chatRoom) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Delete Chat', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Are you sure you want to delete this chat with ${chatRoom.otherUsername}? This will permanently delete all messages and cannot be undone.',
+          style: TextStyle(color: Colors.grey[300]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop(); // Close dialog first
+              await _deleteChatFromList(chatRoom);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add this method to handle deletion from chat list
+  Future<void> _deleteChatFromList(ChatRoom chatRoom) async {
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deleting chat...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Delete the chat room
+      await _messageService.deleteChatRoom(
+        currentUserId: widget.currentUserId,
+        otherUserId: chatRoom.otherUserId,
+      );
+
+      // Refresh chat rooms list
+      await _loadChatRooms();
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chat deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Call onMessageRead to update parent if needed
+      widget.onMessageRead?.call();
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendCameraImageToChat(ChatRoom chatRoom) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.camera, // Only camera, not gallery
+      imageQuality: 70, // Compress image to reduce file size
+      maxWidth: 1080,    // Resize image for faster uploads
+    );
+
+    if (image != null) {
+      // Show a temporary loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sending photo to ${chatRoom.otherUsername}...'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      try {
+        // Upload the image
+        final imageUrl = await _messageService.uploadChatImage(
+          imageFile: image,
+          userId: widget.currentUserId,
+        );
+
+        if (imageUrl != null) {
+          // Send the message with the image
+          await _messageService.sendMessage(
+            senderId: widget.currentUserId,
+            receiverId: chatRoom.otherUserId,
+            imageUrl: imageUrl,
+            content: '📷 Photo', // Optional: add content for notifications
+          );
+
+          // Refresh chat rooms to show the new message
+          _loadChatRooms();
+
+          // Show success message
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Photo sent to ${chatRoom.otherUsername}'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to upload image. Please try again.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to send photo: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 
   String _getTimeAgo(DateTime dateTime) {
