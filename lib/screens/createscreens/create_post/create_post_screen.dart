@@ -120,19 +120,17 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
 
   // In your create_post_screen.dart, modify _onTabTap method
   void _onTabTap(int index) {
-    // Dispose current camera resources before switching
-    if (_selectedIndex == 1 || _selectedIndex == 2) {
-      // Coming from Story or Reel - give time for cleanup
-      Future.delayed(const Duration(milliseconds: 300), () {
-        setState(() => _selectedIndex = index);
-        _pageController.animateToPage(index, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-        _centerTab(index);
-      });
-    } else {
-      setState(() => _selectedIndex = index);
-      _pageController.animateToPage(index, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-      _centerTab(index);
-    }
+    // A simpler method to handle tab taps.
+    // The PageController's listener will handle the camera logic.
+    setState(() {
+      _selectedIndex = index;
+    });
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+    _centerTab(index);
   }
 
   void _centerTab(int index) {
@@ -1150,9 +1148,9 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
                       ? _buildGallerySelectionUI()
                       : SingleChildScrollView(child: _buildPostDetailsUI());
                 } else if (index == 1) { // STORY tab content
-                  return CreateStoryContent(cameraService: _cameraService);
+                  return CreateStoryContent(cameraService: _cameraService,isActive: index == _selectedIndex,);
                 } else if (index == 2) { // REEL tab content
-                  return CreateReelContent(cameraService: _cameraService);
+                  return CreateReelContent(cameraService: _cameraService,isActive: index == _selectedIndex,);
                 } else { // LIVE tab content (Placeholder)
                   return const Center(
                     child: Text(

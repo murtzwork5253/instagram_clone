@@ -262,7 +262,37 @@ class MessageService {
     }
   }
 
-  // Add these methods to your MessageService class
+  /// Helper method to delete notifications for specific messages
+  Future<void> _deleteNotificationsForMessages(List<String> messageIds) async {
+    if (messageIds.isEmpty) return;
+
+    try {
+      await _supabaseClient
+          .from('notifications')
+          .delete()
+          .inFilter('messages_id', messageIds);
+
+      print('Deleted notifications for ${messageIds.length} messages');
+    } catch (e) {
+      print('Error deleting notifications for messages: $e');
+      // Don't throw here - we still want to proceed with message deletion
+    }
+  }
+
+  /// Helper method to delete notification for a single message
+  Future<void> _deleteNotificationForMessage(String messageId) async {
+    try {
+      await _supabaseClient
+          .from('notifications')
+          .delete()
+          .eq('messages_id', messageId);
+
+      print('Deleted notification for message: $messageId');
+    } catch (e) {
+      print('Error deleting notification for message: $e');
+      // Don't throw here - we still want to proceed with message deletion
+    }
+  }
 
   /// Deletes all messages between two users and removes their chat room
   Future<void> deleteChatRoom({
@@ -270,11 +300,26 @@ class MessageService {
     required String otherUserId,
   }) async {
     try {
-      // Delete all messages between the two users
-      await _supabaseClient
+      // First, get all message IDs that will be deleted
+      final messagesToDelete = await _supabaseClient
           .from('messages')
-          .delete()
+          .select('id')
           .or('and(sender_id.eq.$currentUserId,receiver_id.eq.$otherUserId),and(sender_id.eq.$otherUserId,receiver_id.eq.$currentUserId)');
+
+      final messageIds = messagesToDelete
+          .map((msg) => msg['id'] as String)
+          .toList();
+
+      if (messageIds.isNotEmpty) {
+        // Delete notifications first
+        await _deleteNotificationsForMessages(messageIds);
+
+        // Then delete all messages between the two users
+        await _supabaseClient
+            .from('messages')
+            .delete()
+            .or('and(sender_id.eq.$currentUserId,receiver_id.eq.$otherUserId),and(sender_id.eq.$otherUserId,receiver_id.eq.$currentUserId)');
+      }
 
       print('Chat room deleted successfully between $currentUserId and $otherUserId');
     } catch (e) {
@@ -286,6 +331,10 @@ class MessageService {
   /// Deletes a specific message by ID (optional - for future use)
   Future<void> deleteMessage(String messageId) async {
     try {
+      // Delete notification first
+      await _deleteNotificationForMessage(messageId);
+
+      // Then delete the message
       await _supabaseClient
           .from('messages')
           .delete()
@@ -315,6 +364,9 @@ class MessageService {
         throw Exception('You can only delete your own messages');
       }
 
+      // Delete notification first
+      await _deleteNotificationForMessage(messageId);
+
       // Delete the message
       await _supabaseClient
           .from('messages')
@@ -328,5 +380,4 @@ class MessageService {
       return false;
     }
   }
-
 }

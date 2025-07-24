@@ -888,12 +888,12 @@ class _ChatScreenState extends State<ChatScreen>
                 children: [
                   GestureDetector(
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => OtherUserProfileScreen(userId: userId),
-                        ),
-                      );
+                      // Navigator.push(
+                      //   context,
+                      //   MaterialPageRoute(
+                      //     builder: (_) => OtherUserProfileScreen(userId: userId),
+                      //   ),
+                      // );
                     },
                     child: CircleAvatar(
                       radius: 16,
@@ -910,12 +910,12 @@ class _ChatScreenState extends State<ChatScreen>
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => OtherUserProfileScreen(userId: userId),
-                          ),
-                        );
+                        // Navigator.push(
+                        //   context,
+                        //   MaterialPageRoute(
+                        //     builder: (_) => OtherUserProfileScreen(userId: userId),
+                        //   ),
+                        // );
                       },
                       child: Text(
                         username,

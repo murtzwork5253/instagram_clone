@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 
-import '../auth/service/auth_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/blocked_users_service.dart';
 
 class ReelProvider extends ChangeNotifier {

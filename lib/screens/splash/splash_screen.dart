@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:Instagram/screens/auth/service/auth_service.dart';
+import 'package:Instagram/services/auth_service.dart';
 import 'package:Instagram/screens/auth/login_page.dart';
 import 'package:Instagram/screens/auth/profile_completion_screen.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';

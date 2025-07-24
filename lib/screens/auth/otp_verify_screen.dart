@@ -1,4 +1,4 @@
-import 'package:Instagram/screens/auth/service/auth_service.dart';
+import 'package:Instagram/services/auth_service.dart';
 import 'package:Instagram/screens/auth/login_page.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';
 import 'package:flutter/material.dart';

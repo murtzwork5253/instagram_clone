@@ -12,7 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
-import '../auth/service/auth_service.dart';
+import '../../services/auth_service.dart';
 import '../chatscreen/message_service.dart';
 import '../chatscreen/model/models.dart';
 import '../common/report_dialog.dart';

@@ -34,7 +34,7 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<void> initializeCamera({bool enableAudio = false}) async {
-    if (_isDisposed) return; // Don't initialize if disposed
+    if (_isDisposed) return;
 
     _enableAudio = enableAudio;
 
@@ -46,17 +46,18 @@ class CameraService extends ChangeNotifier {
       throw CameraException('No cameras available', 'No cameras found on device');
     }
 
-    // Dispose previous controller if it exists and is different from what we need
-    if (_controller != null && _controller!.value.isInitialized) {
-      if (_controller!.enableAudio != enableAudio) {
+    if (_controller != null) {
+      if (_controller!.enableAudio != enableAudio && _controller!.value.isInitialized) {
         await _controller!.dispose();
         _controller = null;
         _isCameraInitialized = false;
+        notifyListeners();
+      } else if (_controller!.value.isInitialized) {
+        return;
       }
     }
 
-    // If controller doesn't exist or was disposed, create new one
-    if (_controller == null || !_controller!.value.isInitialized) {
+    if (_controller == null) {
       if (_selectedCamera == null) {
         _selectedCamera = _cameras.firstWhere(
               (camera) => camera.lensDirection == CameraLensDirection.back,
@@ -69,24 +70,23 @@ class CameraService extends ChangeNotifier {
         _selectedCamera!,
         _currentResolutionPreset,
         enableAudio: enableAudio,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        // KEY CHANGE: Use yuv420 for better Android compatibility
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
 
       try {
         await _controller!.initialize();
         _isCameraInitialized = true;
         _isFlashOn = false;
-        _isDisposed = false; // Reset disposed flag
+        _isDisposed = false;
         await _controller!.setFlashMode(FlashMode.off);
         notifyListeners();
       } on CameraException catch (e) {
         debugPrint('Error initializing camera: $e');
         _isCameraInitialized = false;
+        notifyListeners();
         rethrow;
       }
-    } else {
-      // Camera is already initialized, just notify listeners
-      notifyListeners();
     }
   }
 
@@ -99,13 +99,16 @@ class CameraService extends ChangeNotifier {
       throw CameraException('Cannot switch camera', 'Cannot switch camera while recording');
     }
 
+    if (_controller != null && _controller!.value.isInitialized) {
+      await _controller!.dispose();
+      _controller = null;
+      _isCameraInitialized = false;
+      notifyListeners();
+    }
+
     final CameraDescription newCamera = (_selectedCamera!.lensDirection == CameraLensDirection.back)
         ? _cameras.firstWhere((camera) => camera.lensDirection == CameraLensDirection.front)
         : _cameras.firstWhere((camera) => camera.lensDirection == CameraLensDirection.back);
-
-    if (_controller != null && _controller!.value.isInitialized) {
-      await _controller!.dispose();
-    }
 
     _selectedCamera = newCamera;
     _isFrontCamera = (newCamera.lensDirection == CameraLensDirection.front);
@@ -114,7 +117,8 @@ class CameraService extends ChangeNotifier {
       _selectedCamera!,
       _currentResolutionPreset,
       enableAudio: _enableAudio,
-      imageFormatGroup: ImageFormatGroup.jpeg,
+      // KEY CHANGE: Use yuv420 for better Android compatibility
+      imageFormatGroup: ImageFormatGroup.yuv420,
     );
 
     try {
@@ -126,6 +130,7 @@ class CameraService extends ChangeNotifier {
     } on CameraException catch (e) {
       debugPrint('Error switching camera: $e');
       _isCameraInitialized = false;
+      notifyListeners();
       rethrow;
     }
   }

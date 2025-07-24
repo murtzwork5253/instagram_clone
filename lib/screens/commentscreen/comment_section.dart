@@ -1,6 +1,6 @@
 import 'package:Instagram/l10n/app_localizations_en.dart';
 import 'package:Instagram/main.dart';
-import 'package:Instagram/screens/auth/service/auth_service.dart';
+import 'package:Instagram/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';

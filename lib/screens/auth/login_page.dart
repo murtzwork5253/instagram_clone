@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import 'package:app_links/app_links.dart';
-import 'package:Instagram/screens/auth/service/auth_service.dart';
+import 'package:Instagram/services/auth_service.dart';
 import 'package:Instagram/screens/auth/profile_completion_screen.dart';
 import 'package:Instagram/screens/auth/signup_with_email_screen.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';

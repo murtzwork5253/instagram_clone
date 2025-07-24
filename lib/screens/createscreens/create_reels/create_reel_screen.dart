@@ -15,7 +15,8 @@ import '../camera_service.dart';
 
 class CreateReelContent extends StatefulWidget {
   final CameraService cameraService;
-  const CreateReelContent({Key? key, required this.cameraService}) : super(key: key);
+  final bool isActive;
+  const CreateReelContent({Key? key, required this.cameraService,required this.isActive}) : super(key: key);
 
   @override
   State<CreateReelContent> createState() => _CreateReelContentState();
@@ -351,7 +352,7 @@ class _CreateReelContentState extends State<CreateReelContent> with WidgetsBindi
     return ListenableBuilder(
       listenable: _cameraService,
       builder: (context, child) {
-        if (!_cameraService.isCameraInitialized || _cameraService.controller == null) {
+        if (!widget.isActive || !_cameraService.isCameraInitialized || _cameraService.controller == null) {
           return Container(
             color: Colors.black,
             child: const Center(

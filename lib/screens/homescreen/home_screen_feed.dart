@@ -10,7 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
-import '../auth/service/auth_service.dart';
+import '../../services/auth_service.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import '../chatscreen/chat_screen.dart';
 import '../common/report_dialog.dart';

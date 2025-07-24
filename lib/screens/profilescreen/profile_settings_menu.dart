@@ -16,7 +16,7 @@ import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../auth/login_page.dart';
 import '../auth/password_change_screen.dart';
-import '../auth/service/auth_service.dart';
+import '../../services/auth_service.dart';
 import '../profilescreen/blocked_users_screen.dart';
 import 'package:Instagram/screens/notificationscreen/service/notification_service.dart';
 import 'package:Instagram/screens/notificationscreen/model/notification_model.dart';

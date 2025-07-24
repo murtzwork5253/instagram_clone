@@ -115,6 +115,10 @@ void main() async {
     print("Error during initialization: $e");
   }
 
+  // Reduce image cache to prevent buffer overflow
+  PaintingBinding.instance.imageCache.maximumSize = 100;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 << 20; // 50MB
+
   runApp(
     MultiProvider(
       providers: [

@@ -8,7 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/account_manager.dart';
 import '../../services/insta_data_provider.dart';
 import '../auth/login_page.dart';
-import '../auth/service/auth_service.dart';
+import '../../services/auth_service.dart';
 
 class AccountSwitcherModal extends StatefulWidget {
   const AccountSwitcherModal({super.key});

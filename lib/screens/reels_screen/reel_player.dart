@@ -11,7 +11,7 @@ import 'package:visibility_detector/visibility_detector.dart';
 import 'package:Instagram/screens/reels_screen/reel_modal.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
-import '../auth/service/auth_service.dart';
+import '../../services/auth_service.dart';
 import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart';
 import '../user_tagging/user_model.dart';
