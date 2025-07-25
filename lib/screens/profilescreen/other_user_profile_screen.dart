@@ -173,46 +173,66 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
         );
       }).toList();
 
-      // Check if current user is following this profile
-      final followingCheck = await supabase
-          .from('followers')
-          .select('id')
-          .eq('follower_id', currentUserId)
-          .eq('following_id', widget.userId)
-          .maybeSingle();
+      try {
+        // 1. Get the list of users blocked by the current user.
+        final blockedService = BlockedUsersService();
+        final blockedUsers = await blockedService.getBlockedUsers();
+        final blockedIds = blockedUsers.map((u) => u['id'].toString()).toList();
 
-      // Load followers and following
-      final followersRes = await supabase
-          .from('followers')
-          .select('follower_id')
-          .eq('following_id', widget.userId);
-      final followingRes = await supabase
-          .from('followers')
-          .select('following_id')
-          .eq('follower_id', widget.userId);
+        // 2. Call the RPC function to get the correctly filtered counts.
+        final countsRes = await supabase.rpc(
+          'get_follow_counts',
+          params: {
+            'user_id_input': widget.userId,
+            'blocked_ids': blockedIds,
+          },
+        );
 
-      // Filter out blocked users from followers and following
-      final blockedService = BlockedUsersService();
-      final blockedUsers = await blockedService.getBlockedUsers();
-      final blockedIds = blockedUsers.map((u) => u['id']).toSet();
+        // 3. Use the new RPC function to reliably check the follow status.
+        final dynamic isFollowingCheck = await supabase.rpc(
+          'is_user_following',
+          params: {
+            'follower_id_input': currentUserId,
+            'following_id_input': widget.userId,
+          },
+        );
 
-      final filteredFollowers = (followersRes as List)
-          .where((f) => !blockedIds.contains(f['follower_id']))
-          .toList();
-      final filteredFollowing = (followingRes as List)
-          .where((f) => !blockedIds.contains(f['following_id']))
-          .toList();
+        // 4. Update the state with the new data
+        setState(() {
+          profile = profileRes;
+          posts = fetchedPosts;
 
-      // NEW CODE - Replace the above section with this:
-      setState(() {
-        profile = profileRes;
-        posts = fetchedPosts; // Assign the mapped PostData list
-        followersCount = filteredFollowers.length;
-        followingCount = filteredFollowing.length;
-        postsCount = fetchedPosts.length; // Use fetchedPosts.length
-        isFollowing = followingCheck != null; // Set the follow status
-        isLoading = false;
-      });
+          // Get counts directly from the RPC response
+          followersCount = countsRes['followers'] ?? 0;
+          followingCount = countsRes['following'] ?? 0;
+
+          postsCount = fetchedPosts.length;
+
+          // The follow status is now determined by our new, reliable RPC call
+          isFollowing = isFollowingCheck as bool;
+
+          isLoading = false;
+        });
+
+      } catch (e) {
+        setState(() {
+          isLoading = false;
+        });
+        print('Error loading other user profile: $e');
+      }
+
+
+
+      // // NEW CODE - Replace the above section with this:
+      // setState(() {
+      //   profile = profileRes;
+      //   posts = fetchedPosts; // Assign the mapped PostData list
+      //   followersCount = filteredFollowers.length;
+      //   followingCount = filteredFollowing.length;
+      //   postsCount = fetchedPosts.length; // Use fetchedPosts.length
+      //   isFollowing = followingCheck != null; // Set the follow status
+      //   isLoading = false;
+      // });
     } catch (e) {
       setState(() {
         isLoading = false;

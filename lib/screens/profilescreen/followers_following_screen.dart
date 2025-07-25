@@ -84,6 +84,8 @@ class _FollowersListState extends State<FollowersList>
 
   Widget _buildUserList(bool isFollowersTab) {
     return FutureBuilder<List<Map<String, dynamic>>>(
+      // Use a key to ensure the FutureBuilder refetches when the tab changes
+      key: ValueKey('${widget.userId}_$isFollowersTab'),
       future: isFollowersTab
           ? _fetchFollowers(widget.userId)
           : _fetchFollowing(widget.userId),
@@ -95,6 +97,7 @@ class _FollowersListState extends State<FollowersList>
               child: Text('Error: ${snapshot.error}',
                   style: const TextStyle(color: Colors.white)));
         } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          // The RPC functions return an empty list if not authorized, so this message will show correctly.
           return Center(
               child: Text(
                   isFollowersTab ? 'No followers found.' : 'Not following anyone.',
@@ -106,19 +109,18 @@ class _FollowersListState extends State<FollowersList>
           itemCount: users.length,
           itemBuilder: (context, index) {
             final user = users[index];
-            final String userId = user['id'];
+            // *** FIX: The RPC function returns 'user_id', not 'id' ***
+            final String userId = user['user_id'];
             final String username = user['username'];
             final String? profileImageUrl = user['profile_image_url'];
-            // Access 'is_following' with null-aware operator, it's added in fetch methods
             final bool isFollowing = user['is_following'] ?? false;
 
             return GestureDetector(
               onTap: () {
                 if (_currentUserId != null && userId == _currentUserId) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const ProfileScreen()),
-                  );
+                  // Navigate to the current user's own profile screen
+                  // This pop might need adjustment based on your navigation stack
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 } else {
                   Navigator.push(
                     context,
@@ -129,8 +131,6 @@ class _FollowersListState extends State<FollowersList>
                 }
               },
               onLongPress: () {
-                // Only allow long-press to remove follower if on the followers tab
-                // and the user being pressed is not the current user themselves.
                 if (isFollowersTab && _currentUserId != null && userId != _currentUserId) {
                   _showRemoveFollowerDialog(context, userId, username);
                 }
@@ -159,7 +159,6 @@ class _FollowersListState extends State<FollowersList>
                             fontWeight: FontWeight.w600),
                       ),
                     ),
-                    // Show follow/unfollow button only if it's not the current user's own profile
                     if (userId != _currentUserId && _currentUserId != null)
                       ElevatedButton(
                         onPressed: () => _toggleFollow(userId, isFollowing),
@@ -220,104 +219,69 @@ class _FollowersListState extends State<FollowersList>
 
   Future<void> _removeFollower(String followerId) async {
     try {
-      if (_currentUserId == null) {
-        // Should not happen if _getCurrentUserId runs successfully
-        print('Error: Current user ID is null. Cannot remove follower.');
-        return;
-      }
-
-      print('$followerId, $_currentUserId');
-
+      if (_currentUserId == null) return;
       await supabase
           .from('followers')
           .delete()
           .eq('follower_id', followerId)
           .eq('following_id', _currentUserId!);
-
-      // Refresh the followers list after removal
-      setState(() {
-        _fetchFollowers(widget.userId);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Follower removed successfully!'),
-            backgroundColor: Colors.green),
-      );
+      setState(() {}); // Refresh the list
     } catch (e) {
       print('Error removing follower: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Failed to remove follower.'),
-            backgroundColor: Colors.red),
-      );
     }
   }
 
+  // *** NEW IMPLEMENTATION USING RPC ***
   Future<List<Map<String, dynamic>>> _fetchFollowers(String userId) async {
-    final response = await supabase
-        .from('followers')
-        .select('follower_id')
-        .eq('following_id', userId);
+    final response = await supabase.rpc(
+      'get_followers_list',
+      params: {'profile_id': userId},
+    );
 
-    final followerIds = (response as List)
-        .map((e) => e['follower_id'] as String)
+    if (response == null) return [];
+
+    final List<Map<String, dynamic>> users = (response as List)
+        .map((item) => Map<String, dynamic>.from(item))
         .toList();
 
-    if (followerIds.isEmpty) return [];
-
-    final userData = await supabase
-        .from('users')
-        .select('id, username, profile_image_url')
-        .inFilter('id', followerIds);
-
-    // Filter out blocked users
     final blockedService = BlockedUsersService();
     final blockedUsers = await blockedService.getBlockedUsers();
     final blockedIds = blockedUsers.map((u) => u['id']).toSet();
-    final filtered = userData.where((u) => !blockedIds.contains(u['id'])).toList();
+    final filtered = users.where((u) => !blockedIds.contains(u['user_id'])).toList();
 
-    if (_currentUserId == null) {
-      return filtered;
-    }
+    if (_currentUserId == null) return filtered;
 
     for (var user in filtered) {
       final followingCheck = await supabase
           .from('followers')
           .select()
           .eq('follower_id', _currentUserId!)
-          .eq('following_id', user['id']);
+          .eq('following_id', user['user_id']);
       user['is_following'] = followingCheck.isNotEmpty;
     }
 
     return filtered;
   }
 
+  // *** NEW IMPLEMENTATION USING RPC ***
   Future<List<Map<String, dynamic>>> _fetchFollowing(String userId) async {
-    final response = await supabase
-        .from('followers')
-        .select('following_id')
-        .eq('follower_id', userId);
+    final response = await supabase.rpc(
+      'get_following_list',
+      params: {'profile_id': userId},
+    );
 
-    final followingIds = (response as List)
-        .map((e) => e['following_id'] as String)
+    if (response == null) return [];
+
+    final List<Map<String, dynamic>> users = (response as List)
+        .map((item) => Map<String, dynamic>.from(item))
         .toList();
 
-    if (followingIds.isEmpty) return [];
-
-    final userData = await supabase
-        .from('users')
-        .select('id, username, profile_image_url')
-        .inFilter('id', followingIds);
-
-    // Filter out blocked users
     final blockedService = BlockedUsersService();
     final blockedUsers = await blockedService.getBlockedUsers();
     final blockedIds = blockedUsers.map((u) => u['id']).toSet();
-    final filtered = userData.where((u) => !blockedIds.contains(u['id'])).toList();
+    final filtered = users.where((u) => !blockedIds.contains(u['user_id'])).toList();
 
-    if (_currentUserId == null) {
-      return filtered;
-    }
+    if (_currentUserId == null) return filtered;
 
     if (_currentUserId == widget.userId) {
       for (var user in filtered) {
@@ -329,7 +293,7 @@ class _FollowersListState extends State<FollowersList>
             .from('followers')
             .select()
             .eq('follower_id', _currentUserId!)
-            .eq('following_id', user['id']);
+            .eq('following_id', user['user_id']);
         user['is_following'] = followingCheck.isNotEmpty;
       }
     }
@@ -338,15 +302,7 @@ class _FollowersListState extends State<FollowersList>
   }
 
   Future<void> _toggleFollow(String userId, bool isCurrentlyFollowing) async {
-    if (_currentUserId == null) {
-      print('Error: Current user ID is null. Cannot toggle follow status.');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Please log in to follow/unfollow.'),
-            backgroundColor: Colors.red),
-      );
-      return;
-    }
+    if (_currentUserId == null) return;
 
     try {
       if (isCurrentlyFollowing) {
@@ -361,23 +317,9 @@ class _FollowersListState extends State<FollowersList>
           'following_id': userId,
         });
       }
-
-      // Refresh the UI to reflect the change
-      setState(() {
-        // Re-fetch the current tab's list to update its content
-        if (_tabController.index == 0) { // Following tab
-          _fetchFollowing(widget.userId);
-        } else { // Followers tab
-          _fetchFollowers(widget.userId);
-        }
-      });
+      setState(() {}); // This is enough to trigger a rebuild of the FutureBuilder
     } catch (e) {
       print('Error toggling follow status: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Failed to update follow status: $e'),
-            backgroundColor: Colors.red),
-      );
     }
   }
 }
