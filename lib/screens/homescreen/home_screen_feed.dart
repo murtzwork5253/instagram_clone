@@ -14,6 +14,7 @@ import '../../services/auth_service.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 import '../chatscreen/chat_screen.dart';
 import '../common/report_dialog.dart';
+import '../createscreens/story_share_preview_screen.dart';
 import '../notificationscreen/notification_screen.dart';
 import '../user_tagging/user_model.dart';
 import '../user_tagging/user_tagging_service.dart';
@@ -1627,51 +1628,43 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
       'caption': post.caption,
     };
 
-    // Send the message with sharedPost
-    await MessageService().sendMessage(
-      senderId: currentUser.id,
-      receiverId: user['id'],
-      sharedPost: sharedPostData,
-    );
+    try {
+      // Send the message with sharedPost
+      await MessageService().sendMessage(
+        senderId: currentUser.id,
+        receiverId: user['id'],
+        sharedPost: sharedPostData,
+      );
 
-    // Optimistic UI: create a temporary Message object
-    final optimisticMessage = Message(
-      id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}',
-      senderId: currentUser.id,
-      receiverId: user['id'],
-      content: null,
-      imageUrl: null,
-      sharedPost: sharedPostData,
-      isRead: false,
-      createdAt: DateTime.now(),
-      seenAt: null,
-    );
+      // Show a confirmation message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sent'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('Error sharing post: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send message. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
-    // Navigate to chat with optimistic message
+  // Method to add post to story
+  void _addPostToStory(PostData post) {
+    // Navigate to story creation screen with the post data
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          currentUserId: currentUser.id,
-          initialChatUserId: user['id'],
-          cameFromProfile: true,
-          initialMessage: optimisticMessage,
+        builder: (context) => StorySharePreviewScreen(
+          post: post,
         ),
       ),
     );
-  }
-
-// Method to add post to story
-  void _addPostToStory(PostData post) {
-    // Navigate to story creation screen with the post data
-    // Navigator.push(
-    //   context,
-    //   MaterialPageRoute(
-    //     builder: (context) => StoryPreviewScreen(
-    //       sharedPost: post,
-    //     ),
-    //   ),
-    // );
   }
 
 // Method to copy post link

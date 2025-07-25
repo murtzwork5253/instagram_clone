@@ -16,6 +16,7 @@ import '../../services/auth_service.dart';
 import '../chatscreen/message_service.dart';
 import '../chatscreen/model/models.dart';
 import '../common/report_dialog.dart';
+import '../createscreens/story_share_preview_screen.dart';
 import '../profilescreen/other_user_profile_screen.dart';
 import '../user_tagging/user_model.dart';
 import '../user_tagging/user_tagging_service.dart';
@@ -867,14 +868,14 @@ class _SinglePostViewState extends State<SinglePostView> {
 // Method to add post to story
   void _addPostToStory(PostData post) {
     // Navigate to story creation screen with the post data
-    // Navigator.push(
-    //   context,
-    //   MaterialPageRoute(
-    //     builder: (context) => StoryPreviewScreen(
-    //       sharedPost: post,
-    //     ),
-    //   ),
-    // );
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StorySharePreviewScreen(
+          post: post,
+        ),
+      ),
+    );
   }
 
 // Method to copy post link

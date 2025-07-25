@@ -152,7 +152,7 @@ class SupabaseService {
       // Get my stories
       final myStories = await _client
           .from('stories')
-          .select('*, users:user_id (id, username, profile_image_url)')
+          .select('*, users:user_id (id, username, profile_image_url)') // Select shared_post_id
           .eq('user_id', user.id)
           .gte('expires_at', now.toIso8601String());
 
@@ -175,15 +175,13 @@ class SupabaseService {
       if (ids.isNotEmpty) {
         followingStories = await _client
             .from('stories')
-            .select('*, users:user_id (id, username, profile_image_url)')
+            .select('*, users:user_id (id, username, profile_image_url)') // Select shared_post_id
             .inFilter('user_id', ids)
             .gte('expires_at', now.toIso8601String());
       }
 
       final List<StoryData> allStories = [];
 
-      // Process My Stories
-      // final userData = await getCurrentUser();
       // Process My Stories
       if (myStories.isNotEmpty) {
         for (final story in myStories) {
@@ -194,8 +192,6 @@ class SupabaseService {
               .eq('viewer_id', user.id)
               .maybeSingle();
 
-          print('SupabaseService - Story ID: ${story['id']}, isViewed: ${viewed != null}');
-
           allStories.add(StoryData.fromJson({
             ...story,
             'user': story['users'],
@@ -204,11 +200,9 @@ class SupabaseService {
             'isViewed': viewed != null,
           }));
         }
-        myStories.map((s) => {'id': s['id'], 'is_viewed': s['isViewed']}).toList();
-        print('My Stories: $myStories');
       }
 
-      // Following stories (this part was already correct)
+      // Following stories
       for (final story in followingStories) {
         try {
           final viewed = await _client
@@ -456,7 +450,7 @@ class SupabaseService {
     }
   }
 
-  static Future<Map<String, dynamic>> createStory(String mediaUrl) async {
+  static Future<Map<String, dynamic>> createStory(String mediaUrl, {String? sharedPostId}) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('User not logged in');
 
@@ -468,9 +462,66 @@ class SupabaseService {
       'media_url': mediaUrl,
       'expires_at': expiresAt.toIso8601String(),
       'created_at': now.toIso8601String(),
+      'shared_post_id': sharedPostId, // Insert the shared post ID
     }).select().single();
 
     return response;
+  }
+
+  // New method to fetch a single post by its ID
+  static Future<PostData?> getPostById(String postId) async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return null;
+
+      final response = await Supabase.instance.client
+          .from('posts')
+          .select('''
+                id, user_id, caption, location, image_url, created_at, disable_comments,
+                use_original_ratio, image_transformation, original_aspect_ratio,
+                users (username, profile_image_url),
+                post_likes (user_id),
+                comments (id)
+            ''')
+          .eq('id', postId)
+          .single();
+
+      final post = response;
+      final user = post['users'];
+      final likes = post['post_likes'] as List<dynamic>? ?? [];
+      final comments = post['comments'] as List<dynamic>? ?? [];
+      final isLiked = likes.any((like) => like['user_id'] == userId);
+
+      // Check for saved status
+      final savedResponse = await Supabase.instance.client
+          .from('saved_posts')
+          .select('id')
+          .eq('post_id', postId)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      return PostData(
+        id: post['id'],
+        userId: post['user_id'],
+        username: user['username'],
+        profileImageUrl: user['profile_image_url'],
+        imageUrl: post['image_url'],
+        caption: post['caption'],
+        location: post['location'],
+        createdAt: DateTime.parse(post['created_at']),
+        likeCount: likes.length,
+        commentCount: comments.length,
+        isLiked: isLiked,
+        isSaved: savedResponse != null,
+        disableComments: post['disable_comments'] ?? false,
+        use_original_ratio: post['use_original_ratio'],
+        image_transformation: post['image_transformation'],
+        original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
+      );
+    } catch (e) {
+      print("Error fetching post by ID: $e");
+      return null;
+    }
   }
 
   // Inside lib/services/supabase_service.dart
@@ -708,6 +759,7 @@ class StoryData {
   final bool hasStory;
   final bool isViewed;
   final DateTime? createdAt;
+  final String? sharedPostId;
 
   StoryData({
     this.id,
@@ -719,6 +771,7 @@ class StoryData {
     required this.hasStory,
     required this.isViewed,
     this.createdAt,
+    this.sharedPostId,
   });
 
   factory StoryData.fromJson(Map<String, dynamic> json) {
@@ -735,6 +788,7 @@ class StoryData {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : null,
+      sharedPostId: json['shared_post_id'],
     );
   }
 }
