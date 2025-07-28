@@ -7,7 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/insta_data_provider.dart';
-import '../calliing/call_manager.dart';
+// import '../calliing/call_manager.dart';
+import '../calling/call_manager.dart';
 import 'account_switcher.dart';
 import 'home_screen_feed.dart';
 
@@ -33,7 +34,7 @@ class _HomePageState extends State<HomeDashboard> {
     _loadCurrentUserAvatar();
     _selectedBodyIndex = _currentIndex;
     // Initialize call manager
-    // CallManager().initialize(context);
+    CallManager().initialize(context);
   }
 
   Future<void> _loadCurrentUserAvatar() async {
@@ -62,7 +63,7 @@ class _HomePageState extends State<HomeDashboard> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-    // CallManager().dispose();
+    CallManager().dispose();
   }
 
   late final List<Widget> _pages = [

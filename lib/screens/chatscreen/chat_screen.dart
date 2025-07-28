@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:Instagram/screens/calling/widgets/floating_call_indicator.dart';
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
+import '../calling/call_manager.dart';
 import '/screens/chatscreen/model/models.dart'; // NEW: Import the new models file
 import 'full_screen_image_viewer.dart';
 import 'message_service.dart'; // NEW: Import the new message service file
@@ -513,30 +515,32 @@ class _ChatScreenState extends State<ChatScreen>
   Widget build(BuildContext context) {
     final bool inChatMode = _selectedChatUserId != null;
 
-    return PopScope(
-      canPop: _selectedChatUserId == null,
-      onPopInvoked: (bool didPop) async {
-        if (didPop) return;
+    return FloatingCallIndicator(
+      child: PopScope(
+        canPop: _selectedChatUserId == null,
+        onPopInvoked: (bool didPop) async {
+          if (didPop) return;
 
-        if (_selectedChatUserId != null) {
-          // Mark messages as read before navigating away
-          await _markCurrentChatAsRead();
-          // If in chat mode, check if we came from profile
-          if (_cameFromProfile) {
-            // Go back to the previous screen (profile)
-            Navigator.of(context).pop();
+          if (_selectedChatUserId != null) {
+            // Mark messages as read before navigating away
+            await _markCurrentChatAsRead();
+            // If in chat mode, check if we came from profile
+            if (_cameFromProfile) {
+              // Go back to the previous screen (profile)
+              Navigator.of(context).pop();
+            } else {
+              // Just exit chat mode, stay in ChatScreen
+              _exitChat();
+            }
           } else {
-            // Just exit chat mode, stay in ChatScreen
-            _exitChat();
+            Navigator.of(context).pop(); // Pop the whole route
           }
-        } else {
-          Navigator.of(context).pop(); // Pop the whole route
-        }
-      },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        appBar: _buildAppBar(inChatMode),
-        body: inChatMode ? _buildChatMessages() : _buildChatRoomList(),
+        },
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          appBar: _buildAppBar(inChatMode),
+          body: inChatMode ? _buildChatMessages() : _buildChatRoomList(),
+        ),
       ),
     );
 
@@ -647,6 +651,74 @@ class _ChatScreenState extends State<ChatScreen>
             tooltip: 'New message',
           ),
         ] else ...[
+          IconButton(
+            icon: const Icon(Icons.call, color: Colors.white, size: 24),
+            onPressed: () async {
+              if (_selectedChatUserId != null && _selectedChatUsername != null) {
+                // Check if trying to call yourself
+                if (_selectedChatUserId == widget.currentUserId) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Cannot call yourself'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
+                // Show warning for potential same-device scenario
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: Colors.grey[900],
+                    title: const Text(
+                      'Start Audio Call?',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Start an audio call with $_selectedChatUsername?',
+                          style: TextStyle(color: Colors.grey[300]),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Note: Calls between accounts on the same device are not supported.',
+                          style: TextStyle(
+                            color: Colors.orange[300],
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Call'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirmed ?? false) {
+                  CallManager().makeCall(
+                    context: context,
+                    receiverId: _selectedChatUserId!,
+                    receiverName: _selectedChatUsername!,
+                    receiverProfileUrl: _selectedChatUserProfileUrl,
+                  );
+                }
+              }
+            },
+            tooltip: 'Audio call',
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.white),
             color: Colors.grey[900],
