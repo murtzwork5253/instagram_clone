@@ -454,13 +454,18 @@ class ReelProvider extends ChangeNotifier {
     }
   }
 
-  // Share reel functionality
+  // In reel_provider.dart
+
+// Share reel functionality
   Future<void> shareReel(String reelId, String username, String caption) async {
     try {
-      final reel = reels.firstWhere((r) => r.id == reelId);
+      // IMPORTANT: Replace with your actual GitHub Pages URL
+      const webAppBaseUrl = 'https://murtzwork5253.github.io/reels-viewer/';
+      final reelUrl = '$webAppBaseUrl?id=$reelId';
+
       final shareText = '''Check out this amazing reel by @$username on Instagram!
-      "$caption"
-      ${reel.videoUrl}
+
+$reelUrl
       '''.trim();
 
       await Share.share(
@@ -468,7 +473,7 @@ class ReelProvider extends ChangeNotifier {
         subject: 'Check out this reel by @$username',
       );
 
-      print('Shared reel: $reelId');
+      print('Shared reel: $reelId with URL: $reelUrl');
     } catch (e) {
       print('Error sharing reel: $e');
     }
