@@ -1,15 +1,12 @@
 import 'package:Instagram/screens/createscreens/create_post/create_post_screen.dart';
-import 'package:Instagram/screens/reels_screen/reels_screen.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/searchscreen/search_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../services/insta_data_provider.dart';
 
-// import '../calliing/call_manager.dart';
 import '../calling/call_manager.dart';
+import '../reels_screen/reels_screen.dart';
 import 'account_switcher.dart';
 import 'home_screen_feed.dart';
 

@@ -27,16 +27,6 @@ class _ReelsScreenState extends State<ReelsScreen>
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
-
-    _pageController.addListener(() {
-      final newPage = _pageController.page?.round();
-      if (newPage != null && newPage != _currentPage) {
-        _currentPage = newPage;
-        Provider.of<ReelProvider>(context, listen: false)
-            .preloadAdjacentReels(_currentPage);
-      }
-    });
 
     _appBarController = AnimationController(
       duration: const Duration(milliseconds: 300),
@@ -59,35 +49,51 @@ class _ReelsScreenState extends State<ReelsScreen>
     try {
       final reelProvider = Provider.of<ReelProvider>(context, listen: false);
 
-      // Fetch reels first
       await reelProvider.fetchReels();
 
-      // New logic to handle jumping to a specific reel
+      int initialIndex = 0; // Default to the first reel
       if (widget.initialReelId != null && reelProvider.reels.isNotEmpty) {
-        final initialIndex = reelProvider.reels.indexWhere((reel) => reel.id == widget.initialReelId);
-        if (initialIndex != -1) {
-          // If the reel is found, jump the PageController to that index
-          _pageController.jumpToPage(initialIndex);
-          // Preload reels around the deep-linked reel
-          reelProvider.preloadAdjacentReels(initialIndex);
+        final foundIndex = reelProvider.reels
+            .indexWhere((reel) => reel.id == widget.initialReelId);
+        if (foundIndex != -1) {
+          initialIndex = foundIndex; // Set the correct starting index
         }
       }
 
-      // Wait a bit longer for the first reel to be properly preloaded
+      // Initialize the controller WITH the correct starting page
+      _pageController = PageController(initialPage: initialIndex);
+      _currentPage = initialIndex; // Sync the current page variable
+
+      // Add the listener right after initialization
+      _pageController.addListener(() {
+        final newPage = _pageController.page?.round();
+        if (newPage != null && newPage != _currentPage) {
+          _currentPage = newPage;
+          Provider.of<ReelProvider>(context, listen: false)
+              .preloadAdjacentReels(_currentPage);
+        }
+      });
+
+      // Preload reels around the determined starting reel
+      reelProvider.preloadAdjacentReels(initialIndex);
+
+
+      // The rest of your method can stay largely the same...
       if (reelProvider.reels.isNotEmpty) {
-        // Keep checking if first reel is ready, with timeout
         int attempts = 0;
-        while (!reelProvider.isControllerReady(reelProvider.reels[0].id) && attempts < 20) {
+        // IMPORTANT: Check the readiness of the correct initial reel, not always the first one.
+        while (!reelProvider.isControllerReady(reelProvider.reels[initialIndex].id) && attempts < 20) {
           await Future.delayed(const Duration(milliseconds: 100));
           attempts++;
         }
 
-        if (reelProvider.isControllerReady(reelProvider.reels[0].id)) {
-          print('✅ First reel controller is ready');
+        if (reelProvider.isControllerReady(reelProvider.reels[initialIndex].id)) {
+          print('✅ Initial reel controller ($initialIndex) is ready');
         } else {
-          print('⚠️ First reel controller not ready after timeout, but continuing...');
+          print('⚠️ Initial reel controller not ready after timeout, but continuing...');
         }
       }
+
 
       if (mounted) {
         setState(() {

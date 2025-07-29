@@ -12,10 +12,10 @@ class Assets {
   static const String authSetUsernameScreen = 'lib/screens/auth/set_username_screen.dart';
   static const String authSignupWithEmailScreen = 'lib/screens/auth/signup_with_email_screen.dart';
   static const String authSignupWithMobileScreen = 'lib/screens/auth/signup_with_mobile_screen.dart';
-  static const String calliingCallManager = 'lib/screens/calliing/call_manager.dart';
-  static const String calliingInCallScreen = 'lib/screens/calliing/in_call_screen.dart';
-  static const String calliingIncomingCallScreen = 'lib/screens/calliing/incoming_call_screen.dart';
-  static const String calliingOutgoingCallScreen = 'lib/screens/calliing/outgoing_call_screen.dart';
+  static const String callingCallManager = 'lib/screens/calling/call_manager.dart';
+  static const String callingInCallScreen = 'lib/screens/calling/in_call_screen.dart';
+  static const String callingIncomingCallScreen = 'lib/screens/calling/incoming_call_screen.dart';
+  static const String callingOutgoingCallScreen = 'lib/screens/calling/outgoing_call_screen.dart';
   static const String chatscreenChatScreen = 'lib/screens/chatscreen/chat_screen.dart';
   static const String chatscreenFullScreenImageViewer = 'lib/screens/chatscreen/full_screen_image_viewer.dart';
   static const String chatscreenMessageService = 'lib/screens/chatscreen/message_service.dart';
@@ -34,8 +34,8 @@ class Assets {
   static const String createStoryStoryPreviewScreen = 'lib/screens/createscreens/create_story/story_preview_screen.dart';
   static const String createscreensCameraService = 'lib/screens/createscreens/camera_service.dart';
   static const String createscreensCreatePostScreen = 'lib/screens/createscreens/create_post_screen';
+  static const String createscreensStorySharePreviewScreen = 'lib/screens/createscreens/story_share_preview_screen.dart';
   static const String fontsGrandHotelRegular = 'assets/fonts/GrandHotel-Regular.ttf';
-  static const String fontsInter18ptRegular = 'assets/fonts/Inter_18pt-Regular.ttf';
   static const String generatedAssets = 'lib/generated/assets.dart';
   static const String homescreenAccountSwitcher = 'lib/screens/homescreen/account_switcher.dart';
   static const String homescreenHomeScreen = 'lib/screens/homescreen/home_screen.dart';
@@ -56,12 +56,9 @@ class Assets {
   static const String imagesImageRemovebgPreview = 'assets/images/image-removebg-preview.png';
   static const String imagesInstagram = 'assets/images/instagram.png';
   static const String imagesLogo = 'assets/images/logo.png';
-  static const String imagesProfilepic1 = 'assets/images/profilepic1.png';
-  static const String imagesProfilepic2 = 'assets/images/profilepic2.png';
   static const String imagesReel = 'assets/images/reel.png';
   static const String imagesReelblack = 'assets/images/reelblack.png';
   static const String imagesUser = 'assets/images/user.png';
-  static const String imagesVideo = 'assets/images/video.png';
   static const String instagramClone = '.env';
   static const String l10nAppEn = 'lib/l10n/app_en.arb';
   static const String l10nAppEs = 'lib/l10n/app_es.arb';
@@ -73,7 +70,7 @@ class Assets {
   static const String libMain = 'lib/main.dart';
   static const String modelModels = 'lib/screens/chatscreen/model/models.dart';
   static const String modelNotificationModel = 'lib/screens/notificationscreen/model/notification_model.dart';
-  static const String modelsCallModels = 'lib/screens/calliing/models/call_models.dart';
+  static const String modelsCallModels = 'lib/screens/calling/models/call_models.dart';
   static const String notificationscreenNotificationScreen = 'lib/screens/notificationscreen/notification_screen.dart';
   static const String profilescreenBlockedUsersScreen = 'lib/screens/profilescreen/blocked_users_screen.dart';
   static const String profilescreenCurrentUserProfile = 'lib/screens/profilescreen/current_user_profile.dart';
@@ -98,17 +95,19 @@ class Assets {
   static const String servicesAccountManager = 'lib/services/account_manager.dart';
   static const String servicesAuthService = 'lib/services/auth_service.dart';
   static const String servicesBlockedUsersService = 'lib/services/blocked_users_service.dart';
-  static const String servicesCallService = 'lib/screens/calliing/services/call_service.dart';
+  static const String servicesCallService = 'lib/screens/calling/services/call_service.dart';
+  static const String servicesDeviceManager = 'lib/screens/calling/services/device_manager.dart';
   static const String servicesInstaDataProvider = 'lib/services/insta_data_provider.dart';
   static const String servicesPushNotificationService = 'lib/services/push_notification_service.dart';
   static const String servicesReportService = 'lib/services/report_service.dart';
   static const String servicesReportUserService = 'lib/services/report_user_service.dart';
   static const String servicesSupabaseService = 'lib/services/supabase_service.dart';
   static const String servicesSupabaseStorageService = 'lib/services/supabase_storage_service.dart';
-  static const String servicesWebrtcService = 'lib/screens/calliing/services/webrtc_service.dart';
+  static const String servicesWebrtcService = 'lib/screens/calling/services/webrtc_service.dart';
   static const String splashSplashScreen = 'lib/screens/splash/splash_screen.dart';
   static const String userTaggingUserModel = 'lib/screens/user_tagging/user_model.dart';
   static const String userTaggingUserTaggingScreen = 'lib/screens/user_tagging/user_tagging_screen.dart';
   static const String userTaggingUserTaggingService = 'lib/screens/user_tagging/user_tagging_service.dart';
+  static const String widgetsFloatingCallIndicator = 'lib/screens/calling/widgets/floating_call_indicator.dart';
 
 }
