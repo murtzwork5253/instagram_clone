@@ -1,6 +1,3 @@
-import 'dart:ffi';
-
-import 'package:Instagram/services/push_notification_service.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart'; // Assuming you use uuid for unique file names
