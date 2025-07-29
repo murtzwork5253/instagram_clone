@@ -455,18 +455,18 @@ class ReelProvider extends ChangeNotifier {
   }
 
   // In reel_provider.dart
-
-// Share reel functionality
   Future<void> shareReel(String reelId, String username, String caption) async {
     try {
-      // IMPORTANT: Replace with your actual GitHub Pages URL
-      const webAppBaseUrl = 'https://murtzwork5253.github.io/reels-viewer/';
-      final reelUrl = '$webAppBaseUrl?id=$reelId';
+      // 1. IMPORTANT: Replace with your actual Netlify URL
+      const webAppBaseUrl = 'https://reelswebfallback.netlify.app'; // <-- Use your Netlify URL
 
-      final shareText = '''Check out this amazing reel by @$username on Instagram!
+      // 2. Add the "/reel" path to match your AndroidManifest.xml
+      final reelUrl = '$webAppBaseUrl/reel?id=$reelId';
+
+      final shareText = '''Check out this amazing reel by @$username!
 
 $reelUrl
-      '''.trim();
+    '''.trim();
 
       await Share.share(
         shareText,

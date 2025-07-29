@@ -8,8 +8,9 @@ import '/screens/reels_screen/reel_provider.dart';
 
 class ReelsScreen extends StatefulWidget {
   final ValueNotifier<int> refreshNotifier;
+  final String? initialReelId;
 
-  const ReelsScreen({super.key, required this.refreshNotifier});
+  const ReelsScreen({super.key, required this.refreshNotifier,this.initialReelId});
 
   @override
   State<ReelsScreen> createState() => _ReelsScreenState();
@@ -60,6 +61,17 @@ class _ReelsScreenState extends State<ReelsScreen>
 
       // Fetch reels first
       await reelProvider.fetchReels();
+
+      // New logic to handle jumping to a specific reel
+      if (widget.initialReelId != null && reelProvider.reels.isNotEmpty) {
+        final initialIndex = reelProvider.reels.indexWhere((reel) => reel.id == widget.initialReelId);
+        if (initialIndex != -1) {
+          // If the reel is found, jump the PageController to that index
+          _pageController.jumpToPage(initialIndex);
+          // Preload reels around the deep-linked reel
+          reelProvider.preloadAdjacentReels(initialIndex);
+        }
+      }
 
       // Wait a bit longer for the first reel to be properly preloaded
       if (reelProvider.reels.isNotEmpty) {

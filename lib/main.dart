@@ -1,6 +1,9 @@
+import 'dart:async'; // Added for StreamSubscription
+import 'package:Instagram/screens/homescreen/home_screen.dart';
 import 'package:Instagram/screens/reels_screen/reel_provider.dart';
 import 'package:Instagram/screens/splash/splash_screen.dart';
 import 'package:Instagram/services/insta_data_provider.dart';
+import 'package:app_links/app_links.dart'; // Added for deep linking
 import 'package:camera/camera.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -18,18 +21,15 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 // Global variable to store a list of available cameras
 List<CameraDescription> cameras = [];
 
+// --- No changes in this top section ---
 Future<void> testEnvLoad() async {
   await dotenv.load(fileName: ".env");
 }
-
-// Background message handler - must be top level function
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   print('Handling a background message: ${message.messageId}');
-  // Additional background processing can be added here
 }
-
 Future<void> _saveFCMTokenToDatabase(String userId, String token) async {
   try {
     await Supabase.instance.client
@@ -44,21 +44,16 @@ Future<void> _saveFCMTokenToDatabase(String userId, String token) async {
     print('Error saving FCM token to database: $e');
   }
 }
-
 Future<void> _setupInitialFCMToken() async {
   try {
     String? token = await FirebaseMessaging.instance.getToken();
     print("FCM Token: $token");
-
-    // Check if user is authenticated before saving token
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null && token != null) {
       await _saveFCMTokenToDatabase(user.id, token);
     } else {
       print("No authenticated user found or token is null - will save token after login");
     }
-
-    // Listen for token refresh
     FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
       print("FCM Token refreshed: $newToken");
       final currentUser = Supabase.instance.client.auth.currentUser;
@@ -66,59 +61,39 @@ Future<void> _setupInitialFCMToken() async {
         await _saveFCMTokenToDatabase(currentUser.id, newToken);
       }
     });
-
   } catch (e) {
     print("Error getting or saving FCM token: $e");
   }
 }
+// --- No changes in this top section ---
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   try {
-    // Load environment variables first
     await testEnvLoad();
-
-    // Initialize Firebase FIRST
     await Firebase.initializeApp();
     print("Firebase initialized successfully");
-
-    // Set background message handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-    // Initialize Supabase
     await Supabase.initialize(
       url: dotenv.env['BASE_URL'] ?? '',
       anonKey: dotenv.env['API_KEY'] ?? '',
       debug: true,
     );
     print("Supabase initialized successfully");
-
-    
-
-    // Setup FCM token handling
     await _setupInitialFCMToken();
-
-    // Initialize cameras
     try {
       cameras = await availableCameras();
       print("Cameras initialized: ${cameras.length} cameras found");
     } on CameraException catch (e) {
       print('Error fetching cameras: $e');
     }
-
-    // Initialize push notifications service
     await PushNotificationService.initialize(navigatorKey);
     print("Push notification service initialized");
-
   } catch (e) {
     print("Error during initialization: $e");
   }
-
-  // Reduce image cache to prevent buffer overflow
   PaintingBinding.instance.imageCache.maximumSize = 100;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 << 20; // 50MB
-
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 << 20;
   runApp(
     MultiProvider(
       providers: [
@@ -126,15 +101,59 @@ void main() async {
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
         ChangeNotifierProvider(create: (_) => ReelProvider()),
       ],
-      child: MyApp(),
+      child: const MyApp(), // Changed to const
     ),
   );
 }
 
-
-
-class MyApp extends StatelessWidget {
+// Converted MyApp to a StatefulWidget to handle the deep link listener
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    initDeepLinks();
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Initializes the deep link listener.
+  Future<void> initDeepLinks() async {
+    _appLinks = AppLinks();
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      print('✅ App opened with deep link: $uri');
+      // Example link: https://your-site.netlify.app/reel?id=123
+      if (uri.path == '/reel' && uri.queryParameters.containsKey('id')) {
+        final reelId = uri.queryParameters['id'];
+        print('Parsed Reel ID from deep link: $reelId');
+
+        // Navigate to the Home screen and tell it to open the Reels tab
+        // with the specific reelId.
+        navigatorKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => HomeDashboard(
+              initialTabIndex: 3, // 3 is the index for Reels tab
+              initialReelId: reelId,
+            ),
+          ),
+              (route) => false,
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -163,9 +182,9 @@ class MyApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
           supportedLocales: const [
-            Locale('en'), // English
-            Locale('es'), // Spanish
-            Locale('gu'), // Gujarati
+            Locale('en'),
+            Locale('es'),
+            Locale('gu'),
           ],
           home: const SplashScreen(),
           debugShowCheckedModeBanner: false,

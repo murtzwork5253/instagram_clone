@@ -7,13 +7,21 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/insta_data_provider.dart';
+
 // import '../calliing/call_manager.dart';
 import '../calling/call_manager.dart';
 import 'account_switcher.dart';
 import 'home_screen_feed.dart';
 
 class HomeDashboard extends StatefulWidget {
-  const HomeDashboard({super.key});
+  final int initialTabIndex;
+  final String? initialReelId;
+
+  const HomeDashboard({
+    super.key,
+    this.initialTabIndex = 0, // Default to home tab
+    this.initialReelId,
+  });
 
   @override
   State<HomeDashboard> createState() => _HomePageState();
@@ -31,9 +39,15 @@ class _HomePageState extends State<HomeDashboard> {
 
   void initState() {
     super.initState();
+    // Use the initialTabIndex from the widget
+    _currentIndex = widget.initialTabIndex;
+    // Calculate the body index based on the initial tab index
+    if (_currentIndex < 2) {
+      _selectedBodyIndex = _currentIndex;
+    } else {
+      _selectedBodyIndex = _currentIndex - 1;
+    }
     _loadCurrentUserAvatar();
-    _selectedBodyIndex = _currentIndex;
-    // Initialize call manager
     CallManager().initialize(context);
   }
 
@@ -68,7 +82,9 @@ class _HomePageState extends State<HomeDashboard> {
 
   late final List<Widget> _pages = [
     InstagramHomeScreen(refreshNotifier: homeRefreshNotifier),
-    InstagramSearchScreen(refreshNotifier: searchRefreshNotifier,),
+    InstagramSearchScreen(
+      refreshNotifier: searchRefreshNotifier,
+    ),
     Container(),
     ProfileScreen(refreshNotifier: profileRefreshNotifier),
   ];
@@ -170,36 +186,45 @@ class _HomePageState extends State<HomeDashboard> {
               if (_currentIndex == index) {
                 // Same tab tapped again - trigger refresh
                 _refreshCurrentTab(index);
-              }
-              else {
+              } else {
                 // Handle "Create Post" tab differently
-                if (index == 2) { // Assuming Create Post is index 2
+                if (index == 2) {
+                  // Assuming Create Post is index 2
                   Navigator.of(context).push(
                     PageRouteBuilder(
-                      pageBuilder: (context, animation, secondaryAnimation) => const CreatePostScreen(initialTabIndex: 0,),
-                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                        const begin = Offset(-1.0, 0.0); // Starts from the right
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          const CreatePostScreen(
+                        initialTabIndex: 0,
+                      ),
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                        const begin =
+                            Offset(-1.0, 0.0); // Starts from the right
                         const end = Offset.zero; // Ends at its normal position
                         const curve = Curves.ease;
 
-                        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+                        var tween = Tween(begin: begin, end: end)
+                            .chain(CurveTween(curve: curve));
 
                         return SlideTransition(
                           position: animation.drive(tween),
                           child: child,
                         );
                       },
-                      fullscreenDialog: true, // Optional: still makes it feel like a modal
+                      fullscreenDialog:
+                          true, // Optional: still makes it feel like a modal
                     ),
                   );
                 } else {
                   // For other tabs (Home, Search, Reels, Profile)
                   setState(() {
-                    _currentIndex = index; // Update the visual selected item in BottomNavigationBar
+                    _currentIndex =
+                        index; // Update the visual selected item in BottomNavigationBar
 
                     // Calculate the _selectedBodyIndex for IndexedStack
                     if (index < 2) {
-                      _selectedBodyIndex = index; // For Home (0) and Search (1), it's the same index
+                      _selectedBodyIndex =
+                          index; // For Home (0) and Search (1), it's the same index
                     } else {
                       // For Reels (index 3) and Profile (index 4), subtract 1
                       // because index 2 (Create Post) is skipped in our _pages list.
@@ -217,10 +242,19 @@ class _HomePageState extends State<HomeDashboard> {
           body: IndexedStack(
             index: _selectedBodyIndex,
             children: [
-              _pages[0], // Home
-              _pages[1], // Search
-              _selectedBodyIndex == 2 ? ReelsScreen(refreshNotifier: reelsRefreshNotifier,) : Container(), // Only create ReelsScreen when selected
-              _pages[3], // Profile
+              _pages[0],
+              // Home
+              _pages[1],
+              // Search
+              _selectedBodyIndex == 2
+                  ? ReelsScreen(
+                      refreshNotifier: reelsRefreshNotifier,
+                      initialReelId: widget.initialReelId, // Pass the ID here
+                    )
+                  : Container(),
+              // Only create ReelsScreen when selected
+              _pages[3],
+              // Profile
             ],
           ),
         ),
@@ -249,7 +283,8 @@ class _HomePageState extends State<HomeDashboard> {
         child: CircleAvatar(
           radius: size / 2,
           backgroundColor: Colors.grey[800],
-          backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+          backgroundImage:
+              _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
           child: _avatarUrl == null
               ? Icon(Icons.person, size: 18, color: Colors.white)
               : null,
@@ -272,7 +307,7 @@ class _HomePageState extends State<HomeDashboard> {
       case 4: // Profile (assuming profile tab is index 4)
         profileRefreshNotifier.value++;
         break;
-    // Add more if needed
+      // Add more if needed
     }
   }
 }
