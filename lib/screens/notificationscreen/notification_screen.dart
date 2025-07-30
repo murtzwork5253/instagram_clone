@@ -283,6 +283,8 @@ class NotificationTile extends StatelessWidget {
         return '$senderName posted a new story';
       case 'messages':
         return '$senderName sent you a message';
+      case 'calls':
+        return '$senderName called you';
       default:
         return 'New notification';
     }
@@ -346,6 +348,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'comments':
@@ -357,6 +360,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'follows':
@@ -368,6 +372,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'mentions':
@@ -379,6 +384,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           mentions: value,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'stories':
@@ -390,6 +396,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           mentions: _preferences!.mentions,
           stories: value,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'messages':
@@ -401,6 +408,19 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: value,
+          calls: _preferences!.calls,
+        );
+        break;
+      case 'calls':
+        updatedPreferences = NotificationPreferencesModel(
+          userId: _preferences!.userId,
+          likes: _preferences!.likes,
+          comments: _preferences!.comments,
+          follows: _preferences!.follows,
+          mentions: _preferences!.mentions,
+          stories: _preferences!.stories,
+          messages: _preferences!.messages,
+          calls: value,
         );
         break;
       default:
@@ -460,6 +480,12 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
             subtitle: const Text('Get notified when someone sends you a message'),
             value: _preferences!.messages,
             onChanged: (value) => _updatePreference('messages', value),
+          ),
+          SwitchListTile(
+            title: const Text('Calls'),
+            subtitle: const Text('Get notified when someone calls you'),
+            value: _preferences!.calls,
+            onChanged: (value) => _updatePreference('calls', value),
           ),
         ],
       ),

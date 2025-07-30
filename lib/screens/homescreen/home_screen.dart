@@ -1,3 +1,4 @@
+import 'package:Instagram/screens/calling/widgets/floating_call_indicator.dart';
 import 'package:Instagram/screens/createscreens/create_post/create_post_screen.dart';
 import 'package:Instagram/screens/profilescreen/current_user_profile.dart';
 import 'package:Instagram/screens/searchscreen/search_screen.dart';
@@ -99,160 +100,162 @@ class _HomePageState extends State<HomeDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: PopScope(
-        canPop: _currentIndex == 0, // Only allow pop when on home screen
-        onPopInvoked: (didPop) {
-          if (!didPop) {
-            _handleBackNavigation();
-          }
-        },
-        child: Scaffold(
-          backgroundColor: Colors.black,
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _currentIndex,
+    return FloatingCallIndicator(
+      child: SafeArea(
+        child: PopScope(
+          canPop: _currentIndex == 0, // Only allow pop when on home screen
+          onPopInvoked: (didPop) {
+            if (!didPop) {
+              _handleBackNavigation();
+            }
+          },
+          child: Scaffold(
             backgroundColor: Colors.black,
-            showSelectedLabels: false,
-            items: [
-              BottomNavigationBarItem(
-                label: "Home",
-                icon: Image.asset(
-                  "assets/images/home.png",
-                  width: 23,
-                  height: 23,
-                  color: Colors.grey,
-                ),
-                activeIcon: Image.asset(
-                  "assets/images/homefill.png",
-                  width: 24,
-                  height: 24,
-                  color: Colors.white,
-                ),
-              ),
-              BottomNavigationBarItem(
-                label: "Search",
-                icon: Image.asset(
-                  "assets/images/glass.png",
-                  width: 23,
-                  height: 23,
-                  color: Colors.grey,
-                ),
-                activeIcon: Image.asset(
-                  "assets/images/glass.png",
-                  width: 23,
-                  height: 23,
-                  color: Colors.white,
-                ),
-              ),
-              BottomNavigationBarItem(
-                  label: "Create Post",
+            bottomNavigationBar: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              backgroundColor: Colors.black,
+              showSelectedLabels: false,
+              items: [
+                BottomNavigationBarItem(
+                  label: "Home",
                   icon: Image.asset(
-                    "assets/icon/add_post_icon.png",
-                    width: 22,
-                    height: 22,
+                    "assets/images/home.png",
+                    width: 23,
+                    height: 23,
                     color: Colors.grey,
                   ),
                   activeIcon: Image.asset(
-                    "assets/icon/add_post_icon.png",
-                    width: 22,
-                    height: 22,
+                    "assets/images/homefill.png",
+                    width: 24,
+                    height: 24,
                     color: Colors.white,
-                  )),
-              BottomNavigationBarItem(
-                label: "Reels",
-                icon: Image.asset(
-                  "assets/images/reelblack.png",
-                  width: 28,
-                  height: 28,
-                  color: Colors.grey,
+                  ),
                 ),
-                activeIcon: Image.asset(
-                  "assets/images/reel.png",
-                  width: 28,
-                  height: 28,
-                  color: Colors.white,
+                BottomNavigationBarItem(
+                  label: "Search",
+                  icon: Image.asset(
+                    "assets/images/glass.png",
+                    width: 23,
+                    height: 23,
+                    color: Colors.grey,
+                  ),
+                  activeIcon: Image.asset(
+                    "assets/images/glass.png",
+                    width: 23,
+                    height: 23,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-              BottomNavigationBarItem(
-                label: "Profile",
-                icon: _buildProfileIcon(isActive: false),
-                activeIcon: _buildProfileIcon(isActive: true),
-              ),
-            ],
-            onTap: (index) {
-              if (_currentIndex == index) {
-                // Same tab tapped again - trigger refresh
-                _refreshCurrentTab(index);
-              } else {
-                // Handle "Create Post" tab differently
-                if (index == 2) {
-                  // Assuming Create Post is index 2
-                  Navigator.of(context).push(
-                    PageRouteBuilder(
-                      pageBuilder: (context, animation, secondaryAnimation) =>
-                          const CreatePostScreen(
-                        initialTabIndex: 0,
-                      ),
-                      transitionsBuilder:
-                          (context, animation, secondaryAnimation, child) {
-                        const begin =
-                            Offset(-1.0, 0.0); // Starts from the right
-                        const end = Offset.zero; // Ends at its normal position
-                        const curve = Curves.ease;
-
-                        var tween = Tween(begin: begin, end: end)
-                            .chain(CurveTween(curve: curve));
-
-                        return SlideTransition(
-                          position: animation.drive(tween),
-                          child: child,
-                        );
-                      },
-                      fullscreenDialog:
-                          true, // Optional: still makes it feel like a modal
+                BottomNavigationBarItem(
+                    label: "Create Post",
+                    icon: Image.asset(
+                      "assets/icon/add_post_icon.png",
+                      width: 22,
+                      height: 22,
+                      color: Colors.grey,
                     ),
-                  );
+                    activeIcon: Image.asset(
+                      "assets/icon/add_post_icon.png",
+                      width: 22,
+                      height: 22,
+                      color: Colors.white,
+                    )),
+                BottomNavigationBarItem(
+                  label: "Reels",
+                  icon: Image.asset(
+                    "assets/images/reelblack.png",
+                    width: 28,
+                    height: 28,
+                    color: Colors.grey,
+                  ),
+                  activeIcon: Image.asset(
+                    "assets/images/reel.png",
+                    width: 28,
+                    height: 28,
+                    color: Colors.white,
+                  ),
+                ),
+                BottomNavigationBarItem(
+                  label: "Profile",
+                  icon: _buildProfileIcon(isActive: false),
+                  activeIcon: _buildProfileIcon(isActive: true),
+                ),
+              ],
+              onTap: (index) {
+                if (_currentIndex == index) {
+                  // Same tab tapped again - trigger refresh
+                  _refreshCurrentTab(index);
                 } else {
-                  // For other tabs (Home, Search, Reels, Profile)
-                  setState(() {
-                    _currentIndex =
-                        index; // Update the visual selected item in BottomNavigationBar
+                  // Handle "Create Post" tab differently
+                  if (index == 2) {
+                    // Assuming Create Post is index 2
+                    Navigator.of(context).push(
+                      PageRouteBuilder(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            const CreatePostScreen(
+                          initialTabIndex: 0,
+                        ),
+                        transitionsBuilder:
+                            (context, animation, secondaryAnimation, child) {
+                          const begin =
+                              Offset(-1.0, 0.0); // Starts from the right
+                          const end = Offset.zero; // Ends at its normal position
+                          const curve = Curves.ease;
 
-                    // Calculate the _selectedBodyIndex for IndexedStack
-                    if (index < 2) {
-                      _selectedBodyIndex =
-                          index; // For Home (0) and Search (1), it's the same index
-                    } else {
-                      // For Reels (index 3) and Profile (index 4), subtract 1
-                      // because index 2 (Create Post) is skipped in our _pages list.
-                      _selectedBodyIndex = index - 1;
-                    }
-                  });
+                          var tween = Tween(begin: begin, end: end)
+                              .chain(CurveTween(curve: curve));
+
+                          return SlideTransition(
+                            position: animation.drive(tween),
+                            child: child,
+                          );
+                        },
+                        fullscreenDialog:
+                            true, // Optional: still makes it feel like a modal
+                      ),
+                    );
+                  } else {
+                    // For other tabs (Home, Search, Reels, Profile)
+                    setState(() {
+                      _currentIndex =
+                          index; // Update the visual selected item in BottomNavigationBar
+
+                      // Calculate the _selectedBodyIndex for IndexedStack
+                      if (index < 2) {
+                        _selectedBodyIndex =
+                            index; // For Home (0) and Search (1), it's the same index
+                      } else {
+                        // For Reels (index 3) and Profile (index 4), subtract 1
+                        // because index 2 (Create Post) is skipped in our _pages list.
+                        _selectedBodyIndex = index - 1;
+                      }
+                    });
+                  }
                 }
-              }
-            },
-            selectedItemColor: Colors.white,
-            unselectedItemColor: Colors.grey,
-            showUnselectedLabels: false,
-            type: BottomNavigationBarType.fixed,
-          ),
-          body: IndexedStack(
-            index: _selectedBodyIndex,
-            children: [
-              _pages[0],
-              // Home
-              _pages[1],
-              // Search
-              _selectedBodyIndex == 2
-                  ? ReelsScreen(
-                      refreshNotifier: reelsRefreshNotifier,
-                      initialReelId: widget.initialReelId, // Pass the ID here
-                    )
-                  : Container(),
-              // Only create ReelsScreen when selected
-              _pages[3],
-              // Profile
-            ],
+              },
+              selectedItemColor: Colors.white,
+              unselectedItemColor: Colors.grey,
+              showUnselectedLabels: false,
+              type: BottomNavigationBarType.fixed,
+            ),
+            body: IndexedStack(
+              index: _selectedBodyIndex,
+              children: [
+                _pages[0],
+                // Home
+                _pages[1],
+                // Search
+                _selectedBodyIndex == 2
+                    ? ReelsScreen(
+                        refreshNotifier: reelsRefreshNotifier,
+                        initialReelId: widget.initialReelId, // Pass the ID here
+                      )
+                    : Container(),
+                // Only create ReelsScreen when selected
+                _pages[3],
+                // Profile
+              ],
+            ),
           ),
         ),
       ),

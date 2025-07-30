@@ -807,6 +807,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'comments':
@@ -818,6 +819,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'follows':
@@ -829,6 +831,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'mentions':
@@ -840,6 +843,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           mentions: value,
           stories: _preferences!.stories,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'stories':
@@ -851,6 +855,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           mentions: _preferences!.mentions,
           stories: value,
           messages: _preferences!.messages,
+          calls: _preferences!.calls,
         );
         break;
       case 'messages':
@@ -862,6 +867,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           mentions: _preferences!.mentions,
           stories: _preferences!.stories,
           messages: value,
+          calls: _preferences!.calls,
         );
         break;
       default:
@@ -937,6 +943,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       onChanged: (value) => _updatePreference('messages', value),
                       activeColor: Colors.blue,
                       secondary: const Icon(Icons.message, color: Colors.white),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Calls', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Get notified when someone calls you', style: TextStyle(color: Colors.grey)),
+                      value: _preferences!.calls,
+                      onChanged: (value) => _updatePreference('calls', value),
+                      activeColor: Colors.blue,
+                      secondary: const Icon(Icons.phone, color: Colors.white),
                     ),
                   ],
                 ),

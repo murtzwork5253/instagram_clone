@@ -66,6 +66,7 @@ class NotificationPreferencesModel {
   final bool mentions;
   final bool stories;
   final bool messages;
+  final bool calls;
 
   NotificationPreferencesModel({
     required this.userId,
@@ -75,6 +76,7 @@ class NotificationPreferencesModel {
     required this.mentions,
     required this.stories,
     required this.messages,
+    required this.calls,
   });
 
   factory NotificationPreferencesModel.fromMap(Map<String, dynamic> map) {
@@ -86,6 +88,7 @@ class NotificationPreferencesModel {
       mentions: map['mentions'] ?? true,
       stories: map['stories'] ?? true,
       messages: map['messages'] ?? true,
+      calls: map['calls'] ?? true,
     );
   }
 
@@ -98,6 +101,7 @@ class NotificationPreferencesModel {
       'mentions': mentions,
       'stories': stories,
       'messages': messages,
+      'calls': calls,
     };
   }
 }
@@ -113,7 +117,8 @@ enum NotificationType {
   storyLike('story_like'),
   commentLike('comment_like'),
   reelComment('reel_comment'),
-  messages('messages');
+  messages('messages'),
+  calls('calls');
 
   const NotificationType(this.value);
   final String value;

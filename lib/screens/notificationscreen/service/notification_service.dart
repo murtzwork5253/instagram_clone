@@ -41,6 +41,9 @@ class NotificationService {
         case 'messages':
           shouldNotify = preferences.messages;
           break;
+        case 'calls':
+          shouldNotify = preferences.calls;
+          break;
       }
 
       if (!shouldNotify) return;
@@ -120,6 +123,9 @@ class NotificationService {
             break;
           case 'messages':
             shouldNotify = preferences.messages;
+            break;
+          case 'calls':
+            shouldNotify = preferences.calls;
             break;
         }
 
@@ -244,6 +250,7 @@ class NotificationService {
           mentions: true,
           stories: true,
           messages: true,
+          calls: true,
         );
       }
 
@@ -258,6 +265,7 @@ class NotificationService {
         mentions: true,
         stories: true,
         messages: true,
+        calls: true,
       );
     }
   }
@@ -273,6 +281,7 @@ class NotificationService {
         'mentions': true,
         'stories': true,
         'messages': true,
+        'calls': true,
       });
     } catch (e) {
       print('Error creating default notification preferences: $e');
