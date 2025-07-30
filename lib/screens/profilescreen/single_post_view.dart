@@ -13,6 +13,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/expandable_caption_widget.dart';
 import '../chatscreen/message_service.dart';
 import '../chatscreen/model/models.dart';
 import '../common/report_dialog.dart';
@@ -349,18 +350,19 @@ class _SinglePostViewState extends State<SinglePostView> {
                         ],
                       ),
                       SizedBox(height: 10),
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '${post.username} ',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                            ),
-                            TextSpan(
-                              text: post.caption ?? '',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ],
+                      // UPDATED: Replace RichText with ExpandableCaptionWidget
+                      ExpandableCaptionWidget(
+                        username: post.username,
+                        caption: post.caption,
+                        maxLines: 2,
+                        usernameStyle: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        captionStyle: const TextStyle(color: Colors.white),
+                        moreStyle: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 14,
                         ),
                       ),
                       SizedBox(height: 5),

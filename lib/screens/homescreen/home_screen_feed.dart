@@ -12,6 +12,7 @@ import '../../services/insta_data_provider.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
+import '../../widgets/expandable_caption_widget.dart';
 import '../chatscreen/chat_screen.dart';
 import '../common/report_dialog.dart';
 import '../createscreens/story_share_preview_screen.dart';
@@ -485,176 +486,183 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                   final stories = provider.stories;
                   final posts = provider.posts;
 
-                  return CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      // Your SliverAppBar and UI here as-is
-                      SliverAppBar(
-                        pinned: false,
-                        floating: true,
-                        backgroundColor: Colors.black,
-                        title: Text(
-                          'Instagram',
-                          style: TextStyle(
-                            fontFamily: 'GrandHotel',
-                            fontSize: 33,
-                            color: Colors.white,
-                          ),
-                        ),
-                        actions: [
-                          IconButton(
-                            onPressed: () {
-                              Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => NotificationScreen()));
-                            },
-                            icon: Image.asset(
-                              "assets/icon/Icon.png",
-                              width: 25,
-                              height: 25,
+                  return RefreshIndicator(
+                      onRefresh: _onRefresh,
+                      // color: Colors.purpleAccent,
+                      backgroundColor: Colors.grey[800],
+                      displacement: 80.0, // Adjust this to move the refresh indicator position
+                      child: CustomScrollView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          // Your SliverAppBar and UI here as-is
+                          SliverAppBar(
+                            pinned: false,
+                            floating: true,
+                            backgroundColor: Colors.black,
+                            title: Text(
+                              'Instagram',
+                              style: TextStyle(
+                                fontFamily: 'GrandHotel',
+                                fontSize: 33,
+                                color: Colors.white,
+                              ),
                             ),
-                          ),
-                          // Chat icon with badge
-                          Stack(
-                            children: [
+                            actions: [
                               IconButton(
                                 onPressed: () {
-                                  final currentUserId = Supabase
-                                      .instance.client.auth.currentUser?.id;
-                                  if (currentUserId != null) {
-                                    Navigator.of(context).push(
-                                      PageRouteBuilder(
-                                        pageBuilder: (context, animation,
-                                                secondaryAnimation) =>
-                                            ChatScreen(
-                                          currentUserId: currentUserId,
-                                          cameFromProfile: false,
-                                          onMessageRead: () {
-                                            _updateUnreadMessageCounts();
-                                          },
-                                        ),
-                                        transitionsBuilder: (context, animation,
-                                            secondaryAnimation, child) {
-                                          const begin = Offset(1.0, 0.0);
-                                          const end = Offset.zero;
-                                          final tween =
-                                              Tween(begin: begin, end: end);
-                                          final offsetAnimation =
-                                              animation.drive(tween);
-                                          return SlideTransition(
-                                            position: offsetAnimation,
-                                            child: child,
-                                          );
-                                        },
-                                      ),
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content: Text(
-                                              'You need to be logged in to view chats.')),
-                                    );
-                                  }
+                                  Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) => NotificationScreen()));
                                 },
                                 icon: Image.asset(
-                                    "assets/images/image-removebg-preview.png",
-                                    width: 25,
-                                    height: 25,
-                                    color: Colors.white),
-                              ),
-                              if (_totalUnreadChats > 0)
-                                Positioned(
-                                  right: 8,
-                                  top: -1,
-                                  child: Container(
-                                    padding: EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                          color: Colors.black, width: 1),
-                                    ),
-                                    constraints: BoxConstraints(
-                                      minWidth: 16,
-                                      minHeight: 16,
-                                    ),
-                                    child: Text(
-                                      _totalUnreadChats.toString(),
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
+                                  "assets/icon/Icon.png",
+                                  width: 25,
+                                  height: 25,
                                 ),
+                              ),
+                              // Chat icon with badge
+                              Stack(
+                                children: [
+                                  IconButton(
+                                    onPressed: () {
+                                      final currentUserId = Supabase
+                                          .instance.client.auth.currentUser?.id;
+                                      if (currentUserId != null) {
+                                        Navigator.of(context).push(
+                                          PageRouteBuilder(
+                                            pageBuilder: (context, animation,
+                                                    secondaryAnimation) =>
+                                                ChatScreen(
+                                              currentUserId: currentUserId,
+                                              cameFromProfile: false,
+                                              onMessageRead: () {
+                                                _updateUnreadMessageCounts();
+                                              },
+                                            ),
+                                            transitionsBuilder: (context, animation,
+                                                secondaryAnimation, child) {
+                                              const begin = Offset(1.0, 0.0);
+                                              const end = Offset.zero;
+                                              final tween =
+                                                  Tween(begin: begin, end: end);
+                                              final offsetAnimation =
+                                                  animation.drive(tween);
+                                              return SlideTransition(
+                                                position: offsetAnimation,
+                                                child: child,
+                                              );
+                                            },
+                                          ),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                              content: Text(
+                                                  'You need to be logged in to view chats.')),
+                                        );
+                                      }
+                                    },
+                                    icon: Image.asset(
+                                        "assets/images/image-removebg-preview.png",
+                                        width: 25,
+                                        height: 25,
+                                        color: Colors.white),
+                                  ),
+                                  if (_totalUnreadChats > 0)
+                                    Positioned(
+                                      right: 8,
+                                      top: -1,
+                                      child: Container(
+                                        padding: EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                              color: Colors.black, width: 1),
+                                        ),
+                                        constraints: BoxConstraints(
+                                          minWidth: 16,
+                                          minHeight: 16,
+                                        ),
+                                        child: Text(
+                                          _totalUnreadChats.toString(),
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ],
+                          ),
+                          // Stories section
+                          SliverToBoxAdapter(
+                            child: Container(
+                              height: 121,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: stories.length,
+                                itemBuilder: (context, index) {
+                                  final story = stories[index];
+                                  return _buildStoryItem(story, context);
+                                },
+                              ),
+                            ),
+                          ),
+                          // Posts section
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final posts = provider.posts;
+                                final suggestedPosts = provider.suggestedPosts;
+                                final followingUserIds =
+                                    posts.map((post) => post.userId).toSet();
+                                final filteredSuggestedPosts = suggestedPosts
+                                    .where((post) =>
+                                        !followingUserIds.contains(post.userId))
+                                    .toList();
+
+                                if (index < posts.length) {
+                                  return _buildPost(posts[index],
+                                      isFollowing: true);
+                                } else {
+                                  final suggestedIndex = index - posts.length;
+                                  if (suggestedIndex <
+                                      filteredSuggestedPosts.length) {
+                                    return Column(
+                                      children: [
+                                        if (suggestedIndex == 0)
+                                          _buildSuggestedPostsHeader(),
+                                        _buildPost(
+                                            filteredSuggestedPosts[suggestedIndex],
+                                            isFollowing: false),
+                                      ],
+                                    );
+                                  }
+                                }
+                                return SizedBox.shrink();
+                              },
+                              childCount: () {
+                                final posts = provider.posts;
+                                final suggestedPosts = provider.suggestedPosts;
+                                final followingUserIds =
+                                    posts.map((post) => post.userId).toSet();
+                                final filteredSuggestedPosts = suggestedPosts
+                                    .where((post) =>
+                                        !followingUserIds.contains(post.userId))
+                                    .toList();
+                                return posts.length + filteredSuggestedPosts.length;
+                              }(),
+                            ),
                           ),
                         ],
                       ),
-                      // Stories section
-                      SliverToBoxAdapter(
-                        child: Container(
-                          height: 121,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: stories.length,
-                            itemBuilder: (context, index) {
-                              final story = stories[index];
-                              return _buildStoryItem(story, context);
-                            },
-                          ),
-                        ),
-                      ),
-                      // Posts section
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final posts = provider.posts;
-                            final suggestedPosts = provider.suggestedPosts;
-                            final followingUserIds =
-                                posts.map((post) => post.userId).toSet();
-                            final filteredSuggestedPosts = suggestedPosts
-                                .where((post) =>
-                                    !followingUserIds.contains(post.userId))
-                                .toList();
-
-                            if (index < posts.length) {
-                              return _buildPost(posts[index],
-                                  isFollowing: true);
-                            } else {
-                              final suggestedIndex = index - posts.length;
-                              if (suggestedIndex <
-                                  filteredSuggestedPosts.length) {
-                                return Column(
-                                  children: [
-                                    if (suggestedIndex == 0)
-                                      _buildSuggestedPostsHeader(),
-                                    _buildPost(
-                                        filteredSuggestedPosts[suggestedIndex],
-                                        isFollowing: false),
-                                  ],
-                                );
-                              }
-                            }
-                            return SizedBox.shrink();
-                          },
-                          childCount: () {
-                            final posts = provider.posts;
-                            final suggestedPosts = provider.suggestedPosts;
-                            final followingUserIds =
-                                posts.map((post) => post.userId).toSet();
-                            final filteredSuggestedPosts = suggestedPosts
-                                .where((post) =>
-                                    !followingUserIds.contains(post.userId))
-                                .toList();
-                            return posts.length + filteredSuggestedPosts.length;
-                          }(),
-                        ),
-                      ),
-                    ],
                   );
                 },
               ),
@@ -1261,21 +1269,19 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                 ],
               ),
               SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '${post.username} ',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    TextSpan(
-                      text: post.caption ?? '',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ],
+              // UPDATED: Replace RichText with ExpandableCaptionWidget
+              ExpandableCaptionWidget(
+                username: post.username,
+                caption: post.caption,
+                maxLines: 2,
+                usernameStyle: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                captionStyle: const TextStyle(color: Colors.white),
+                moreStyle: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 14,
                 ),
               ),
               SizedBox(height: 5),
@@ -1449,7 +1455,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
   }
 
   // Replace the existing _showShareOptions method with this implementation
-
   void _showShareOptions(PostData post) {
     showModalBottomSheet(
       context: context,
@@ -1651,6 +1656,27 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  // Add this method to your _InstagramHomeScreenState class:
+  Future<void> _onRefresh() async {
+    try {
+      final provider = Provider.of<InstaDataProvider>(context, listen: false);
+      await provider.reloadData();
+
+      // Reload tagged users for all posts after refresh
+      await _loadTaggedUsersForAllPosts();
+
+      // Update unread message counts
+      await _updateUnreadMessageCounts();
+    } catch (e) {
+      print('Error refreshing data: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to refresh. Please try again.')),
+        );
+      }
     }
   }
 

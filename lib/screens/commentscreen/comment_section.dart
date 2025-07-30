@@ -590,37 +590,45 @@ class _CommentTileState extends State<CommentTile> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: comment.username,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
+                  // Replace the RichText in CommentTile's build method with this:
+                  GestureDetector(
+                    onTap: _isExpanded ? () {
+                      setState(() {
+                        _isExpanded = false;
+                      });
+                    } : null,
+                    child: RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: comment.username,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                        TextSpan(
-                          text: ' ',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                        TextSpan(
-                          text: _isExpanded || !isTruncated
-                              ? comment.content
-                              : contentPreview,
-                          style: TextStyle(color: Colors.white, fontSize: 14),
-                        ),
-                      ],
+                          TextSpan(
+                            text: ' ',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          TextSpan(
+                            text: _isExpanded || !isTruncated
+                                ? comment.content
+                                : contentPreview,
+                            style: TextStyle(color: Colors.white, fontSize: 14),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  if (isTruncated && !_isExpanded)
+                  if (isTruncated)
                     GestureDetector(
-                      onTap: () => setState(() => _isExpanded = true),
+                      onTap: () => setState(() => _isExpanded = !_isExpanded),
                       child: Padding(
                         padding: const EdgeInsets.only(top: 4.0),
                         child: Text(
-                          'more',
+                          _isExpanded ? 'less' : 'more',
                           style: TextStyle(
                               color: Colors.grey.shade500, fontSize: 13),
                         ),
