@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../calling/call_manager.dart';
+import '../reels_screen/reel_modal.dart';
+import '../reels_screen/reels_screen.dart';
 import '/screens/chatscreen/model/models.dart'; // NEW: Import the new models file
 import 'full_screen_image_viewer.dart';
 import 'message_service.dart'; // NEW: Import the new message service file
@@ -20,6 +22,7 @@ class ChatScreen extends StatefulWidget {
   final bool? cameFromProfile; // NEW: Track if came from profile
   final VoidCallback? onMessageRead;
   final Message? initialMessage; // NEW
+  final Reel? sharedReel;
 
   const ChatScreen({
     Key? key,
@@ -28,6 +31,7 @@ class ChatScreen extends StatefulWidget {
     this.cameFromProfile,
     this.onMessageRead,
     this.initialMessage, // NEW
+    this.sharedReel,
   }) : super(key: key);
 
   @override
@@ -81,7 +85,8 @@ class _ChatScreenState extends State<ChatScreen>
     _loadChatRooms();
     _setupRealtimeSubscription();
 
-    if (widget.initialChatUserId != null) {
+    // MODIFIED: Conditionally load initial chat
+    if (widget.sharedReel == null && widget.initialChatUserId != null) {
       _selectedChatUserId = widget.initialChatUserId;
       _loadInitialChatUserInfo();
 
@@ -473,6 +478,11 @@ class _ChatScreenState extends State<ChatScreen>
       await _markCurrentChatAsRead();
     }
 
+    if (widget.sharedReel != null) {
+      await _sendSharedReel(userId, widget.sharedReel!);
+      return;
+    }
+
     setState(() {
       _selectedChatUserId = userId;
       _selectedChatUsername = username;
@@ -487,6 +497,37 @@ class _ChatScreenState extends State<ChatScreen>
     // Animate transition
     _fadeController.forward();
     _slideController.forward();
+  }
+
+  // NEW: Add method to send the shared reel
+  Future<void> _sendSharedReel(String receiverId, Reel reel) async {
+    try {
+      await _messageService.sendMessage(
+        senderId: widget.currentUserId,
+        receiverId: receiverId,
+        sharedReel: reel.toJson(),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reel shared successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Pop back to the reel player after sharing
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to share reel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _exitChat() async {
@@ -1042,6 +1083,94 @@ class _ChatScreenState extends State<ChatScreen>
         ),
       );
     }
+    // NEW: Add logic to render a shared reel
+    else if (message.sharedReel != null) {
+      final reel = Reel.fromJson(message.sharedReel!);
+      messageContent = GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ReelsScreen(
+                refreshNotifier: ValueNotifier<int>(0),
+                initialReelId: reel.id,
+              ),
+            ),
+          );
+        },
+        child: Container(
+          width: 260,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey[800]!, width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundImage: NetworkImage(reel.userAvatar),
+                    backgroundColor: Colors.grey[800],
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      reel.username,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: 180,
+                      color: Colors.black,
+                      child: const Center(
+                          child: Icon(Icons.videocam,
+                              color: Colors.white, size: 50)),
+                    ),
+                    const Icon(Icons.play_arrow,
+                        color: Colors.white, size: 60),
+                  ],
+                ),
+              ),
+              if (reel.caption.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  reel.caption,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 6),
+              Text(
+                'Shared a reel',
+                style: TextStyle(
+                    color: Colors.blue[200],
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     else if (message.imageUrl != null && message.imageUrl!.isNotEmpty) {
       print("DEBUG: Image URL is : ${message.imageUrl}");
 
@@ -1112,7 +1241,8 @@ class _ChatScreenState extends State<ChatScreen>
         message.content!,
         style: const TextStyle(color: Colors.white, fontSize: 16),
       );
-    } else {
+    }
+    else {
       // Fallback for empty/unknown message
       messageContent = const SizedBox.shrink();
     }

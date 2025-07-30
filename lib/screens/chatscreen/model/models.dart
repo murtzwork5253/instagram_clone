@@ -14,6 +14,7 @@ class Message {
   final DateTime createdAt;
   final DateTime? seenAt;// NEW FIELD
   final Map<String, dynamic>? sharedPost;
+  final Map<String, dynamic>? sharedReel;
 
   Message({
     required this.id,
@@ -25,6 +26,7 @@ class Message {
     required this.isRead,
     required this.createdAt,
     this.seenAt, // NEW FIELD
+    this.sharedReel,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -43,6 +45,20 @@ class Message {
       }
     }
     print('Parsed sharedPost: ' + sharedPost.toString()); // DEBUG
+
+    dynamic sharedReelRaw = json['shared_reel']; // NEW
+    Map<String, dynamic>? sharedReel; // NEW
+    if (sharedReelRaw != null) { // NEW
+      if (sharedReelRaw is String) { // NEW
+        try { // NEW
+          sharedReel = Map<String, dynamic>.from(jsonDecode(sharedReelRaw)); // NEW
+        } catch (_) { // NEW
+          sharedReel = null; // NEW
+        } // NEW
+      } else if (sharedReelRaw is Map) { // NEW
+        sharedReel = Map<String, dynamic>.from(sharedReelRaw); // NEW
+      } // NEW
+    } // NEW
     return Message(
       id: json['id'] as String,
       senderId: json['sender_id'] as String?,
@@ -50,6 +66,7 @@ class Message {
       content: json['content'] as String?,
       imageUrl: json['image_url'] as String?,
       sharedPost: sharedPost,
+      sharedReel: sharedReel, // NEW
       isRead: json['is_read'] as bool,
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       seenAt: json['seen_at'] != null ? DateTime.parse(json['seen_at'] as String).toLocal() : null,
@@ -64,6 +81,7 @@ class Message {
       'content': content,
       'image_url': imageUrl,
       'shared_post': sharedPost,
+      'shared_reel': sharedReel, // NEW
       'is_read': isRead,
       'created_at': createdAt.toIso8601String(),
       'seen_at': seenAt?.toIso8601String(), // NEW

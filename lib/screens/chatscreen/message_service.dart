@@ -55,8 +55,9 @@ class MessageService {
     String? content,
     String? imageUrl,
     Map<String, dynamic>? sharedPost,
+    Map<String, dynamic>? sharedReel,
   }) async {
-    if (content == null && imageUrl == null && sharedPost == null) {
+    if (content == null && imageUrl == null && sharedPost == null && sharedReel == null) {
       throw ArgumentError('Message must have content, an image, or a shared post.');
     }
 
@@ -66,6 +67,7 @@ class MessageService {
       'content': content,
       'image_url': imageUrl,
       'shared_post': sharedPost,
+      'shared_reel': sharedReel,
       'is_read': false,
       'created_at': DateTime.now().toUtc().toIso8601String(),
     };

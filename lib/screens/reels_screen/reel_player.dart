@@ -12,6 +12,7 @@ import 'package:Instagram/screens/reels_screen/reel_modal.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../../services/auth_service.dart';
+import '../chatscreen/chat_screen.dart';
 import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart';
 import '../user_tagging/user_model.dart';
@@ -946,7 +947,38 @@ class ReelPlayerEnhancements {
                     .updateReelMuteState(reel.id, !reel.isVideoMuted);
               },
             ),
+            // ADD THIS NEW TILE
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline, color: Colors.white),
+              title: const Text('Share in Chat',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _shareReelInChat(context, reel);
+              },
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ADD THIS NEW METHOD
+  void _shareReelInChat(BuildContext context, Reel reel) {
+    final currentUserId = AuthService.client().auth.currentUser?.id;
+    if (currentUserId == null) {
+      // Handle case where user is not logged in, e.g., show a message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in to share reels.')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          currentUserId: currentUserId,
+          sharedReel: reel, // Pass the reel to the chat screen
         ),
       ),
     );
