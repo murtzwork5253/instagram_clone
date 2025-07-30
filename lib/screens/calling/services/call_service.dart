@@ -17,6 +17,7 @@ class CallService {
   RealtimeChannel? _callStatusChannel;
   Call? _currentCall;
   Timer? _callDurationTimer;
+  bool _isEndingCall = false; // Add this flag
 
   // Callbacks
   Function(Call)? onIncomingCall;
@@ -284,14 +285,16 @@ class CallService {
 
     await _sendSignal(SignalType.rejectCall, {'reason': 'rejected'});
     await _updateCallStatus(CallStatus.declined);
-    await endCall();
+    // await endCall();
   }
 
   // End call
   Future<void> endCall() async {
-    if (_currentCall == null) return;
+    // Modify the guard to check the new flag
+    if (_currentCall == null || _isEndingCall) return;
 
     try {
+      _isEndingCall = true; // Set the flag to true
       // Send end signal
       await _sendSignal(SignalType.endCall, {});
 
@@ -320,6 +323,7 @@ class CallService {
       await _webRTCService.dispose();
       _currentCall = null;
       onCallEnded?.call();
+      _isEndingCall = false; // Reset the flag
     }
   }
 
@@ -384,6 +388,53 @@ class CallService {
 
   void toggleSpeaker(bool speakerOn) {
     _webRTCService.toggleSpeaker(speakerOn);
+  }
+
+  Future<Call?> checkForActiveCall() async {
+    // If we already have a call in memory, return it
+    if (_currentCall != null && _currentCall!.isActive) {
+      return _currentCall;
+    }
+
+    try {
+      // Otherwise, check the database
+      final response = await _supabase
+          .from('calls')
+          .select()
+          .or('caller_id.eq.$currentUserId,receiver_id.eq.$currentUserId')
+          .inFilter('status', ['initiated', 'ringing', 'answered']) // Active call statuses
+          .order('started_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response != null) {
+        // If a call is found, update the state and return it
+        _currentCall = Call.fromJson(response);
+        print('Found active call from database: ${_currentCall!.id}');
+        return _currentCall;
+      }
+    } catch (e) {
+      print('Error checking for active call: $e');
+    }
+
+    return null; // No active call found
+  }
+
+  Future<CallSignal?> getInitialOfferForCall(String callId) async {
+    try {
+      final response = await _supabase
+          .from('call_signals')
+          .select()
+          .eq('call_id', callId)
+          .eq('signal_type', 'offer') // Look specifically for the 'offer' signal
+          .order('created_at', ascending: true)
+          .limit(1)
+          .single();
+      return CallSignal.fromJson(response);
+    } catch (e) {
+      print("Error fetching initial offer: $e");
+      return null;
+    }
   }
 
   Future<void> dispose() async {

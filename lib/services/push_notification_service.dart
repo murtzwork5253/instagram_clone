@@ -1,3 +1,4 @@
+import 'package:Instagram/screens/calling/call_manager.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -148,6 +149,8 @@ class PushNotificationService {
         return '$senderName liked your story';
       case 'messages':
         return '$senderName sends you a new message';
+      case 'calls':
+        return '$senderName is calling you';
       default:
         return 'New Notification';
     }
@@ -191,6 +194,8 @@ class PushNotificationService {
         return 'Someone liked your story';
       case 'messages':
         return 'You have a new message';
+      case 'calls':
+        return 'You have a new call';
       default:
         return 'You have a new notification';
     }
@@ -315,7 +320,7 @@ class PushNotificationService {
     }
   }
 
-  static void _handleNotificationTap(Map<String, dynamic> data) {
+  static void _handleNotificationTap(Map<String, dynamic> data) async{
     if (_navigatorKey.currentContext == null) return;
 
     final type = data['type'];
@@ -388,6 +393,17 @@ class PushNotificationService {
           );
         } else {
           _navigateToNotifications(recipientId);
+        }
+        break;
+      case 'calls':
+        final callManager = CallManager();
+
+        // IMPORTANT: Check the database for an active call to refresh the app's state
+        final activeCall = await callManager.callService.checkForActiveCall();
+
+        if (activeCall != null) {
+          // If a call is found, use a method to rejoin it
+          await callManager.rejoinCall(_navigatorKey.currentContext!, activeCall);
         }
         break;
       default:

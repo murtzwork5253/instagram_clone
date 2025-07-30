@@ -1,6 +1,7 @@
 // screens/calling/call_manager.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -244,6 +245,46 @@ class CallManager {
     // For now, return a simple identifier
     // In production, you should use device_info_plus package
     return 'device_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  // Make the function async
+  Future<void> rejoinCall(BuildContext context, Call call) async {
+    // Determine who the other user in the call is
+    final otherUserId = call.callerId == _callService.currentUserId
+        ? call.receiverId
+        : call.callerId;
+
+    // Restore the other user's info to populate the UI
+    final userInfo = await _getCallerInfo(otherUserId);
+    _activeCallUserId = otherUserId;
+    _activeCallUserName = userInfo['username'] ?? 'Unknown User';
+    _activeCallUserProfileUrl = userInfo['profile_image_url'];
+
+    // ** START: NEW LOGIC **
+    // If the current user is the receiver and the call is not yet answered,
+    // we must re-initialize the WebRTC connection with the caller's offer.
+    if (call.receiverId == _callService.currentUserId && call.status != CallStatus.answered) {
+      final offerSignal = await _callService.getInitialOfferForCall(call.id);
+
+      if (offerSignal != null) {
+        // 1. Initialize the WebRTC Service
+        await _callService.webRTCService.initialize();
+
+        // 2. Set the remote description using the fetched offer
+        final offer = RTCSessionDescription(
+          offerSignal.signalData['sdp'],
+          offerSignal.signalData['type'],
+        );
+        await _callService.webRTCService.setRemoteDescription(offer);
+        print("Successfully re-initialized WebRTC for incoming call rejoin.");
+      } else {
+        // If we can't get the offer, we can't proceed.
+        print("Could not retrieve original offer for call ${call.id}. Cannot rejoin.");
+        return; // Exit to prevent errors
+      }
+    }
+    // Now that the state is restored, use the existing navigation logic
+    navigateToActiveCall(context);
   }
 
   // Check if same device (simple implementation)

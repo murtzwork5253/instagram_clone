@@ -1,5 +1,9 @@
 import 'dart:async'; // Added for StreamSubscription
+import 'package:Instagram/screens/calling/call_manager.dart';
+import 'package:Instagram/screens/calling/incoming_call_screen.dart';
 import 'package:Instagram/screens/homescreen/home_screen.dart';
+import 'package:Instagram/screens/notificationscreen/notification_screen.dart';
+import 'package:Instagram/screens/profilescreen/profile_settings_menu.dart';
 import 'package:Instagram/screens/reels_screen/reel_provider.dart';
 import 'package:Instagram/screens/splash/splash_screen.dart';
 import 'package:Instagram/services/insta_data_provider.dart';
@@ -114,18 +118,20 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver{
   late AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     initDeepLinks();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _linkSubscription?.cancel();
     super.dispose();
   }
@@ -154,6 +160,27 @@ class _MyAppState extends State<MyApp> {
       }
     });
   }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async { // Make it async
+    super.didChangeAppLifecycleState(state);
+
+    if (state == AppLifecycleState.resumed) {
+      final callManager = CallManager();
+
+      // Only proceed if the call UI isn't already visible
+      if (!callManager.isCallUIActive) {
+        // Check the database for an active call
+        final activeCall = await callManager.callService.checkForActiveCall();
+
+        if (activeCall != null && navigatorKey.currentContext != null) {
+          // If a call is found, rejoin it
+          await callManager.rejoinCall(navigatorKey.currentContext!, activeCall);
+        }
+      }
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -188,6 +215,31 @@ class _MyAppState extends State<MyApp> {
           ],
           home: const SplashScreen(),
           debugShowCheckedModeBanner: false,
+
+          // onGenerateRoute: (settings){
+          //   switch(settings.name) {
+          //     // Define a case for your notifications screen
+          //     case '/notifications':
+          //       final args = settings.arguments as Map<String, dynamic>?;
+          //       final userId = args?['userId'];
+          //       return MaterialPageRoute(
+          //         builder: (context) {
+          //           // Return the screen you want to show for notifications
+          //           return NotificationScreen();
+          //         },
+          //       );
+          //     default:
+          //     // If the route is not found, you can show a default screen
+          //     // or an error screen.
+          //       return MaterialPageRoute(
+          //         builder: (context) => Scaffold(
+          //           body: Center(
+          //             child: Text('Route not found: ${settings.name}'),
+          //           ),
+          //         ),
+          //       );
+          //   };
+          // },
         );
       },
     );

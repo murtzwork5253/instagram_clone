@@ -82,6 +82,14 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       _handleDecline();
     });
 
+    // Add this callback to handle the call ending remotely
+    widget.callService.onCallEnded = () {
+      if (mounted) {
+        // If the call ends for any reason, pop the screen
+        Navigator.of(context).pop();
+      }
+    };
+
     // Vibrate for incoming call
     HapticFeedback.vibrate();
   }
