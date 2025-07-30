@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -57,6 +59,7 @@ class InstaDataProvider extends ChangeNotifier {
         _fetchPosts(),
         _fetchStories(),
       ]);
+      shufflePosts();
       await fetchSuggestedPosts();
     } catch (e) {
       _error = e.toString();
@@ -973,6 +976,14 @@ class InstaDataProvider extends ChangeNotifier {
       notifyListeners();
     } else {
       throw Exception('Failed to delete post');
+    }
+  }
+
+  // Add this method to your InstaDataProvider class
+  void shufflePosts() {
+    if (_posts.isNotEmpty) {
+      _posts.shuffle(Random());
+      notifyListeners();
     }
   }
 

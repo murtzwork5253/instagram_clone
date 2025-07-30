@@ -38,14 +38,19 @@ class InstagramHomeScreen extends StatefulWidget {
 
 class _InstagramHomeScreenState extends State<InstagramHomeScreen>
     with TickerProviderStateMixin {
+  // Add this helper method at the beginning
+  double _getResponsiveSize(BuildContext context, double baseSize) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final scaleFactor = screenWidth / 375; // 375 is iPhone base width
+    return baseSize * scaleFactor;
+  }
   // Store the listener function so we can remove it later
   VoidCallback? _refreshListener;
   Map<String, int> _unreadMessageCounts = {};
   int _totalUnreadChats = 0; // Total number of users with unread messages
   RealtimeChannel? _messageSubscription;
   final UserTaggingService _taggingService = UserTaggingService();
-  Map<String, List<TaggedUser>> _postTaggedUsers =
-      {}; // Store tagged users per post
+  Map<String, List<TaggedUser>> _postTaggedUsers = {}; // Store tagged users per post
   late AnimationController _chatAnimationController;
   late Animation<Offset> _chatSlideAnimation;
   late Animation<Offset> _homeSlideAnimation;
@@ -58,7 +63,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
 
   // --- ADDED: Cache for isFollowingUser futures per postId ---
   final Map<String, Future<bool>> _isFollowingFutures = {};
-
   final ScrollController _scrollController = ScrollController();
   int _postsPerPage = 10;
   int _currentMax = 10;
@@ -337,7 +341,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
       _chatAnimationController.reverse();
     }
   }
-
   // IMPORTANT: Remove the listener when the widget is disposed
   @override
   void dispose() {
@@ -504,7 +507,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                               'Instagram',
                               style: TextStyle(
                                 fontFamily: 'GrandHotel',
-                                fontSize: 33,
+                                fontSize: _getResponsiveSize(context, 33),
                                 color: Colors.white,
                               ),
                             ),
@@ -518,8 +521,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                                 },
                                 icon: Image.asset(
                                   "assets/icon/Icon.png",
-                                  width: 25,
-                                  height: 25,
+                                  width: _getResponsiveSize(context, 29),
+                                  height: _getResponsiveSize(context, 29),
                                 ),
                               ),
                               // Chat icon with badge
@@ -566,8 +569,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                                     },
                                     icon: Image.asset(
                                         "assets/images/image-removebg-preview.png",
-                                        width: 25,
-                                        height: 25,
+                                        width: _getResponsiveSize(context, 25),
+                                        height: _getResponsiveSize(context, 25),
                                         color: Colors.white),
                                   ),
                                   if (_totalUnreadChats > 0)
@@ -604,7 +607,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                           // Stories section
                           SliverToBoxAdapter(
                             child: Container(
-                              height: 121,
+                              height: _getResponsiveSize(context, 121),
                               child: ListView.builder(
                                 scrollDirection: Axis.horizontal,
                                 itemCount: stories.length,
@@ -832,8 +835,8 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
         }
       },
       child: Container(
-        width: 90,
-        margin: const EdgeInsets.only(left: 8, top: 6),
+        width: _getResponsiveSize(context, 85),
+        margin: const EdgeInsets.only(left: 8, top: 5),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -842,7 +845,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
               children: [
                 // Avatar with border
                 Container(
-                  padding: const EdgeInsets.all(1),
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     // Modify gradient: if it's "My Empty Story", set it to transparent.
                     // Otherwise, use the existing logic for grey/colorful borders.
@@ -863,10 +866,10 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                     shape: BoxShape.circle,
                   ),
                   child: CircleAvatar(
-                    radius: 44,
+                    radius: _getResponsiveSize(context, 42),
                     backgroundColor: Colors.black,
                     child: CircleAvatar(
-                      radius: 42,
+                      radius: _getResponsiveSize(context, 39),
                       backgroundColor: Colors.grey[800],
                       backgroundImage: CachedNetworkImageProvider(displayUrl),
                     ),
@@ -896,9 +899,9 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                   ),
               ],
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: _getResponsiveSize(context, 4)),
             SizedBox(
-              width: 80,
+              width: _getResponsiveSize(context, 80),
               child: Text(
                 story.isMe ? "Your Story" : story.username,
                 style: const TextStyle(color: Colors.white),
@@ -931,7 +934,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
       ),
     );
   }
-
   // --- END MODIFIED _buildStoryItem METHOD ---
 
   Widget _buildPost(PostData post, {bool isFollowing = true}) {
@@ -974,7 +976,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
               }
             },
             leading: CircleAvatar(
-              radius: 17,
+              radius: _getResponsiveSize(context, 17),
               backgroundImage: CachedNetworkImageProvider(imageUrl),
               child: imageUrl == null ? Icon(Icons.person) : null,
             ),
@@ -1572,7 +1574,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
     );
   }
 
-// Helper method to get following users
+  // Helper method to get following users
   Future<List<Map<String, dynamic>>> _getFollowingUsers() async {
     try {
       final currentUserId = Supabase.instance.client.auth.currentUser?.id;
@@ -1604,7 +1606,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
     }
   }
 
-// Helper method to build user image URL
+  // Helper method to build user image URL
   String _buildUserImageUrl(String? profileImageUrl) {
     if (profileImageUrl == null) return '';
 
@@ -1618,7 +1620,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
         : 'https://kprizlkexocjxvygfbyn.supabase.co/storage/v1/object/public/avatars/$profileImageUrl';
   }
 
-// Method to share post to specific user
+  // Method to share post to specific user
   void _sharePostToUser(PostData post, Map<String, dynamic> user) async {
     final currentUser = AuthService.client().auth.currentUser;
     if (currentUser == null) return;
@@ -1693,7 +1695,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
     );
   }
 
-// Method to copy post link
+  // Method to copy post link
   void _copyPostLink(PostData post) {
     final imageUrl = post.imageUrl;
     final postLink = imageUrl.startsWith('http') && imageUrl.startsWith('https')
