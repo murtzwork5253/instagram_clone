@@ -115,6 +115,13 @@ class _FollowersListState extends State<FollowersList>
             final String? profileImageUrl = user['profile_image_url'];
             final bool isFollowing = user['is_following'] ?? false;
 
+            // Fixed profile image URL handling
+            final String? publicUrl = profileImageUrl != null
+                ? (profileImageUrl.startsWith('http')
+                ? profileImageUrl
+                : Supabase.instance.client.storage.from('avatars').getPublicUrl(profileImageUrl))
+                : null;
+
             return GestureDetector(
               onTap: () {
                 if (_currentUserId != null && userId == _currentUserId) {
@@ -141,10 +148,10 @@ class _FollowersListState extends State<FollowersList>
                   children: [
                     CircleAvatar(
                       radius: 24,
-                      backgroundImage: profileImageUrl != null
-                          ? NetworkImage(profileImageUrl)
+                      backgroundImage: publicUrl != null
+                          ? NetworkImage(publicUrl)
                           : null,
-                      child: profileImageUrl == null
+                      child: publicUrl == null
                           ? const Icon(Icons.person, color: Colors.white)
                           : null,
                       backgroundColor: Colors.grey[800],
