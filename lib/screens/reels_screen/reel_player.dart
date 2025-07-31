@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -12,6 +13,7 @@ import 'package:Instagram/screens/reels_screen/reel_modal.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../../services/auth_service.dart';
+import '../../services/insta_data_provider.dart';
 import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart';
 import '../user_tagging/user_model.dart';
@@ -1090,6 +1092,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
   bool _isPosting = false;
   DateTime? _lastRefreshed;
   final String currentUserId = AuthService.client().auth.currentUser!.id;
+  final ScrollController _textFieldScrollController = ScrollController();
 
   @override
   void initState() {
@@ -1105,6 +1108,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
   void dispose() {
     _commentController.removeListener(_updatePostButton);
     _commentController.dispose();
+    _textFieldScrollController.dispose();
     super.dispose();
   }
 
@@ -1192,6 +1196,37 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
           _isPosting = false;
         });
       }
+    }
+  }
+
+  // Add this method to your State class (works for both comment sections)
+
+  String? _getCurrentUserProfileImageUrl(BuildContext context) {
+    try {
+      // Get current user from provider
+      final dataProvider = Provider.of<InstaDataProvider>(context, listen: false);
+      final currentUser = dataProvider.currentUser;
+
+      if (currentUser?.profileImageUrl == null || currentUser!.profileImageUrl!.isEmpty) {
+        return null;
+      }
+
+      final imageUrl = currentUser.profileImageUrl!;
+
+      // Check if it's already a full URL (starts with http/https)
+      final isPublicUrl = imageUrl.startsWith('http');
+
+      if (isPublicUrl) {
+        return imageUrl;
+      } else {
+        // Convert relative path to full Supabase URL
+        return Supabase.instance.client.storage
+            .from('avatars')
+            .getPublicUrl(imageUrl);
+      }
+    } catch (e) {
+      print('Error fetching current user profile image: $e');
+      return null;
     }
   }
 
@@ -1358,7 +1393,7 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
                             ),
                           ),
 
-                          // Add comment section
+                          //Add comment section
                           Container(
                             padding: EdgeInsets.only(
                               left: 16,
@@ -1369,88 +1404,109 @@ class _CommentBottomSheetState extends State<CommentBottomSheet> {
                             decoration: BoxDecoration(
                               color: Colors.black,
                               border: Border(
-                                top: BorderSide(
-                                    color: Colors.grey.shade800, width: 0.5),
+                                top: BorderSide(color: Colors.grey.shade800, width: 0.5),
                               ),
                             ),
                             child: SafeArea(
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.end, // Changed to end alignment
                                 children: [
                                   // Current user profile image
-                                  Consumer<ReelProvider>(
-                                    builder: (context, reelProvider, child) {
-                                      return CircleAvatar(
-                                        radius: 18,
-                                        backgroundColor: Colors.grey.shade700,
-                                        child: Icon(
-                                          Icons.person,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      );
-                                    },
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8.0), // Add bottom padding
+                                    child: Consumer<ReelProvider>(
+                                      builder: (context, reelProvider, child) {
+                                        return CircleAvatar(
+                                          radius: 18,
+                                          backgroundImage: _getCurrentUserProfileImageUrl(context) != null
+                                              ? NetworkImage(_getCurrentUserProfileImageUrl(context)!)
+                                              : null,
+                                          backgroundColor: Colors.grey.shade700,
+                                          child: _getCurrentUserProfileImageUrl(context) == null
+                                              ? Icon(Icons.person, color: Colors.white, size: 20)
+                                              : null,
+                                        );
+                                      },
+                                    ),
                                   ),
                                   SizedBox(width: 12),
 
-                                  // Comment text field
+                                  // Comment text field with scroll
                                   Expanded(
                                     child: Container(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
+                                      constraints: BoxConstraints(
+                                        maxHeight: 100, // Maximum height for ~4 lines
+                                        minHeight: 40,  // Minimum height for single line
                                       ),
+                                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                       decoration: BoxDecoration(
                                         color: Colors.grey.shade900,
                                         borderRadius: BorderRadius.circular(20),
-                                        border:
-                                        Border.all(color: Colors.grey.shade800),
+                                        border: Border.all(color: Colors.grey.shade800),
                                       ),
-                                      child: TextField(
-                                        controller: _commentController,
-                                        style: TextStyle(color: Colors.white),
-                                        decoration: InputDecoration(
-                                          hintText: 'Add a comment...',
-                                          border: InputBorder.none,
-                                          hintStyle:
-                                          TextStyle(color: Colors.grey.shade600),
-                                          isDense: true,
-                                          contentPadding: EdgeInsets.zero,
+                                      child: Scrollbar(
+                                        controller: _textFieldScrollController,
+                                        thumbVisibility: false, // Hide scrollbar
+                                        child: SingleChildScrollView(
+                                          controller: _textFieldScrollController,
+                                          child: TextField(
+                                            controller: _commentController,
+                                            scrollController: null, // Remove internal scroll
+                                            style: TextStyle(color: Colors.white),
+                                            decoration: InputDecoration(
+                                              hintText: 'Add a comment...',
+                                              border: InputBorder.none,
+                                              hintStyle: TextStyle(color: Colors.grey.shade600),
+                                              isDense: true,
+                                              contentPadding: EdgeInsets.zero,
+                                            ),
+                                            maxLines: null,
+                                            minLines: 1,
+                                            textAlignVertical: TextAlignVertical.top,
+                                            textInputAction: TextInputAction.send,
+                                            onChanged: (text) {
+                                              // Auto-scroll to bottom when typing
+                                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                if (_textFieldScrollController.hasClients) {
+                                                  _textFieldScrollController.animateTo(
+                                                    _textFieldScrollController.position.maxScrollExtent,
+                                                    duration: Duration(milliseconds: 100),
+                                                    curve: Curves.easeOut,
+                                                  );
+                                                }
+                                              });
+                                            },
+                                            onSubmitted: (_) {
+                                              if (_canPost) _addComment();
+                                            },
+                                          ),
                                         ),
-                                        maxLines: null,
-                                        textInputAction: TextInputAction.send,
-                                        onSubmitted: (_) {
-                                          if (_canPost) _addComment();
-                                        },
                                       ),
                                     ),
                                   ),
                                   SizedBox(width: 8),
 
                                   // Post button
-                                  GestureDetector(
-                                    onTap: (_canPost && !_isPosting)
-                                        ? _addComment
-                                        : null,
-                                    child: Container(
-                                      padding: EdgeInsets.all(8),
-                                      child: _isPosting
-                                          ? SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                          AlwaysStoppedAnimation<Color>(
-                                            Colors.blue,
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8.0), // Add bottom padding
+                                    child: GestureDetector(
+                                      onTap: (_canPost && !_isPosting) ? _addComment : null,
+                                      child: Container(
+                                        padding: EdgeInsets.all(8),
+                                        child: _isPosting
+                                            ? SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
                                           ),
+                                        )
+                                            : Icon(
+                                          Icons.send,
+                                          color: _canPost ? Colors.blue : Colors.grey.shade600,
+                                          size: 24,
                                         ),
-                                      )
-                                          : Icon(
-                                        Icons.send,
-                                        color: _canPost
-                                            ? Colors.blue
-                                            : Colors.grey.shade600,
-                                        size: 24,
                                       ),
                                     ),
                                   ),
