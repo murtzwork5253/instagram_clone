@@ -1319,14 +1319,6 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Icons.save_alt, color: Colors.white),
-              title: Text('Save', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                // Save post implementation
-              },
-            ),
-            ListTile(
               leading: Icon(Icons.share, color: Colors.white),
               title: Text('Share', style: TextStyle(color: Colors.white)),
               onTap: () {

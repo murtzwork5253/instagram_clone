@@ -139,12 +139,12 @@ class PushNotificationService {
         return '$senderName liked your reel';
       case 'reel_comment':
         return '$senderName commented on your reel';
+      case 'comment_like':
+        return '$senderName liked your comment';
       case 'follow':
         return '$senderName started following you';
       case 'mention':
         return '$senderName mentioned you';
-      // case 'story':
-      //   return '$senderName viewed your story';
       case 'story_like':
         return '$senderName liked your story';
       case 'messages':
@@ -184,12 +184,12 @@ class PushNotificationService {
           return '"$truncated"';
         }
         return 'Someone commented on your reel';
+      case 'comment_like':
+        return 'Someone liked your comment';
       case 'follow':
         return 'You have a new follower';
       case 'mention':
         return 'You were mentioned in a post';
-      // case 'story':
-      //   return 'Someone viewed your story';
       case 'story_like':
         return 'Someone liked your story';
       case 'messages':

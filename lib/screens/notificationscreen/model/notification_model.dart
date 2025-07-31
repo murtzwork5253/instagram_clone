@@ -109,10 +109,9 @@ class NotificationPreferencesModel {
 // Notification types enum
 enum NotificationType {
   like('like'),
-  comment('comment'),
+  comment('post_comment'),
   follow('follow'),
   mention('mention'),
-  story('story'),
   reelLike('reel_like'),
   storyLike('story_like'),
   commentLike('comment_like'),

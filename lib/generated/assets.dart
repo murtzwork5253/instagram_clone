@@ -108,6 +108,7 @@ class Assets {
   static const String userTaggingUserModel = 'lib/screens/user_tagging/user_model.dart';
   static const String userTaggingUserTaggingScreen = 'lib/screens/user_tagging/user_tagging_screen.dart';
   static const String userTaggingUserTaggingService = 'lib/screens/user_tagging/user_tagging_service.dart';
+  static const String widgetsExpandableCaptionOnly = 'lib/widgets/expandable_caption_only.dart';
   static const String widgetsExpandableCaptionWidget = 'lib/widgets/expandable_caption_widget.dart';
   static const String widgetsFloatingCallIndicator = 'lib/screens/calling/widgets/floating_call_indicator.dart';
 
