@@ -12,6 +12,7 @@ import 'package:Instagram/screens/reels_screen/reel_modal.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../../services/auth_service.dart';
+import '../../widgets/expandable_caption_only.dart';
 import '../chatscreen/chat_screen.dart';
 import '../common/report_dialog.dart';
 import '../profilescreen/other_user_profile_screen.dart';
@@ -420,9 +421,6 @@ class _ReelPlayerState extends State<ReelPlayer>
                     child: const Center(child: CircularProgressIndicator(color: Colors.white,)),
                   ),
 
-                // // Tagged Users List
-                // _buildTaggedUsersList(),
-
                 if (isLiked)
                   Center(
                     child: Icon(
@@ -708,17 +706,12 @@ class ReelPlayerEnhancements {
                 ],
               ),
               const SizedBox(height: 12),
-              GestureDetector(
-                onTap: () {
-                  // Show full caption in dialog
-                  _showFullCaption(context, currentReel.caption);
-                },
-                child: Text(
-                  currentReel.caption,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              // REPLACED: Use the new expandable caption widget
+              ExpandableCaptionOnly(
+                caption: currentReel.caption,
+                maxLines: 2,
+                captionStyle: const TextStyle(color: Colors.white, fontSize: 15),
+                moreStyle: const TextStyle(color: Colors.grey, fontSize: 14),
               ),
               const SizedBox(height: 8),
               Row(
