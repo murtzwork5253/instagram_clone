@@ -107,7 +107,11 @@ class _ExpandableCaptionWidgetState extends State<ExpandableCaptionWidget> {
             setState(() {
               _isExpanded = false;
             });
-          } : null,
+          } : (){
+            setState(() {
+              _isExpanded = true;
+            });
+          },
           child: RichText(
             text: TextSpan(
               children: [

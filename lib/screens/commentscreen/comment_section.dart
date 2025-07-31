@@ -596,7 +596,11 @@ class _CommentTileState extends State<CommentTile> {
                       setState(() {
                         _isExpanded = false;
                       });
-                    } : null,
+                    } : (){
+                      setState(() {
+                        _isExpanded = true;
+                      });
+                    },
                     child: RichText(
                       text: TextSpan(
                         children: [

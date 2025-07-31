@@ -1668,47 +1668,54 @@ class _ReelCommentTileState extends State<ReelCommentTile> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Username and comment text
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: username,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
+                  GestureDetector(
+                    onTap: _isExpanded ? () {
+                      setState(() {
+                        _isExpanded = false;
+                      });
+                    } : (){
+                      setState(() {
+                        _isExpanded = true;
+                      });
+                    },
+                    child: RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: username,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                        TextSpan(
-                          text: ' ',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                        TextSpan(
-                          text: _isExpanded || !isTruncated
-                              ? commentText
-                              : contentPreview,
-                          style: TextStyle(color: Colors.white, fontSize: 14),
-                        ),
-                      ],
+                          TextSpan(
+                            text: ' ',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          TextSpan(
+                            text: _isExpanded || !isTruncated
+                                ? commentText
+                                : contentPreview,
+                            style: TextStyle(color: Colors.white, fontSize: 14),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 
-                  // Show more button
-                  if (isTruncated && !_isExpanded)
+                  if (isTruncated)
                     GestureDetector(
-                      onTap: () => setState(() => _isExpanded = true),
+                      onTap: () => setState(() => _isExpanded = !_isExpanded),
                       child: Padding(
                         padding: const EdgeInsets.only(top: 4.0),
                         child: Text(
-                          'more',
+                          _isExpanded ? 'less' : 'more',
                           style: TextStyle(
-                            color: Colors.grey.shade500,
-                            fontSize: 13,
-                          ),
+                              color: Colors.grey.shade500, fontSize: 13),
                         ),
                       ),
                     ),
-
                   SizedBox(height: 6),
 
                   // Time, likes, and reply
