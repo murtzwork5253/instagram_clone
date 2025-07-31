@@ -58,6 +58,7 @@ class _CommentSectionState extends State<CommentSection> {
   final TextEditingController _commentController = TextEditingController();
   Map<String, List<String>> _commentLikes = {}; // Initialize with empty map
   final String currentUserId = AuthService.client().auth.currentUser!.id;
+  final ScrollController _textFieldScrollController = ScrollController();
 
   String _formatLastUpdated(DateTime dateTime) {
     final difference = DateTime.now().difference(dateTime);
@@ -110,6 +111,7 @@ class _CommentSectionState extends State<CommentSection> {
   void dispose() {
     _commentController.removeListener(_updatePostButton);
     _commentController.dispose();
+    _textFieldScrollController.dispose();
     super.dispose();
   }
 
@@ -384,74 +386,99 @@ class _CommentSectionState extends State<CommentSection> {
                       ),
                       child: SafeArea(
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             // Current user profile image
-                            CircleAvatar(
-                              radius: 18,
-                              backgroundImage: resolvedImageUrl != null
-                                  ? NetworkImage(resolvedImageUrl)
-                                  : null,
-                              backgroundColor: Colors.grey.shade700,
-                              child: resolvedImageUrl == null
-                                  ? Icon(Icons.person,
-                                  color: Colors.white, size: 20)
-                                  : null,
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: CircleAvatar(
+                                radius: 18,
+                                backgroundImage: resolvedImageUrl != null
+                                    ? NetworkImage(resolvedImageUrl)
+                                    : null,
+                                backgroundColor: Colors.grey.shade700,
+                                child: resolvedImageUrl == null
+                                    ? Icon(Icons.person,
+                                    color: Colors.white, size: 20)
+                                    : null,
+                              ),
                             ),
                             SizedBox(width: 12),
-                            // Comment text field
+                            // Comment text field with scroll
                             Expanded(
                               child: Container(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
+                                constraints: BoxConstraints(
+                                  maxHeight: 100, // Maximum height for ~4 lines
+                                  minHeight: 40,  // Minimum height for single line
+                                ),
+                                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: Colors.grey.shade900,
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(color: Colors.grey.shade800),
                                 ),
-                                child: TextField(
-                                  controller: _commentController,
-                                  style: TextStyle(color: Colors.white),
-                                  decoration: InputDecoration(
-                                    hintText:
-                                    'Add a comment as ${currentUser?.username ?? "user"}...',
-                                    border: InputBorder.none,
-                                    hintStyle:
-                                    TextStyle(color: Colors.grey.shade600),
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.zero,
+                                child: Scrollbar(
+                                  controller: _textFieldScrollController,
+                                  thumbVisibility: false, // Hide scrollbar
+                                  child: SingleChildScrollView(
+                                    controller: _textFieldScrollController,
+                                    child: TextField(
+                                      controller: _commentController,
+                                      scrollController: null, // Remove internal scroll
+                                      style: TextStyle(color: Colors.white),
+                                      decoration: InputDecoration(
+                                        hintText: 'Add a comment as ${currentUser?.username ?? "user"}...',
+                                        border: InputBorder.none,
+                                        hintStyle: TextStyle(color: Colors.grey.shade600),
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                      maxLines: null,
+                                      minLines: 1,
+                                      textAlignVertical: TextAlignVertical.top,
+                                      textInputAction: TextInputAction.send,
+                                      onChanged: (text) {
+                                        // Auto-scroll to bottom when typing
+                                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                                          if (_textFieldScrollController.hasClients) {
+                                            _textFieldScrollController.animateTo(
+                                              _textFieldScrollController.position.maxScrollExtent,
+                                              duration: Duration(milliseconds: 100),
+                                              curve: Curves.easeOut,
+                                            );
+                                          }
+                                        });
+                                      },
+                                      onSubmitted: (_) {
+                                        if (_canPost) _addComment();
+                                      },
+                                    ),
                                   ),
-                                  maxLines: null,
-                                  textInputAction: TextInputAction.send,
-                                  onSubmitted: (_) {
-                                    if (_canPost) _addComment();
-                                  },
                                 ),
                               ),
                             ),
                             SizedBox(width: 8),
                             // Post button
-                            GestureDetector(
-                              onTap:
-                              (_canPost && !_isPosting) ? _addComment : null,
-                              child: Container(
-                                padding: EdgeInsets.all(8),
-                                child: _isPosting
-                                    ? SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor:
-                                    AlwaysStoppedAnimation<Color>(
-                                        Colors.blue),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0), // Add bottom padding
+                              child: GestureDetector(
+                                onTap: (_canPost && !_isPosting) ? _addComment : null,
+                                child: Container(
+                                  padding: EdgeInsets.all(8),
+                                  child: _isPosting
+                                      ? SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                                    ),
+                                  )
+                                      : Icon(
+                                    Icons.send,
+                                    color: _canPost ? Colors.blue : Colors.grey.shade600,
+                                    size: 24,
                                   ),
-                                )
-                                    : Icon(
-                                  Icons.send,
-                                  color: _canPost
-                                      ? Colors.blue
-                                      : Colors.grey.shade600,
-                                  size: 24,
                                 ),
                               ),
                             ),
