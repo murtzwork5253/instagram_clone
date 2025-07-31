@@ -969,6 +969,8 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  // In chat_screen.dart
+
   Widget _buildAnimatedMessageItem(Message message, Animation<double> animation) {
     final isMe = message.senderId == widget.currentUserId;
 
@@ -1048,21 +1050,21 @@ class _ChatScreenState extends State<ChatScreen>
                 borderRadius: BorderRadius.circular(10),
                 child: imageUrl.isNotEmpty
                     ? Image.network(
-                        imageUrl,
-                        width: double.infinity,
-                        height: 180,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: Colors.grey[800],
-                          height: 180,
-                          child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
-                        ),
-                      )
+                  imageUrl,
+                  width: double.infinity,
+                  height: 180,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Colors.grey[800],
+                    height: 180,
+                    child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
+                  ),
+                )
                     : Container(
-                        color: Colors.grey[800],
-                        height: 180,
-                        child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
-                      ),
+                  color: Colors.grey[800],
+                  height: 180,
+                  child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
+                ),
               ),
               if (caption.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -1098,75 +1100,50 @@ class _ChatScreenState extends State<ChatScreen>
             ),
           );
         },
-        child: Container(
-          width: 260,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.grey[900],
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey[800]!, width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            width: 200,
+            height: 260,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey[800]!, width: 1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: AspectRatio(
+              aspectRatio: 3/4,
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  CircleAvatar(
-                    radius: 16,
-                    backgroundImage: NetworkImage(reel.userAvatar),
-                    backgroundColor: Colors.grey[800],
+                  Container(
+                    color: Colors.black,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      reel.username,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                  const Icon(Icons.play_arrow, color: Colors.white, size: 60),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundImage: NetworkImage(reel.userAvatar),
+                          backgroundColor: Colors.grey[800],
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          reel.username,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            shadows: [Shadow(blurRadius: 2, color: Colors.black)],
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                  )
                 ],
               ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      height: 180,
-                      color: Colors.black,
-                      child: const Center(
-                          child: Icon(Icons.videocam,
-                              color: Colors.white, size: 50)),
-                    ),
-                    const Icon(Icons.play_arrow,
-                        color: Colors.white, size: 60),
-                  ],
-                ),
-              ),
-              if (reel.caption.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  reel.caption,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              const SizedBox(height: 6),
-              Text(
-                'Shared a reel',
-                style: TextStyle(
-                    color: Colors.blue[200],
-                    fontSize: 12,
-                    fontStyle: FontStyle.italic),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -1266,11 +1243,11 @@ class _ChatScreenState extends State<ChatScreen>
             alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
             child: Container(
               margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-              padding: const EdgeInsets.all(10),
+              padding: message.sharedReel != null ? EdgeInsets.zero : const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: message.sharedPost != null
+                color: message.sharedReel != null ? Colors.transparent : (message.sharedPost != null
                     ? (isMe ? Colors.blue[900] : Colors.grey[850])
-                    : (isMe ? Colors.blue[700] : Colors.grey[700]),
+                    : (isMe ? Colors.blue[700] : Colors.grey[700])),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(12),
                   topRight: const Radius.circular(12),
@@ -1283,13 +1260,14 @@ class _ChatScreenState extends State<ChatScreen>
                 children: [
                   messageContent,
                   const SizedBox(height: 4),
-                  Text(
-                    DateFormat('h:mm a').format(message.createdAt),
-                    style: TextStyle(
-                      color: isMe ? Colors.blue[100] : Colors.grey[300],
-                      fontSize: 10,
+                  if(message.sharedReel == null)
+                    Text(
+                      DateFormat('h:mm a').format(message.createdAt),
+                      style: TextStyle(
+                        color: isMe ? Colors.blue[100] : Colors.grey[300],
+                        fontSize: 10,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

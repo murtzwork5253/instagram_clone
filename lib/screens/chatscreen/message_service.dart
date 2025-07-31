@@ -61,10 +61,15 @@ class MessageService {
       throw ArgumentError('Message must have content, an image, or a shared post.');
     }
 
+    String? finalContent = content;
+    if (sharedReel != null && (content == null || content.isEmpty)) {
+      finalContent = 'Shared a reel';
+    }
+
     final messageData = {
       'sender_id': senderId,
       'receiver_id': receiverId,
-      'content': content,
+      'content': finalContent,
       'image_url': imageUrl,
       'shared_post': sharedPost,
       'shared_reel': sharedReel,

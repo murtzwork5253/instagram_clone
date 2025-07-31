@@ -47,6 +47,9 @@ class _ReelPlayerState extends State<ReelPlayer>
   bool _hasMusic = false;
   List<TaggedUser> _taggedUsers = [];
   final UserTaggingService _taggingService = UserTaggingService();
+  bool _showMuteIcon = false;
+  Timer? _muteIconTimer;
+  bool _isLongPressing = false;
 
   // bool _isDisposed = false;
 
@@ -154,6 +157,22 @@ class _ReelPlayerState extends State<ReelPlayer>
           .updateReelMuteState(widget.reel.id, newVolume == 0.0);
 
       HapticFeedback.lightImpact();
+      // Show mute/unmute icon temporarily
+      setState(() {
+        _showMuteIcon = true;
+      });
+
+      // Cancel any existing timer
+      _muteIconTimer?.cancel();
+
+      // Hide icon after 2.5 seconds
+      _muteIconTimer = Timer(Duration(milliseconds: 2500), () {
+        if (mounted) {
+          setState(() {
+            _showMuteIcon = false;
+          });
+        }
+      });
 
 
       // // Show feedback to user
@@ -202,42 +221,6 @@ class _ReelPlayerState extends State<ReelPlayer>
         _taggedUsers = taggedUsers;
       });
     }
-  }
-
-  Widget _buildTaggedUsersList() {
-    if (_taggedUsers.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _taggedUsers.length,
-        itemBuilder: (context, index) {
-          final user = _taggedUsers[index];
-          return Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundImage: user.profileImageUrl != null
-                      ? NetworkImage(user.profileImageUrl!)
-                      : null,
-                  child: user.profileImageUrl == null
-                      ? const Icon(Icons.person, size: 20)
-                      : null,
-                ),
-                Text(
-                  user.username,
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
   }
 
   void _showTaggedUsersModal() {
@@ -384,6 +367,27 @@ class _ReelPlayerState extends State<ReelPlayer>
     }
   }
 
+  void _handleLongPressStart() {
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      setState(() {
+        _isLongPressing = true;
+      });
+      _videoController!.pause();
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  void _handleLongPressEnd() {
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      setState(() {
+        _isLongPressing = false;
+      });
+      _videoController!.play();
+      HapticFeedback.lightImpact();
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ReelProvider>(
@@ -400,6 +404,8 @@ class _ReelPlayerState extends State<ReelPlayer>
             onDoubleTap: _handleDoubleTapLike,
             onPanUpdate: _handleVerticalDrag,
             onTap: _toggleMute,
+            onLongPressStart: (_) => _handleLongPressStart(),
+            onLongPressEnd: (_) => _handleLongPressEnd(),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -444,21 +450,23 @@ class _ReelPlayerState extends State<ReelPlayer>
 
                     return AnimatedPositioned(
                       duration: Duration(milliseconds: 300),
-                      top: currentReel.isVideoMuted ? 50 : -50,
-                      right: 20,
+                      left: MediaQuery.of(context).size.width / 2 - 35, // Center horizontally
+                      top: MediaQuery.of(context).size.height / 2 - 135, // Center vertically
                       child: AnimatedOpacity(
                         duration: Duration(milliseconds: 300),
-                        opacity: currentReel.isVideoMuted ? 1.0 : 0.0,
+                        opacity: _showMuteIcon ? 1.0 : 0.0, // Show only when _showMuteIcon is true
                         child: Container(
+                          width: 70,
+                          height: 70,
                           padding: EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.black.withOpacity(0.7),
+                            borderRadius: BorderRadius.circular(45),
                           ),
                           child: Icon(
-                            Icons.volume_off,
+                            currentReel.isVideoMuted ? Icons.volume_off : Icons.volume_up, // Show appropriate icon
                             color: Colors.white,
-                            size: 20,
+                            size: 30,
                           ),
                         ),
                       ),
@@ -531,6 +539,7 @@ class _ReelPlayerState extends State<ReelPlayer>
   void dispose() {
     _appBarAnimationController.dispose();
     _chewieController?.dispose();
+    _muteIconTimer?.cancel();
     // _isDisposed = true;
     // _videoController.dispose();
     super.dispose();
