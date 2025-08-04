@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:Instagram/screens/createscreens/create_story/story_preview_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'dart:io';
@@ -20,11 +23,19 @@ class CreateStoryContent extends StatefulWidget {
 }
 
 class _CreateStoryContentState extends State<CreateStoryContent>
-    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
 
   double _currentZoomLevel = 1.0;
   double _baseZoomLevel = 1.0;
   bool _isGridVisible = false; // Grid visibility state
+  Offset? _tapPosition;
+  bool _isPortraitModeEnabled = false;
+  bool _isFocusing = false;
+  bool _focusLocked = false;
+  AnimationController? _focusAnimationController;
+  Animation<double>? _focusAnimation;
+  bool _showZoomSlider = true;
+
 
   CameraService get _cameraService => widget.cameraService;
 
@@ -35,10 +46,25 @@ class _CreateStoryContentState extends State<CreateStoryContent>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Initialize focus animation controller
+    _focusAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+
+    _focusAnimation = Tween<double>(
+      begin: 1.2,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _focusAnimationController!,
+      curve: Curves.elasticOut,
+    ));
   }
 
   Future<void> _toggleCamera() async {
     try {
+      _resetFocusOnMovement();
       await _cameraService.toggleCamera();
       if (mounted) {
         setState(() {});
@@ -244,6 +270,124 @@ class _CreateStoryContentState extends State<CreateStoryContent>
     );
   }
 
+  Future<void> _handleFocusTap(TapDownDetails details) async {
+    if (_cameraService.controller == null || !_cameraService.controller!.value.isInitialized) return;
+
+    final RenderBox renderBox = context.findRenderObject() as RenderBox;
+    final Offset localPoint = renderBox.globalToLocal(details.globalPosition);
+    final Size size = renderBox.size;
+
+    final double x = localPoint.dx / size.width;
+    final double y = localPoint.dy / size.height;
+
+    if (x >= 0.0 && x <= 1.0 && y >= 0.0 && y <= 1.0) {
+      setState(() {
+        _tapPosition = details.globalPosition;
+        _isFocusing = true;
+        _focusLocked = false;
+      });
+
+      // Start focus animation
+      _focusAnimationController?.reset();
+      _focusAnimationController?.forward();
+
+      try {
+        await _cameraService.controller!.setFocusPoint(Offset(x, y));
+        await _cameraService.controller!.setExposurePoint(Offset(x, y));
+
+        // Simulate focus completion delay
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (mounted) {
+          setState(() {
+            _isFocusing = false;
+            _focusLocked = true;
+          });
+
+          // Show locked focus indicator briefly
+          Future.delayed(const Duration(milliseconds: 1000), () {
+            if (mounted) {
+              setState(() {
+                _focusLocked = false;
+              });
+            }
+          });
+
+          // Hide focus indicator completely
+          Future.delayed(const Duration(milliseconds: 2000), () {
+            if (mounted) {
+              setState(() {
+                _tapPosition = null;
+              });
+            }
+          });
+        }
+
+        // Haptic feedback
+        HapticFeedback.lightImpact();
+
+      } catch (e) {
+        print("Focus error: $e");
+        if (mounted) {
+          setState(() {
+            _isFocusing = false;
+            _tapPosition = null;
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _setFocusPoint(Offset point) async {
+    if (!_cameraService.isCameraInitialized || _cameraService.controller == null) return;
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final double x = point.dx / screenWidth;
+    final double y = point.dy / screenHeight;
+
+    try {
+      await _cameraService.controller!.setFocusPoint(Offset(x, y));
+      await _cameraService.controller!.setExposurePoint(Offset(x, y));
+
+      if (mounted) {
+        setState(() {
+          _tapPosition = point;
+        });
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) setState(() => _tapPosition = null);
+        });
+      }
+    } catch (e) {
+      print("Failed to set focus point: $e");
+    }
+  }
+
+  void _togglePortraitMode() {
+    if (!mounted) return;
+    setState(() => _isPortraitModeEnabled = !_isPortraitModeEnabled);
+
+    // Show feedback to user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_isPortraitModeEnabled ? 'Portrait mode enabled' : 'Portrait mode disabled'),
+        duration: const Duration(milliseconds: 800),
+        backgroundColor: Colors.black.withOpacity(0.7),
+      ),
+    );
+  }
+
+  void _resetFocusOnMovement() {
+    if (_tapPosition != null && mounted) {
+      setState(() {
+        _tapPosition = null;
+        _isFocusing = false;
+        _focusLocked = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -271,38 +415,9 @@ class _CreateStoryContentState extends State<CreateStoryContent>
                       children: [
                         // Camera Preview
                         GestureDetector(
-                          onTapDown: (TapDownDetails details) async {
-                            if (_cameraService.controller == null || !_cameraService.controller!.value.isInitialized) return;
-
-                            final renderBox = context.findRenderObject() as RenderBox;
-                            final localPosition = renderBox.globalToLocal(details.globalPosition);
-                            final previewSize = renderBox.size;
-
-                            final offset = Offset(
-                              localPosition.dx / previewSize.width,
-                              localPosition.dy / previewSize.height,
-                            );
-
-                            await _cameraService.setFocusPoint(offset);
-                          },
+                          onTapDown: _handleFocusTap,
                           onDoubleTap: () async {
                             await _toggleCamera();
-                          },
-                          onScaleStart: (details) {
-                            _baseZoomLevel = _currentZoomLevel;
-                          },
-                          onScaleUpdate: (details) async {
-                            if (_cameraService.controller == null ||
-                                !_cameraService.controller!.value.isInitialized ||
-                                details.pointerCount != 2) return;
-
-                            double zoom = _baseZoomLevel * details.scale;
-                            final minZoom = await _cameraService.getMinZoomLevel();
-                            final maxZoom = await _cameraService.getMaxZoomLevel();
-                            zoom = zoom.clamp(minZoom, maxZoom);
-
-                            await _cameraService.setZoomLevel(zoom);
-                            _currentZoomLevel = zoom;
                           },
                           child: _cameraService.isFrontCamera
                               ? Transform(
@@ -323,6 +438,100 @@ class _CreateStoryContentState extends State<CreateStoryContent>
                         // Grid Overlay
                         if (_isGridVisible)
                           const GridOverlay(),
+
+                        if (_isPortraitModeEnabled)
+                          IgnorePointer(
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: RadialGradient(
+                                    stops: const [0.2, 1.0],
+                                    colors: [Colors.transparent, Colors.black.withOpacity(0.5)],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        if (_tapPosition != null)
+                          Positioned(
+                            top: _tapPosition!.dy - 40,
+                            left: _tapPosition!.dx - 40,
+                            child: AnimatedBuilder(
+                              animation: _focusAnimation!,
+                              builder: (context, child) {
+                                return Transform.scale(
+                                  scale: _focusAnimation!.value,
+                                  child: Container(
+                                    width: 80,
+                                    height: 80,
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: _focusLocked
+                                            ? Colors.green
+                                            : _isFocusing
+                                            ? Colors.yellow
+                                            : Colors.white,
+                                        width: _focusLocked ? 3 : 2,
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Stack(
+                                      children: [
+                                        // Corner brackets for better visual feedback
+                                        ...List.generate(4, (index) {
+                                          return Positioned(
+                                            top: index < 2 ? 0 : null,
+                                            bottom: index >= 2 ? 0 : null,
+                                            left: index % 2 == 0 ? 0 : null,
+                                            right: index % 2 == 1 ? 0 : null,
+                                            child: Container(
+                                              width: 16,
+                                              height: 16,
+                                              decoration: BoxDecoration(
+                                                border: Border(
+                                                  top: index < 2 ? BorderSide(
+                                                    color: _focusLocked ? Colors.green : Colors.white,
+                                                    width: 2,
+                                                  ) : BorderSide.none,
+                                                  bottom: index >= 2 ? BorderSide(
+                                                    color: _focusLocked ? Colors.green : Colors.white,
+                                                    width: 2,
+                                                  ) : BorderSide.none,
+                                                  left: index % 2 == 0 ? BorderSide(
+                                                    color: _focusLocked ? Colors.green : Colors.white,
+                                                    width: 2,
+                                                  ) : BorderSide.none,
+                                                  right: index % 2 == 1 ? BorderSide(
+                                                    color: _focusLocked ? Colors.green : Colors.white,
+                                                    width: 2,
+                                                  ) : BorderSide.none,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }),
+
+                                        // Center dot for locked focus
+                                        if (_focusLocked)
+                                          Center(
+                                            child: Container(
+                                              width: 4,
+                                              height: 4,
+                                              decoration: const BoxDecoration(
+                                                color: Colors.green,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -395,14 +604,21 @@ class _CreateStoryContentState extends State<CreateStoryContent>
                   ],
                 ),
               ),
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 60,
+                left: 20,
+                right: 20,
+                child: _buildZoomSlider(),
+              ),
 
-              // Side controls - Grid toggle button
               Positioned(
                 right: 10,
                 top: MediaQuery.of(context).padding.top + 70,
                 child: Column(
                   children: [
                     _buildGridControlIcon(),
+                    const SizedBox(height: 16),
+                    _buildPortraitControlIcon(),
                   ],
                 ),
               ),
@@ -475,6 +691,32 @@ class _CreateStoryContentState extends State<CreateStoryContent>
     );
   }
 
+  Widget _buildPortraitControlIcon() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: GestureDetector(
+        onTap: _togglePortraitMode,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _isPortraitModeEnabled
+                ? Colors.white.withOpacity(0.3)
+                : Colors.black.withOpacity(0.3),
+            shape: BoxShape.circle,
+            border: _isPortraitModeEnabled
+                ? Border.all(color: Colors.white, width: 2)
+                : null,
+          ),
+          padding: const EdgeInsets.all(8),
+          child: Icon(
+            Icons.portrait,
+            color: _isPortraitModeEnabled ? Colors.white : Colors.white.withOpacity(0.8),
+            size: 24,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildGridControlIcon() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -501,9 +743,76 @@ class _CreateStoryContentState extends State<CreateStoryContent>
     );
   }
 
+  Widget _buildZoomSlider() {
+    return FutureBuilder<List<double>>(
+      future: Future.wait([
+        _cameraService.getMinZoomLevel(),
+        _cameraService.getMaxZoomLevel(),
+      ]),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final minZoom = snapshot.data![0];
+        final maxZoom = snapshot.data![1];
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.zoom_out, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: Colors.white,
+                    inactiveTrackColor: Colors.white.withOpacity(0.3),
+                    thumbColor: Colors.white,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                    trackHeight: 2,
+                  ),
+                  child: Slider(
+                    value: _currentZoomLevel.clamp(minZoom, maxZoom),
+                    min: minZoom,
+                    max: maxZoom,
+                    onChanged: (value) async {
+                      await _cameraService.setZoomLevel(value);
+                      setState(() {
+                        _currentZoomLevel = value;
+                      });
+
+                      // Reset focus when zoom changes significantly
+                      _resetFocusOnMovement();
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.zoom_in, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                '${_currentZoomLevel.toStringAsFixed(1)}x',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _focusAnimationController?.dispose();
     super.dispose();
   }
 }
