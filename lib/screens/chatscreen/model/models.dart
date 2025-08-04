@@ -180,6 +180,7 @@ class ChatRoom {
   final Message? lastMessage;
   final int unreadCount; // NEW
   final ChatStatus status; // NEW
+  final bool isAi;
 
   ChatRoom({
     required this.id,
@@ -189,5 +190,6 @@ class ChatRoom {
     this.lastMessage,
     this.unreadCount = 0, // NEW
     required this.status, // NEW
+    this.isAi = false,
   });
 }

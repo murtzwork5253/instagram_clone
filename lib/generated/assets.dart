@@ -20,6 +20,7 @@ class Assets {
   static const String chatscreenFullScreenImageViewer = 'lib/screens/chatscreen/full_screen_image_viewer.dart';
   static const String chatscreenMessageService = 'lib/screens/chatscreen/message_service.dart';
   static const String chatscreenNewChatDialog = 'lib/screens/chatscreen/new_chat_dialog.dart';
+  static const String chatscreenTypingIndicator = 'lib/screens/chatscreen/typing_indicator.dart';
   static const String commentscreenCommentSection = 'lib/screens/commentscreen/comment_section.dart';
   static const String commonReportDialog = 'lib/screens/common/report_dialog.dart';
   static const String configConstants = 'lib/config/constants.dart';
@@ -97,6 +98,7 @@ class Assets {
   static const String servicesBlockedUsersService = 'lib/services/blocked_users_service.dart';
   static const String servicesCallService = 'lib/screens/calling/services/call_service.dart';
   static const String servicesDeviceManager = 'lib/screens/calling/services/device_manager.dart';
+  static const String servicesGeminiService = 'lib/services/gemini_service.dart';
   static const String servicesInstaDataProvider = 'lib/services/insta_data_provider.dart';
   static const String servicesPushNotificationService = 'lib/services/push_notification_service.dart';
   static const String servicesReportService = 'lib/services/report_service.dart';

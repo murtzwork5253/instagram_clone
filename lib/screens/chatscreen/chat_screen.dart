@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:Instagram/screens/calling/widgets/floating_call_indicator.dart';
+import 'package:Instagram/screens/chatscreen/typing_indicator.dart';
 import 'package:Instagram/screens/profilescreen/other_user_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
+import '../../services/gemini_service.dart';
 import '../calling/call_manager.dart';
 import '../reels_screen/reel_modal.dart';
 import '../reels_screen/reels_screen.dart';
@@ -62,6 +64,11 @@ class _ChatScreenState extends State<ChatScreen>
   final Set<String> _loadedImages = <String>{};
   bool _shouldScrollAfterImagesLoad = false;
   Timer? _scrollDelayTimer;
+
+  static const String aiUserId = 'gemini-ai-assistant';
+  static const String aiUsername = 'AI Assistant';
+  static const String aiAvatarUrl = 'https://storage.googleapis.com/cms-storage-bucket/78071a8251e3594a50f7.png';
+
 
   // For smooth message animations
   final GlobalKey<AnimatedListState> _messageListKey = GlobalKey<AnimatedListState>();
@@ -188,11 +195,20 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadChatRooms() async {
+    // Create the static AI Chat Room
+    final aiChatRoom = ChatRoom(
+      id: aiUserId,
+      otherUserId: aiUserId,
+      otherUsername: aiUsername,
+      otherUserProfileUrl: aiAvatarUrl, // You can add a URL to a custom AI avatar later
+      status: ChatStatus.normal('Ask me anything...'),
+      isAi: true, // <-- IMPORTANT
+    );
     try {
-      final chatRooms = await _messageService.getChatRooms(widget.currentUserId);
+      final userChatRooms = await _messageService.getChatRooms(widget.currentUserId);
       if (mounted) {
         setState(() {
-          _chatRooms = chatRooms;
+          _chatRooms = [aiChatRoom, ...userChatRooms];
           _isLoadingChatRooms = false;
         });
       }
@@ -200,6 +216,7 @@ class _ChatScreenState extends State<ChatScreen>
       print('Error loading chat rooms: $e');
       if (mounted) {
         setState(() {
+          _chatRooms = [aiChatRoom];
           _isLoadingChatRooms = false;
         });
       }
@@ -450,24 +467,78 @@ class _ChatScreenState extends State<ChatScreen>
     final messageText = _messageController.text.trim();
     _messageController.clear();
 
-    try {
-      await _messageService.sendMessage(
+    // CHECK IF THE CHAT IS WITH THE AI
+    if (_selectedChatUserId == aiUserId) {
+      // --- AI LOGIC ---
+
+      // 1. Optimistically add the user's message to the UI
+      final userMessage = Message(
+        id: DateTime.now().millisecondsSinceEpoch.toString(), // Temporary ID
         senderId: widget.currentUserId,
-        receiverId: _selectedChatUserId!,
+        receiverId: aiUserId,
         content: messageText,
+        createdAt: DateTime.now(),
+        isRead: true,
       );
-      _loadMessages();
+      setState(() {
+        _messages.add(userMessage);
+      });
+      _scrollToBottomSmooth();
 
-      // Note: Real-time subscription will handle adding the message to UI
-    } catch (e) {
-      print('Error sending message: $e');
-      // Restore message text on error
-      _messageController.text = messageText;
+      // 2. Add a loading indicator for the AI's response
+      final loadingMessage = Message(
+        id: 'ai-loading',
+        senderId: aiUserId,
+        receiverId: widget.currentUserId,
+        content: '__typing__', // This will be our typing indicator
+        createdAt: DateTime.now(),
+        isRead: true,
+      );
+      setState(() {
+        _messages.add(loadingMessage);
+      });
+      _scrollToBottomSmooth();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send message: $e')),
+      // 3. Call the Gemini Service
+      final aiResponse = await GeminiService.getResponse(messageText);
+
+      // 4. Create the final AI response message
+      final aiMessage = Message(
+        id: DateTime.now().millisecondsSinceEpoch.toString(), // Temporary ID
+        senderId: aiUserId,
+        receiverId: widget.currentUserId,
+        content: aiResponse,
+        createdAt: DateTime.now(),
+        isRead: true,
+      );
+
+      // 5. Replace the loading indicator with the actual response
+      setState(() {
+        final loadingIndex = _messages.indexWhere((m) => m.id == 'ai-loading');
+        if (loadingIndex != -1) {
+          _messages[loadingIndex] = aiMessage;
+        }
+      });
+      _scrollToBottomSmooth();
+
+    } else {
+      // --- EXISTING USER-TO-USER LOGIC ---
+      try {
+        await _messageService.sendMessage(
+          senderId: widget.currentUserId,
+          receiverId: _selectedChatUserId!,
+          content: messageText,
         );
+        // Real-time subscription will handle UI updates
+      } catch (e) {
+        print('Error sending message: $e');
+        _messageController.text = messageText; // Restore on error
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to send message: $e')),
+          );
+        }
       }
     }
   }
@@ -691,7 +762,7 @@ class _ChatScreenState extends State<ChatScreen>
             onPressed: _showNewChatDialog,
             tooltip: 'New message',
           ),
-        ] else ...[
+        ] else if (_selectedChatUserId != aiUserId) ...[
           IconButton(
             icon: const Icon(Icons.call, color: Colors.white, size: 24),
             onPressed: () async {
@@ -972,6 +1043,29 @@ class _ChatScreenState extends State<ChatScreen>
   // In chat_screen.dart
 
   Widget _buildAnimatedMessageItem(Message message, Animation<double> animation) {
+    // --- START OF THE FIX ---
+    // If the content is our special identifier, show the TypingIndicator
+    if (message.content == '__typing__') {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.grey[700],
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(12),
+              topRight: Radius.circular(12),
+              bottomLeft: Radius.circular(0),
+              bottomRight: Radius.circular(12),
+            ),
+          ),
+          // Make sure you have created the TypingIndicator widget in its own file
+          child: const TypingIndicator(),
+        ),
+      );
+    }
+    // --- END OF THE FIX ---
     final isMe = message.senderId == widget.currentUserId;
 
     Widget messageContent;
@@ -1634,12 +1728,15 @@ class _ChatScreenState extends State<ChatScreen>
                       child: Container(
                         child: CircleAvatar(
                           radius: 26,
-                          backgroundImage: NetworkImage(displayUrl),
-                          child: displayUrl == '' ? const Icon(Icons.person, color: Colors.white, size: 24) : null,
-                          backgroundColor: Colors.grey[800],
-                          onBackgroundImageError: (exception, stackTrace) {
-                            print('Error loading image: $exception');
-                          },
+                          // --- START MODIFICATION ---
+                          backgroundImage: chatRoom.isAi
+                              ? null // No background image for AI
+                              : (displayUrl.isNotEmpty ? NetworkImage(displayUrl) : null),
+                          backgroundColor: chatRoom.isAi ? Colors.blue[800] : Colors.grey[800],
+                          child: chatRoom.isAi
+                              ? const Icon(Icons.star_rounded, color: Colors.white, size: 30) // AI Icon
+                              : (displayUrl.isEmpty ? const Icon(Icons.person, color: Colors.white, size: 24) : null),
+                          // --- END MODIFICATION ---
                         ),
                       ),
                     ),
