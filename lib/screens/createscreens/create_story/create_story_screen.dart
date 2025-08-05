@@ -27,6 +27,7 @@ class _CreateStoryContentState extends State<CreateStoryContent>
   bool _isGridVisible = false; // Grid visibility state
   Offset? _tapPosition;
   bool _isPortraitModeEnabled = false;
+  bool _isPortraitModeSupported = false;
   bool _isFocusing = false;
   bool _focusLocked = false;
   AnimationController? _focusAnimationController;
@@ -34,6 +35,7 @@ class _CreateStoryContentState extends State<CreateStoryContent>
   bool _showZoomSlider = true;
   double _currentBrightness = 0.0; // Exposure compensation value (-1.0 to 1.0)
   bool _showBrightnessSlider = false;
+  bool _isHdrEnabled = false;
 
 
   CameraService get _cameraService => widget.cameraService;
@@ -59,6 +61,15 @@ class _CreateStoryContentState extends State<CreateStoryContent>
       parent: _focusAnimationController!,
       curve: Curves.elasticOut,
     ));
+
+    _cameraService.addListener(_onCameraStateChanged);
+  }
+
+  void _onCameraStateChanged() {
+    if (_cameraService.isCameraInitialized && mounted) {
+      _initializeBrightness();
+      _checkPortraitModeSupport(); // Add this line
+    }
   }
 
   Future<void> _toggleCamera() async {
@@ -67,12 +78,69 @@ class _CreateStoryContentState extends State<CreateStoryContent>
       await _cameraService.toggleCamera();
       if (mounted) {
         setState(() {});
+        // Check portrait mode support for the new camera
+        await _checkPortraitModeSupport();
+
+        // Disable portrait mode if switching to unsupported camera
+        if (!_isPortraitModeSupported && _isPortraitModeEnabled) {
+          setState(() {
+            _isPortraitModeEnabled = false;
+          });
+        }
         await _initializeBrightness();
       }
     } on CameraException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.description!)),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleHdr() async {
+    if (_cameraService.controller == null || !_cameraService.controller!.value.isInitialized) return;
+
+    try {
+      setState(() {
+        _isHdrEnabled = !_isHdrEnabled;
+      });
+
+      // Set exposure mode based on HDR state
+      if (_isHdrEnabled) {
+        await _cameraService.controller!.setExposureMode(ExposureMode.auto);
+      } else {
+        await _cameraService.controller!.setExposureMode(ExposureMode.locked);
+      }
+
+      // Show feedback to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isHdrEnabled ? 'HDR enabled' : 'HDR disabled'),
+            duration: const Duration(milliseconds: 800),
+            backgroundColor: Colors.black.withOpacity(0.7),
+          ),
+        );
+      }
+
+      // Provide haptic feedback
+      HapticFeedback.lightImpact();
+
+    } catch (e) {
+      print("Error toggling HDR: $e");
+      // Revert state if error occurs
+      setState(() {
+        _isHdrEnabled = !_isHdrEnabled;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('HDR not supported on this device'),
+            duration: const Duration(milliseconds: 1000),
+            backgroundColor: Colors.red.withOpacity(0.7),
+          ),
         );
       }
     }
@@ -101,6 +169,8 @@ class _CreateStoryContentState extends State<CreateStoryContent>
         return;
       }
 
+      // For portrait mode, we rely on the camera's built-in processing
+      // The camera will automatically apply depth-of-field effects if supported
       final XFile image = await _cameraService.controller!.takePicture();
       final directory = await getTemporaryDirectory();
       final String filePath = path.join(directory.path, '${DateTime.now().millisecondsSinceEpoch}.jpg');
@@ -116,13 +186,12 @@ class _CreateStoryContentState extends State<CreateStoryContent>
             builder: (_) => StoryPreviewScreen(
               imagePath: filePath,
               isFrontCamera: _cameraService.isFrontCamera,
+              // isPortraitMode: _isPortraitModeEnabled, // Pass portrait mode info
             ),
           ),
-        ).then((_) async {
+        ).then((_) {
           // Restart camera when returning from preview
-          await _cameraService.restartCamera(enableAudio: false);
-
-          await _initializeBrightness();
+          _cameraService.restartCamera(enableAudio: false);
         });
       }
       print('Picture saved to: $filePath');
@@ -290,6 +359,8 @@ class _CreateStoryContentState extends State<CreateStoryContent>
         _isFocusing = true;
         _focusLocked = false;
         _showBrightnessSlider = true; // Show brightness slider
+
+        _currentBrightness = 0.0;
       });
 
       // Start focus animation
@@ -299,6 +370,9 @@ class _CreateStoryContentState extends State<CreateStoryContent>
       try {
         await _cameraService.controller!.setFocusPoint(Offset(x, y));
         await _cameraService.controller!.setExposurePoint(Offset(x, y));
+
+        // Reset brightness to default value
+        await _cameraService.controller!.setExposureOffset(_currentBrightness);
 
         // Simulate focus completion delay
         await Future.delayed(const Duration(milliseconds: 500));
@@ -339,6 +413,7 @@ class _CreateStoryContentState extends State<CreateStoryContent>
             _isFocusing = false;
             _tapPosition = null;
             _showBrightnessSlider = false;
+            _currentBrightness = 0.0;
           });
         }
       }
@@ -371,18 +446,97 @@ class _CreateStoryContentState extends State<CreateStoryContent>
     }
   }
 
-  void _togglePortraitMode() {
-    if (!mounted) return;
-    setState(() => _isPortraitModeEnabled = !_isPortraitModeEnabled);
+  Future<void> _checkPortraitModeSupport() async {
+    if (_cameraService.controller == null || !_cameraService.controller!.value.isInitialized) {
+      _isPortraitModeSupported = false;
+      return;
+    }
 
-    // Show feedback to user
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_isPortraitModeEnabled ? 'Portrait mode enabled' : 'Portrait mode disabled'),
-        duration: const Duration(milliseconds: 800),
-        backgroundColor: Colors.black.withOpacity(0.7),
-      ),
-    );
+    try {
+      // Check if the current camera supports portrait mode
+      // This is typically available on cameras with depth sensing capability
+      final cameras = await availableCameras();
+      final currentCameraDescription = cameras.firstWhere(
+            (camera) => camera.lensDirection ==
+            (_cameraService.isFrontCamera ? CameraLensDirection.front : CameraLensDirection.back),
+      );
+
+      // Portrait mode is generally supported on cameras with multiple lenses or depth sensors
+      // For this implementation, we'll assume back camera supports it, front camera might not
+      _isPortraitModeSupported = !_cameraService.isFrontCamera;
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      print("Error checking portrait mode support: $e");
+      _isPortraitModeSupported = false;
+    }
+  }
+
+  Future<void> _togglePortraitMode() async {
+    if (!_isPortraitModeSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Portrait mode not supported on this camera'),
+          duration: const Duration(milliseconds: 1200),
+          backgroundColor: Colors.red.withOpacity(0.7),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    try {
+      setState(() => _isPortraitModeEnabled = !_isPortraitModeEnabled);
+
+      // Apply portrait mode settings to camera
+      if (_cameraService.controller != null && _cameraService.controller!.value.isInitialized) {
+        if (_isPortraitModeEnabled) {
+          // Enable portrait mode - use auto focus mode for better depth detection
+          await _cameraService.controller!.setFocusMode(FocusMode.auto);
+
+          // Set exposure mode to auto for better portrait processing
+          await _cameraService.controller!.setExposureMode(ExposureMode.auto);
+
+          // Reset any manual focus/exposure settings
+          _resetFocusOnMovement();
+        } else {
+          // Disable portrait mode - return to locked modes for manual control
+          await _cameraService.controller!.setFocusMode(FocusMode.locked);
+          if (!_isHdrEnabled) {
+            await _cameraService.controller!.setExposureMode(ExposureMode.locked);
+          }
+        }
+      }
+
+      // Show feedback to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isPortraitModeEnabled ? 'Portrait mode enabled' : 'Portrait mode disabled'),
+          duration: const Duration(milliseconds: 800),
+          backgroundColor: Colors.black.withOpacity(0.7),
+        ),
+      );
+
+      HapticFeedback.lightImpact();
+
+    } catch (e) {
+      print("Error toggling portrait mode: $e");
+      // Revert state if error occurs
+      setState(() {
+        _isPortraitModeEnabled = !_isPortraitModeEnabled;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to toggle portrait mode'),
+          duration: const Duration(milliseconds: 1000),
+          backgroundColor: Colors.red.withOpacity(0.7),
+        ),
+      );
+    }
   }
 
   void _resetFocusOnMovement() {
@@ -392,7 +546,22 @@ class _CreateStoryContentState extends State<CreateStoryContent>
         _isFocusing = false;
         _focusLocked = false;
         _showBrightnessSlider = false;
+        _currentBrightness = 0.0;
       });
+
+      // Apply brightness reset to camera
+      if (_cameraService.controller != null && _cameraService.controller!.value.isInitialized) {
+        _cameraService.controller!.setExposureOffset(_currentBrightness).catchError((e) {
+          print("Error resetting brightness: $e");
+        });
+      }
+
+      // If HDR is disabled, reset exposure mode to locked
+      if (!_isHdrEnabled && _cameraService.controller != null) {
+        _cameraService.controller!.setExposureMode(ExposureMode.locked).catchError((e) {
+          print("Error setting exposure mode: $e");
+        });
+      }
     }
   }
 
@@ -446,21 +615,6 @@ class _CreateStoryContentState extends State<CreateStoryContent>
                         // Grid Overlay
                         if (_isGridVisible)
                           const GridOverlay(),
-
-                        if (_isPortraitModeEnabled)
-                          IgnorePointer(
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: RadialGradient(
-                                    stops: const [0.2, 1.0],
-                                    colors: [Colors.transparent, Colors.black.withOpacity(0.5)],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
 
                         if (_tapPosition != null)
                           Positioned(
@@ -637,8 +791,10 @@ class _CreateStoryContentState extends State<CreateStoryContent>
                 child: Column(
                   children: [
                     _buildGridControlIcon(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     _buildPortraitControlIcon(),
+                    const SizedBox(height: 14),
+                    _buildHdrControlIcon(),
                   ],
                 ),
               ),
@@ -720,17 +876,57 @@ class _CreateStoryContentState extends State<CreateStoryContent>
           decoration: BoxDecoration(
             color: _isPortraitModeEnabled
                 ? Colors.white.withOpacity(0.3)
-                : Colors.black.withOpacity(0.3),
+                : _isPortraitModeSupported
+                ? Colors.black.withOpacity(0.3)
+                : Colors.grey.withOpacity(0.2), // Different color for unsupported
             shape: BoxShape.circle,
             border: _isPortraitModeEnabled
                 ? Border.all(color: Colors.white, width: 2)
                 : null,
           ),
           padding: const EdgeInsets.all(8),
-          child: Icon(
-            Icons.portrait,
-            color: _isPortraitModeEnabled ? Colors.white : Colors.white.withOpacity(0.8),
-            size: 24,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.portrait,
+                color: _isPortraitModeSupported
+                    ? (_isPortraitModeEnabled ? Colors.white : Colors.white.withOpacity(0.8))
+                    : Colors.grey.withOpacity(0.5),
+                size: 24,
+              ),
+              if (_isPortraitModeEnabled)
+                Positioned(
+                  bottom: -2,
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: const BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              // Show "x" for unsupported cameras
+              if (!_isPortraitModeSupported)
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 6,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -891,6 +1087,49 @@ class _CreateStoryContentState extends State<CreateStoryContent>
     );
   }
 
+  Widget _buildHdrControlIcon() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: GestureDetector(
+        onTap: _toggleHdr,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _isHdrEnabled
+                ? Colors.white.withOpacity(0.3)
+                : Colors.black.withOpacity(0.3),
+            shape: BoxShape.circle,
+            border: _isHdrEnabled
+                ? Border.all(color: Colors.white, width: 2)
+                : null,
+          ),
+          padding: const EdgeInsets.all(8),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.hdr_on,
+                color: _isHdrEnabled ? Colors.white : Colors.white.withOpacity(0.8),
+                size: 24,
+              ),
+              if (_isHdrEnabled)
+                Positioned(
+                  bottom: -2,
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: const BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
 // Add this method to initialize brightness value when camera starts:
   Future<void> _initializeBrightness() async {
     if (_cameraService.controller != null &&
@@ -901,12 +1140,17 @@ class _CreateStoryContentState extends State<CreateStoryContent>
         _currentBrightness = 0.0;
         await _cameraService.controller!.setExposureOffset(_currentBrightness);
 
+        // Initialize HDR state
+        await _cameraService.controller!.setExposureMode(
+            _isHdrEnabled ? ExposureMode.auto : ExposureMode.locked
+        );
+
         if (mounted) {
           setState(() {});
         }
       } catch (e) {
-        print("Error initializing brightness: $e");
-        // Fallback: just set the UI value without camera call
+        print("Error initializing camera settings: $e");
+        // Fallback: just set the UI values without camera calls
         if (mounted) {
           setState(() {
             _currentBrightness = 0.0;
