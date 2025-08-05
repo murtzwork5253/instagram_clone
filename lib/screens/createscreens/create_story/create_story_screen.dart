@@ -1,16 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
-
 import 'package:Instagram/screens/createscreens/create_story/story_preview_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-
 import '../camera_service.dart';
 
 class CreateStoryContent extends StatefulWidget {
@@ -35,6 +32,8 @@ class _CreateStoryContentState extends State<CreateStoryContent>
   AnimationController? _focusAnimationController;
   Animation<double>? _focusAnimation;
   bool _showZoomSlider = true;
+  double _currentBrightness = 0.0; // Exposure compensation value (-1.0 to 1.0)
+  bool _showBrightnessSlider = false;
 
 
   CameraService get _cameraService => widget.cameraService;
@@ -68,6 +67,7 @@ class _CreateStoryContentState extends State<CreateStoryContent>
       await _cameraService.toggleCamera();
       if (mounted) {
         setState(() {});
+        await _initializeBrightness();
       }
     } on CameraException catch (e) {
       if (mounted) {
@@ -118,9 +118,11 @@ class _CreateStoryContentState extends State<CreateStoryContent>
               isFrontCamera: _cameraService.isFrontCamera,
             ),
           ),
-        ).then((_) {
+        ).then((_) async {
           // Restart camera when returning from preview
-          _cameraService.restartCamera(enableAudio: false);
+          await _cameraService.restartCamera(enableAudio: false);
+
+          await _initializeBrightness();
         });
       }
       print('Picture saved to: $filePath');
@@ -147,9 +149,11 @@ class _CreateStoryContentState extends State<CreateStoryContent>
             MaterialPageRoute(
               builder: (context) => StoryPreviewScreen(imagePath: image.path),
             ),
-          ).then((_) {
+          ).then((_) async {
             // Restart camera when returning from preview
-            _cameraService.restartCamera(enableAudio: false);
+            await _cameraService.restartCamera(enableAudio: false);
+
+            await _initializeBrightness();
           });
         }
         print('Image picked from gallery: ${image.path}');
@@ -285,6 +289,7 @@ class _CreateStoryContentState extends State<CreateStoryContent>
         _tapPosition = details.globalPosition;
         _isFocusing = true;
         _focusLocked = false;
+        _showBrightnessSlider = true; // Show brightness slider
       });
 
       // Start focus animation
@@ -313,11 +318,12 @@ class _CreateStoryContentState extends State<CreateStoryContent>
             }
           });
 
-          // Hide focus indicator completely
-          Future.delayed(const Duration(milliseconds: 2000), () {
+          // Hide focus indicator and brightness slider after 4 seconds
+          Future.delayed(const Duration(milliseconds: 4000), () {
             if (mounted) {
               setState(() {
                 _tapPosition = null;
+                _showBrightnessSlider = false;
               });
             }
           });
@@ -332,6 +338,7 @@ class _CreateStoryContentState extends State<CreateStoryContent>
           setState(() {
             _isFocusing = false;
             _tapPosition = null;
+            _showBrightnessSlider = false;
           });
         }
       }
@@ -384,6 +391,7 @@ class _CreateStoryContentState extends State<CreateStoryContent>
         _tapPosition = null;
         _isFocusing = false;
         _focusLocked = false;
+        _showBrightnessSlider = false;
       });
     }
   }
@@ -458,78 +466,90 @@ class _CreateStoryContentState extends State<CreateStoryContent>
                           Positioned(
                             top: _tapPosition!.dy - 40,
                             left: _tapPosition!.dx - 40,
-                            child: AnimatedBuilder(
-                              animation: _focusAnimation!,
-                              builder: (context, child) {
-                                return Transform.scale(
-                                  scale: _focusAnimation!.value,
-                                  child: Container(
-                                    width: 80,
-                                    height: 80,
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: _focusLocked
-                                            ? Colors.green
-                                            : _isFocusing
-                                            ? Colors.yellow
-                                            : Colors.white,
-                                        width: _focusLocked ? 3 : 2,
-                                      ),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Stack(
-                                      children: [
-                                        // Corner brackets for better visual feedback
-                                        ...List.generate(4, (index) {
-                                          return Positioned(
-                                            top: index < 2 ? 0 : null,
-                                            bottom: index >= 2 ? 0 : null,
-                                            left: index % 2 == 0 ? 0 : null,
-                                            right: index % 2 == 1 ? 0 : null,
-                                            child: Container(
-                                              width: 16,
-                                              height: 16,
-                                              decoration: BoxDecoration(
-                                                border: Border(
-                                                  top: index < 2 ? BorderSide(
-                                                    color: _focusLocked ? Colors.green : Colors.white,
-                                                    width: 2,
-                                                  ) : BorderSide.none,
-                                                  bottom: index >= 2 ? BorderSide(
-                                                    color: _focusLocked ? Colors.green : Colors.white,
-                                                    width: 2,
-                                                  ) : BorderSide.none,
-                                                  left: index % 2 == 0 ? BorderSide(
-                                                    color: _focusLocked ? Colors.green : Colors.white,
-                                                    width: 2,
-                                                  ) : BorderSide.none,
-                                                  right: index % 2 == 1 ? BorderSide(
-                                                    color: _focusLocked ? Colors.green : Colors.white,
-                                                    width: 2,
-                                                  ) : BorderSide.none,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Focus Square
+                                AnimatedBuilder(
+                                  animation: _focusAnimation!,
+                                  builder: (context, child) {
+                                    return Transform.scale(
+                                      scale: _focusAnimation!.value,
+                                      child: Container(
+                                        width: 80,
+                                        height: 80,
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: _focusLocked
+                                                ? Colors.green
+                                                : _isFocusing
+                                                ? Colors.yellow
+                                                : Colors.white,
+                                            width: _focusLocked ? 3 : 2,
+                                          ),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Stack(
+                                          children: [
+                                            // Corner brackets for better visual feedback
+                                            ...List.generate(4, (index) {
+                                              return Positioned(
+                                                top: index < 2 ? 0 : null,
+                                                bottom: index >= 2 ? 0 : null,
+                                                left: index % 2 == 0 ? 0 : null,
+                                                right: index % 2 == 1 ? 0 : null,
+                                                child: Container(
+                                                  width: 16,
+                                                  height: 16,
+                                                  decoration: BoxDecoration(
+                                                    border: Border(
+                                                      top: index < 2 ? BorderSide(
+                                                        color: _focusLocked ? Colors.green : Colors.white,
+                                                        width: 2,
+                                                      ) : BorderSide.none,
+                                                      bottom: index >= 2 ? BorderSide(
+                                                        color: _focusLocked ? Colors.green : Colors.white,
+                                                        width: 2,
+                                                      ) : BorderSide.none,
+                                                      left: index % 2 == 0 ? BorderSide(
+                                                        color: _focusLocked ? Colors.green : Colors.white,
+                                                        width: 2,
+                                                      ) : BorderSide.none,
+                                                      right: index % 2 == 1 ? BorderSide(
+                                                        color: _focusLocked ? Colors.green : Colors.white,
+                                                        width: 2,
+                                                      ) : BorderSide.none,
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }),
+
+                                            // Center dot for locked focus
+                                            if (_focusLocked)
+                                              Center(
+                                                child: Container(
+                                                  width: 4,
+                                                  height: 4,
+                                                  decoration: const BoxDecoration(
+                                                    color: Colors.green,
+                                                    shape: BoxShape.circle,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                          );
-                                        }),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
 
-                                        // Center dot for locked focus
-                                        if (_focusLocked)
-                                          Center(
-                                            child: Container(
-                                              width: 4,
-                                              height: 4,
-                                              decoration: const BoxDecoration(
-                                                color: Colors.green,
-                                                shape: BoxShape.circle,
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
+                                // Brightness Slider (appears beside focus square)
+                                if (_showBrightnessSlider) ...[
+                                  const SizedBox(width: 16),
+                                  _buildBrightnessSlider(),
+                                ],
+                              ],
                             ),
                           ),
                       ],
@@ -807,6 +827,93 @@ class _CreateStoryContentState extends State<CreateStoryContent>
         );
       },
     );
+  }
+
+  Widget _buildBrightnessSlider() {
+    return Container(
+      height: 120,
+      width: 40,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+      ),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.brightness_high,
+            color: Colors.white,
+            size: 16,
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: RotatedBox(
+              quarterTurns: 3, // Rotate slider to be vertical
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: Colors.white,
+                  inactiveTrackColor: Colors.white.withOpacity(0.3),
+                  thumbColor: Colors.white,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                  trackHeight: 2,
+                ),
+                child: Slider(
+                  value: _currentBrightness,
+                  min: -1.0,
+                  max: 1.0,
+                  onChanged: (value) async {
+                    try {
+                      await _cameraService.controller!.setExposureOffset(value);
+                      setState(() {
+                        _currentBrightness = value;
+                      });
+
+                      // Provide haptic feedback
+                      HapticFeedback.selectionClick();
+                    } catch (e) {
+                      print("Error setting brightness: $e");
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Icon(
+            Icons.brightness_low,
+            color: Colors.white,
+            size: 16,
+          ),
+        ],
+      ),
+    );
+  }
+
+// Add this method to initialize brightness value when camera starts:
+  Future<void> _initializeBrightness() async {
+    if (_cameraService.controller != null &&
+        _cameraService.controller!.value.isInitialized &&
+        !_cameraService.isDisposed) {
+      try {
+        // Reset to default brightness
+        _currentBrightness = 0.0;
+        await _cameraService.controller!.setExposureOffset(_currentBrightness);
+
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (e) {
+        print("Error initializing brightness: $e");
+        // Fallback: just set the UI value without camera call
+        if (mounted) {
+          setState(() {
+            _currentBrightness = 0.0;
+          });
+        }
+      }
+    }
   }
 
   @override
