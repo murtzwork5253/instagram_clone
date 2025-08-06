@@ -13,26 +13,29 @@ import '../../services/blocked_users_service.dart';
 class ReelProvider extends ChangeNotifier {
   final SupabaseClient supabase = Supabase.instance.client;
   List<Reel> reels = [];
-  bool isLoading = false;
+  bool isInitiallyLoading = false;
+
+  bool _isLoadingMore = false;
+  bool _hasMoreReels = true;
+  int _currentPage = 0;
+  final int _reelsPerPage = 5; // Fetch 5 reels at a time
+
   Set<String> followingUsers = {}; // Track followed users
-
   String? _currentUserId;
-
-  // --- NEW: State holder for comments ---
   List<Map<String, dynamic>> _currentComments = [];
   List<Map<String, dynamic>> get currentComments => _currentComments;
-  // --- END NEW ---
 
-  // --- NEW: Video Controller Management ---
   final Map<String, VideoPlayerController> _videoControllers = {};
   final Map<String, Future<void>> _initFutures = {};
-  // --- END NEW ---
 
   late final StreamSubscription<AuthState> _authStateSubscription; // New subscription to listen for auth changes
 
   ReelProvider() {
     _initializeUserAndAuthListener(); // New method to set up user and auth listener
   }
+
+  bool get isLoadingMore => _isLoadingMore;
+  bool get hasMoreReels => _hasMoreReels;
 
   // Update the auth state change handler:
   void _initializeUserAndAuthListener() {
@@ -77,6 +80,22 @@ class ReelProvider extends ChangeNotifier {
     }
   }
 
+  // Added an optional parameter to control notification.
+  void clearAllControllers({bool notify = true}) {
+    print("🗑️ Clearing all video controllers...");
+    _videoControllers.forEach((_, controller) {
+      controller.dispose();
+    });
+    _videoControllers.clear();
+    _initFutures.clear();
+    reels.clear();
+
+    // Only notify listeners if requested. We don't want this during dispose.
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
   @override // Good practice to override dispose if you implement it
   void dispose() {
     _authStateSubscription.cancel(); // Crucial: Cancel the stream subscription to prevent memory leaks!
@@ -84,6 +103,7 @@ class ReelProvider extends ChangeNotifier {
       controller.dispose();
     });
     _videoControllers.clear();
+    clearAllControllers(notify: false);
     super.dispose();
   }
 
@@ -149,7 +169,13 @@ class ReelProvider extends ChangeNotifier {
   void preloadAdjacentReels(int currentIndex) {
     if (currentIndex < 0 || currentIndex >= reels.length) return;
 
-    // Preload the next reel
+    // --- NEW: Check if we need to fetch the next page ---
+    if (_hasMoreReels && !_isLoadingMore && currentIndex >= reels.length - 2) {
+      print('Preloading triggered fetch for more reels...');
+      _loadMoreReels();
+    }
+
+    // Preload the next reel if it exists
     if (currentIndex + 1 < reels.length) {
       preloadController(reels[currentIndex + 1].id);
     }
@@ -176,20 +202,6 @@ class ReelProvider extends ChangeNotifier {
     });
   }
 
-  void _getCurrentUserId() {
-    try {
-      _currentUserId = AuthService.client().auth.currentUser?.id;
-      if (_currentUserId != null) {
-        print('Current user ID: $_currentUserId');
-      } else {
-        print('No authenticated user found');
-      }
-    } catch (e) {
-      print('Error getting current user ID: $e');
-      _currentUserId = null;
-    }
-  }
-
   // Load users that current user is following
   Future<void> _loadFollowingUsers() async {
     if (_currentUserId == null) return;
@@ -211,21 +223,41 @@ class ReelProvider extends ChangeNotifier {
     }
   }
 
-  // Enhanced fetchReels with comment count from comments table
+  // THIS METHOD IS REFACTORED for initial loading and reset
   Future<void> fetchReels() async {
-    _updateCurrentUserId();
-    isLoading = true;
+    // This now acts as a reset and initial fetch function
+    isInitiallyLoading = true;
+    _currentPage = 0;
+    _hasMoreReels = true;
+    reels.clear();
+    _videoControllers.forEach((_, controller) => controller.dispose());
+    _videoControllers.clear();
+    _initFutures.clear();
+
+    await _loadMoreReels(); // Fetch the first page
+    isInitiallyLoading = false;
+    notifyListeners();
+  }
+
+  // --- NEW METHOD: Fetches the next page of reels ---
+  Future<void> _loadMoreReels() async {
+    if (_isLoadingMore || !_hasMoreReels) return;
+
+    _isLoadingMore = true;
     notifyListeners();
 
     try {
-      reels.clear();
+      _updateCurrentUserId();
       await _loadFollowingUsers();
 
       final blockedService = BlockedUsersService();
       final blockedUsers = await blockedService.getBlockedUsers();
       final blockedIds = blockedUsers.map((u) => u['id']).toSet();
 
-      // First query: Get reels with user data and comments
+      final from = _currentPage * _reelsPerPage;
+      final to = from + _reelsPerPage - 1;
+
+      // The rest of the fetching logic is the same, but with .range() added
       final response = await supabase
           .from('reels')
           .select('''
@@ -233,12 +265,23 @@ class ReelProvider extends ChangeNotifier {
         users!reels_user_id_fkey(username, profile_image_url),
         comments(id)
       ''')
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .range(from, to); // <-- PAGINATION APPLIED HERE
 
       final List<dynamic> reelDataList = response as List<dynamic>;
 
-      // Second query: Get user's likes for all reels
+      if (reelDataList.length < _reelsPerPage) {
+        _hasMoreReels = false;
+      }
+
+      // Second query to get likes remains efficient
       final reelIds = reelDataList.map((data) => data['id']).toList();
+      if (reelIds.isEmpty) {
+        _isLoadingMore = false;
+        notifyListeners();
+        return;
+      }
+
       final likesResponse = await supabase
           .from('reel_likes')
           .select('reel_id')
@@ -249,16 +292,15 @@ class ReelProvider extends ChangeNotifier {
           .map((like) => like['reel_id'])
           .toSet();
 
-      reels = reelDataList
+      final newReels = reelDataList
           .where((data) => !blockedIds.contains(data['user_id']))
           .map((data) {
+        // ... (mapping logic remains exactly the same)
         final reelId = data['id'] as String;
         final userId = data['user_id'] as String;
-
         final user = data['users'] as Map<String, dynamic>? ?? {};
         final username = user['username'] ?? 'Unknown';
         final avatarPath = user['profile_image_url'] ?? '';
-
         final comments = data['comments'] as List<dynamic>? ?? [];
         final likesCount = data['likes'] as int? ?? 0;
         final bool isLiked = likedReelIds.contains(reelId);
@@ -282,36 +324,21 @@ class ReelProvider extends ChangeNotifier {
         );
       }).toList();
 
-      // MODIFIED: After fetching reels, preload the first two
-      if (reels.isNotEmpty) {
-        await preloadController(reels[0].id);
-        if (reels.length > 1) {
-          await preloadController(reels[1].id);
-        }
-      }
+      reels.addAll(newReels);
+      _currentPage++;
 
-      print('✅ Fetched ${reels.length} reels');
-      if (reels.isNotEmpty) {
-        // Preload first reel with higher priority
-        await preloadController(reels[0].id);
-        print('🎯 Priority preloaded first reel: ${reels[0].id}');
-
-        // Preload second and third reels in background
-        if (reels.length > 1) {
-          preloadController(reels[1].id); // Don't await, run in background
-          print('⏳ Background preloading second reel: ${reels[1].id}');
-        }
-
-        if (reels.length > 2) {
-          preloadController(reels[2].id); // Don't await, run in background
-          print('⏳ Background preloading third reel: ${reels[2].id}');
+      // Preload the first one or two reels from the newly fetched page
+      if (newReels.isNotEmpty) {
+        await preloadController(newReels[0].id);
+        if (newReels.length > 1) {
+          preloadController(newReels[1].id);
         }
       }
     } catch (e, st) {
-      print('❌ Error fetching reels: $e');
+      print('❌ Error fetching more reels: $e');
       print(st);
     } finally {
-      isLoading = false;
+      _isLoadingMore = false;
       notifyListeners();
     }
   }

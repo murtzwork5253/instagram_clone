@@ -238,36 +238,16 @@ class _FollowersListState extends State<FollowersList>
     }
   }
 
-  // *** NEW IMPLEMENTATION USING RPC ***
+  // THIS METHOD IS REFACTORED
   Future<List<Map<String, dynamic>>> _fetchFollowers(String userId) async {
     final response = await supabase.rpc(
       'get_followers_list',
       params: {'profile_id': userId},
     );
-
     if (response == null) return [];
-
-    final List<Map<String, dynamic>> users = (response as List)
+    return (response as List)
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
-
-    final blockedService = BlockedUsersService();
-    final blockedUsers = await blockedService.getBlockedUsers();
-    final blockedIds = blockedUsers.map((u) => u['id']).toSet();
-    final filtered = users.where((u) => !blockedIds.contains(u['user_id'])).toList();
-
-    if (_currentUserId == null) return filtered;
-
-    for (var user in filtered) {
-      final followingCheck = await supabase
-          .from('followers')
-          .select()
-          .eq('follower_id', _currentUserId!)
-          .eq('following_id', user['user_id']);
-      user['is_following'] = followingCheck.isNotEmpty;
-    }
-
-    return filtered;
   }
 
   // *** NEW IMPLEMENTATION USING RPC ***
@@ -276,36 +256,10 @@ class _FollowersListState extends State<FollowersList>
       'get_following_list',
       params: {'profile_id': userId},
     );
-
     if (response == null) return [];
-
-    final List<Map<String, dynamic>> users = (response as List)
+    return (response as List)
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
-
-    final blockedService = BlockedUsersService();
-    final blockedUsers = await blockedService.getBlockedUsers();
-    final blockedIds = blockedUsers.map((u) => u['id']).toSet();
-    final filtered = users.where((u) => !blockedIds.contains(u['user_id'])).toList();
-
-    if (_currentUserId == null) return filtered;
-
-    if (_currentUserId == widget.userId) {
-      for (var user in filtered) {
-        user['is_following'] = true;
-      }
-    } else {
-      for (var user in filtered) {
-        final followingCheck = await supabase
-            .from('followers')
-            .select()
-            .eq('follower_id', _currentUserId!)
-            .eq('following_id', user['user_id']);
-        user['is_following'] = followingCheck.isNotEmpty;
-      }
-    }
-
-    return filtered;
   }
 
   Future<void> _toggleFollow(String userId, bool isCurrentlyFollowing) async {

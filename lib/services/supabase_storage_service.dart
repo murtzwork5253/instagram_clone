@@ -1,4 +1,5 @@
 import 'dart:typed_data'; // Make sure this is imported
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,6 +10,24 @@ import 'package:path/path.dart' as path;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import 'insta_data_provider.dart';
+
+// Top-level function for compression to run in a separate isolate
+Future<Uint8List?> _compressImage(Map<String, dynamic> params) async {
+  final String filePath = params['filePath'];
+  final int minWidth = params['minWidth'];
+  final int minHeight = params['minHeight'];
+  final int quality = params['quality'];
+  final CompressFormat format = params['format'];
+
+  final result = await FlutterImageCompress.compressWithFile(
+    filePath,
+    minWidth: minWidth,
+    minHeight: minHeight,
+    quality: quality,
+    format: format,
+  );
+  return result;
+}
 
 class SupabaseStorageService {
   static final SupabaseClient _client = Supabase.instance.client;
@@ -26,16 +45,16 @@ class SupabaseStorageService {
     final fileName = '${_uuid.v4()}$fileExt';
     final filePath = '${user.id}/$fileName';
 
-    // 📦 Step 1: Compress the image
-    final compressedBytes = await FlutterImageCompress.compressWithFile(
-      imageFile.absolute.path,
-      minWidth: 1080, // adjust resolution as needed
-      minHeight: 1080,
-      quality: 70, // adjust quality (0-100)
-      format: fileExt.toLowerCase() == '.png'
+    // 📦 Step 1: Compress the image in a separate isolate
+    final compressedBytes = await compute(_compressImage, {
+      'filePath': imageFile.absolute.path,
+      'minWidth': 1080,
+      'minHeight': 1080,
+      'quality': 70,
+      'format': fileExt.toLowerCase() == '.png'
           ? CompressFormat.png
           : CompressFormat.jpeg,
-    );
+    });
 
     if (compressedBytes == null) throw Exception('Image compression failed');
 
@@ -45,7 +64,7 @@ class SupabaseStorageService {
     // 📤 Step 2: Upload to Supabase
     await _client.storage.from(folder).uploadBinary(
       filePath,
-      Uint8List.fromList(compressedBytes),
+      compressedBytes,
       fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
     );
 

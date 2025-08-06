@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:Instagram/screens/createscreens/create_reels/reel_preview_screen.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:path_provider/path_provider.dart';
@@ -147,45 +148,30 @@ class _CreateReelContentState extends State<CreateReelContent> with WidgetsBindi
     }
   }
 
-  // NEW CODE - Replace the above section with this:
+  // THIS METHOD IS REFACTORED to remove compression
   Future<void> _pickVideoFromGallery() async {
     final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
+
     if (file != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Compressing video...'),
-          duration: Duration(seconds: 5),
+      if (!mounted) return;
+
+      // --- OPTIMIZATION: REMOVED COMPRESSION ---
+      // We will now navigate directly with the original video path.
+      // This makes the transition feel instant to the user.
+
+      // Stop camera before navigating to preview
+      await _cameraService.stopCamera();
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          // Pass the original, uncompressed path directly to the preview screen.
+          builder: (context) => ReelPreviewScreen(recordedVideoPath: file.path),
         ),
-      );
-
-      final MediaInfo? compressedVideo = await VideoCompress.compressVideo(
-        file.path,
-        quality: VideoQuality.MediumQuality,
-        deleteOrigin: false,
-        includeAudio: true,
-      );
-
-      if (compressedVideo != null && compressedVideo.path != null) {
-        // Stop camera before navigating to preview
-        await _cameraService.stopCamera();
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ReelPreviewScreen(recordedVideoPath: compressedVideo.path!),
-          ),
-        ).then((_) {
-          // Restart camera when returning from preview
-          _cameraService.restartCamera(enableAudio: true);
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to compress video.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      ).then((_) {
+        // Restart camera when returning from preview
+        _cameraService.restartCamera(enableAudio: true);
+      });
     }
   }
 
