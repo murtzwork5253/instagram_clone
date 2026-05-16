@@ -58,8 +58,11 @@ class SupabaseService {
   }
 
   // -------------------- POST FEED --------------------
-  static Future<List<PostData>> getFeedPosts() async {
+  static Future<List<PostData>> getFeedPosts({required int page, required int pageSize}) async {
     final userId = Supabase.instance.client.auth.currentUser!.id;
+    final from = page * pageSize;
+    final to = from + pageSize - 1;
+
 
     // Step 1: Fetch IDs of followed users
     final followingResponse = await Supabase.instance.client
@@ -69,10 +72,10 @@ class SupabaseService {
 
     final followedUserIds = (followingResponse as List)
         .map((row) => row['following_id'] as String)
-        .toList();
+        .toSet();
 
     // Always include own ID
-    followedUserIds.add(userId);
+    final userIdsToFetch = followedUserIds.toList()..add(userId);
 
     // Fetch blocked users
     final blockedService = BlockedUsersService();
@@ -104,8 +107,9 @@ class SupabaseService {
           id
         )
       ''')
-        .inFilter('user_id', followedUserIds)
-        .order('created_at', ascending: false);
+        .inFilter('user_id', userIdsToFetch)
+        .order('created_at', ascending: false)
+        .range(from, to);
 
     return (postsResponse as List)
         .where((post) => !blockedIds.contains(post['user_id']))
@@ -128,6 +132,7 @@ class SupabaseService {
         likeCount: likes.length,
         commentCount: comments.length,
         isLiked: isLiked,
+        isFollowing: followedUserIds.contains(post['user_id']),
         disableComments: post['disable_comments'] ?? false,
         use_original_ratio: post['use_original_ratio'],
         image_transformation: post['image_transformation'],
@@ -649,6 +654,81 @@ class SupabaseService {
     // Optionally, delete associated story views, etc.
   }
 
+  // Add this inside the SupabaseService class
+
+  static Future<List<PostData>> getPostsForUser({
+    required String userId,
+    required int page,
+    required int pageSize,
+  }) async {
+    final from = page * pageSize;
+    final to = from + pageSize - 1;
+
+    final currentUserId = _client.auth.currentUser?.id;
+
+    try {
+      final postsResponse = await _client
+          .from('posts')
+          .select('*, users!inner(username, profile_image_url)')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false)
+          .range(from, to);
+
+      if (postsResponse.isEmpty) {
+        return [];
+      }
+
+      // The rest is similar to your other post-fetching logic, but scoped to the page
+      final postIds = (postsResponse).map((post) => post['id']).toList();
+
+      final [likesResponse, commentsResponse, savedResponse] = await Future.wait([
+        _client.from('post_likes').select('post_id, user_id').inFilter('post_id', postIds),
+        _client.from('comments').select('id, post_id').inFilter('post_id', postIds),
+        if (currentUserId != null)
+          _client.from('saved_posts').select('post_id').eq('user_id', currentUserId).inFilter('post_id', postIds)
+        else
+          Future.value([])
+      ]);
+
+      final Map<String, List<dynamic>> likesByPost = {};
+      (likesResponse as List).forEach((like) => (likesByPost[like['post_id']] ??= []).add(like));
+
+      final Map<String, int> commentsByPost = {};
+      (commentsResponse as List).forEach((comment) => commentsByPost[comment['post_id']] = (commentsByPost[comment['post_id']] ?? 0) + 1);
+
+      final Set<String> savedPostIds = (savedResponse as List).map((save) => save['post_id'].toString()).toSet();
+
+      return (postsResponse).map((post) {
+        final user = post['users'];
+        final postId = post['id'].toString();
+        final likes = likesByPost[postId] ?? [];
+        final isLiked = currentUserId != null ? likes.any((like) => like['user_id'] == currentUserId) : false;
+
+        return PostData(
+          id: post['id'],
+          userId: post['user_id'],
+          username: user['username'],
+          profileImageUrl: user['profile_image_url'],
+          imageUrl: post['image_url'],
+          caption: post['caption'],
+          location: post['location'],
+          createdAt: DateTime.parse(post['created_at']),
+          likeCount: likes.length,
+          commentCount: commentsByPost[postId] ?? 0,
+          isLiked: isLiked,
+          isSaved: savedPostIds.contains(postId),
+          disableComments: post['disable_comments'] ?? false,
+          use_original_ratio: post['use_original_ratio'],
+          image_transformation: post['image_transformation'],
+          original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
+        );
+      }).toList();
+    } catch (e) {
+      print('Error fetching paginated posts: $e');
+      return [];
+    }
+  }
+
 }
 
 class UserData {
@@ -697,6 +777,7 @@ class PostData {
   final bool? use_original_ratio;
   final String? image_transformation;
   final double? original_aspect_ratio;
+  final bool isFollowing;
 
   PostData({
     required this.id,
@@ -715,6 +796,7 @@ class PostData {
     this.use_original_ratio,
     this.image_transformation,
     this.original_aspect_ratio,
+    this.isFollowing = false,
   });
 
   factory PostData.fromJson(Map<String, dynamic> json,
@@ -742,8 +824,33 @@ class PostData {
     );
   }
 
-
-
+  PostData copyWith({
+    bool? isLiked,
+    int? likeCount,
+    bool? isSaved,
+    int? commentCount,
+    bool? isFollowing,
+  }) {
+    return PostData(
+      id: this.id,
+      userId: this.userId,
+      username: this.username,
+      profileImageUrl: this.profileImageUrl,
+      imageUrl: this.imageUrl,
+      caption: this.caption,
+      location: this.location,
+      createdAt: this.createdAt,
+      likeCount: likeCount ?? this.likeCount,
+      commentCount: commentCount ?? this.commentCount,
+      isLiked: isLiked ?? this.isLiked,
+      isSaved: isSaved ?? this.isSaved,
+      disableComments: this.disableComments,
+      use_original_ratio: this.use_original_ratio,
+      image_transformation: this.image_transformation,
+      original_aspect_ratio: this.original_aspect_ratio,
+      isFollowing: isFollowing ?? this.isFollowing, // <-- ADDED THIS FIELD
+    );
+  }
 }
 
 class StoryData {

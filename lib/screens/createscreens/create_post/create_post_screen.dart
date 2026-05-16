@@ -6,6 +6,7 @@ import 'package:flutter/services.dart'; // For MissingPluginException
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
@@ -13,6 +14,8 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:icons_plus/icons_plus.dart' as OIcons;
 
 import '../../../l10n/app_localizations.dart';
+import '../../../services/insta_data_provider.dart';
+import '../../../services/supabase_storage_service.dart';
 import '../../user_tagging/user_model.dart';
 import '../../user_tagging/user_tagging_screen.dart';
 import '../../user_tagging/user_tagging_service.dart';
@@ -409,54 +412,7 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
     }
   }
 
-  Future<String?> _uploadMedia(XFile media) async {
-    try {
-      final userId = supabase.auth.currentUser?.id;
-      if (userId == null) throw Exception('User not authenticated');
-
-      final String fileExt = path.extension(media.path);
-      final String exactName = '${const Uuid().v4()}$fileExt';
-      final String fileName = '$userId/$exactName';
-
-      Uint8List? compressedBytes;
-
-      if (fileExt.toLowerCase() == '.jpg' ||
-          fileExt.toLowerCase() == '.jpeg' ||
-          fileExt.toLowerCase() == '.png') {
-        // 🗜️ Compress image before upload
-        compressedBytes = await FlutterImageCompress.compressWithFile(
-          media.path,
-          minWidth: 1080,
-          minHeight: 1080,
-          quality: 70,
-          format: fileExt.toLowerCase() == '.png'
-              ? CompressFormat.png
-              : CompressFormat.jpeg,
-        );
-
-        if (compressedBytes == null) {
-          throw Exception('Image compression failed');
-        }
-      } else {
-        // 📄 For non-image media, upload as-is
-        compressedBytes = await media.readAsBytes();
-      }
-
-      await supabase.storage.from('post-media').uploadBinary(fileName, compressedBytes);
-
-      final publicUrl = supabase.storage.from('post-media').getPublicUrl(fileName);
-      return publicUrl;
-    } catch (e) {
-      debugPrint('Upload error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e')),
-        );
-      }
-      return null;
-    }
-  }
-
+  // THIS METHOD IS REFACTORED
   Future<void> _createPost() async {
     if (_selectedMedia == null) {
       if (mounted) {
@@ -482,25 +438,29 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
       });
     }
 
-    final mediaUrl = await _uploadMedia(_selectedMedia!);
-    if (mediaUrl == null) {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-        });
-      }
-      return;
-    }
-
     try {
+      // Use the new, optimized storage service for uploading and compression
+      final imageUrl = await SupabaseStorageService.uploadImage(
+        File(_selectedMedia!.path), // Pass the file
+        folder: 'post-media',
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              // You can update a progress indicator here if you have one
+              _isUploading = false;
+            });
+          }
+        },
+      );
+
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw Exception('User not authenticated');
 
-      // Create the post first and get the post ID
+      // The rest of the logic remains the same
       final response = await supabase.from('posts').insert({
         'user_id': userId,
         'caption': _captionController.text.trim(),
-        'image_url': mediaUrl,
+        'image_url': imageUrl,
         'location': _location,
         'disable_comments': _disableComments,
         'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -511,35 +471,27 @@ class CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPro
 
       final postId = response['id'] as String;
 
-      // print("Tagged Users: ${_taggedUsers.map((user) => user.username)}");
-      // print("Post ID: $postId");
-
-      // Save tagged users to the post if any exist
       if (_taggedUsers.isNotEmpty) {
         await _taggingService.saveTaggedUsersToPost(
           postId: postId,
           taggedUsers: _taggedUsers,
         );
-
-        // Optional: Notify tagged users
-        // await _taggingService.notifyTaggedUsers(
-        //   taggedUsers: _taggedUsers,
-        //   postId: postId,
-        //   authorId: userId,
-        // );
       }
+
+      // Refresh the feed data after a successful post
+      await Provider.of<InstaDataProvider>(context, listen: false).reloadData();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Post created successfully!')),
         );
-        Navigator.of(context).pop(); // Pop this screen after successful post
+        Navigator.of(context).pop();
       }
     } catch (e) {
-      debugPrint('Database insertion error: $e');
+      debugPrint('Post creation error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to create post. Please try again.')),
+          SnackBar(content: Text('Failed to create post: ${e.toString()}')),
         );
       }
     } finally {

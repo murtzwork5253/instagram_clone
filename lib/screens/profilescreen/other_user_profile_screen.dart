@@ -25,7 +25,9 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
     with SingleTickerProviderStateMixin {
   final supabase = Supabase.instance.client;
   Map<String, dynamic>? profile;
-  List<dynamic> posts = [];
+
+  List<PostData> posts = [];
+
   bool isFollowing = false;
   bool isLoading = true;
   int followersCount = 0;
@@ -40,9 +42,46 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadOtherProfile();
+    _loadOtherProfile(); // This will now only load profile info
+    // _fetchInitialPosts(); // This will load the first page of posts
     _checkIfBlocked();
   }
+
+  // Future<void> _fetchInitialPosts() async {
+  //   await _fetchPosts(page: 0);
+  // }
+  //
+  // // --- NEW: Paginated post fetching logic ---
+  // Future<void> _fetchPosts({required int page}) async {
+  //   if (!mounted) return;
+  //   setState(() => _isLoadingPosts = true);
+  //
+  //   try {
+  //     final newPosts = await SupabaseService.getPostsForUser(
+  //       userId: widget.userId,
+  //       page: page,
+  //       pageSize: _postsPerPage,
+  //     );
+  //
+  //     if (mounted) {
+  //       setState(() {
+  //         if (newPosts.length < _postsPerPage) {
+  //           _hasMorePosts = false;
+  //         }
+  //         posts.addAll(newPosts);
+  //         _currentPage = page;
+  //         _isLoadingPosts = false;
+  //       });
+  //     }
+  //   } catch (e) {
+  //     if (mounted) {
+  //       setState(() => _isLoadingPosts = false);
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text('Error loading posts: $e')),
+  //       );
+  //     }
+  //   }
+  // }
 
   @override
   void dispose() {
@@ -51,193 +90,51 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   }
 
   Future<void> _loadOtherProfile() async {
-    setState(() {
-      isLoading = true;
-    });
-    final currentUser = supabase.auth.currentUser;
-    if (currentUser == null) {
-      setState(() {
-        isLoading = false;
-        profile = {};
-        posts = [];
-        followersCount = 0;
-        followingCount = 0;
-        postsCount = 0;
-        isFollowing = false;
-      });
+    setState(() => isLoading = true);
+    final currentUserId = supabase.auth.currentUser?.id;
+    if (currentUserId == null) {
+      setState(() => isLoading = false);
       return;
     }
-    final currentUserId = currentUser.id;
 
-    print("The user id is: ${widget.userId}");
     try {
-      // Load profile details
-      final profileRes = await supabase
-          .from('users')
-          .select()
-          .eq('id', widget.userId)
-          .single();
+      // First, get the list of users blocked by the current user.
+      final blockedUsers = await _blockedUsersService.getBlockedUsers();
+      final blockedIds = blockedUsers.map((u) => u['id'].toString()).toList();
 
-      // NEW CODE - Replace the above section with this:
-      // Load posts
-      final postsResponse = await supabase
-          .from('posts')
-          .select('''
-        id,
-        user_id,
-        caption,
-        location,
-        image_url,
-        created_at,
-        disable_comments,
-        use_original_ratio,
-        image_transformation,
-        original_aspect_ratio,
-        users (
-          username,
-          profile_image_url
-        )
-      ''') // Select necessary fields for PostData
-          .eq('user_id', widget.userId)
-          .order('created_at', ascending: false);
+      // Now, run the parallel queries with the correct parameters.
+      final List<Future<dynamic>> futures = [
+        supabase.from('users').select().eq('id', widget.userId).single(),
+        SupabaseService.getPostsForUser(userId: widget.userId, page: 0, pageSize: 100),
+        // --- THIS IS THE FIX ---
+        // Call the RPC with both parameters to resolve the ambiguity.
+        supabase.rpc('get_follow_counts', params: {
+          'user_id_input': widget.userId,
+          'blocked_ids': blockedIds, // Pass the list of blocked user IDs
+        }),
+        supabase.rpc('is_user_following', params: {'follower_id_input': currentUserId, 'following_id_input': widget.userId}),
+      ];
 
-      // Get all post IDs to fetch likes, comments, and saves separately
-      final postIds = (postsResponse as List).map((post) => post['id']).toList();
+      final results = await Future.wait(futures);
 
-      // Fetch all likes for these posts
-      final likesResponse = await supabase
-          .from('post_likes')
-          .select('post_id, user_id')
-          .inFilter('post_id', postIds);
+      final profileRes = results[0] as Map<String, dynamic>;
+      final postsRes = results[1] as List<PostData>;
+      final countsRes = results[2] as Map<String, dynamic>;
+      final isFollowingCheck = results[3] as bool;
 
-      // Fetch all comments for these posts
-      final commentsResponse = await supabase
-          .from('comments')
-          .select('id, post_id')
-          .inFilter('post_id', postIds);
-
-      // Fetch saved posts for current user
-      List<dynamic> savedResponse = [];
-      if (currentUserId != null) { // Use currentUserId defined in this method
-        savedResponse = await supabase
-            .from('saved_posts')
-            .select('post_id')
-            .eq('user_id', currentUserId)
-            .inFilter('post_id', postIds);
-      }
-
-      // Group likes, comments, and saves by post_id
-      final Map<String, List<dynamic>> likesByPost = {};
-      final Map<String, List<dynamic>> commentsByPost = {};
-      final Set<String> savedPostIds = savedResponse
-          .map((save) => save['post_id'].toString())
-          .toSet();
-
-      for (final like in likesResponse as List) {
-        final postId = like['post_id'].toString();
-        likesByPost[postId] = (likesByPost[postId] ?? [])..add(like);
-      }
-
-      for (final comment in commentsResponse as List) {
-        final postId = comment['post_id'].toString();
-        commentsByPost[postId] = (commentsByPost[postId] ?? [])..add(comment);
-      }
-
-      final List<PostData> fetchedPosts = (postsResponse).map((post) {
-        final user = post['users'];
-        final postId = post['id'].toString();
-        final likes = likesByPost[postId] ?? [];
-        final comments = commentsByPost[postId] ?? [];
-
-        final bool isLiked = currentUserId != null
-            ? likes.any((like) => like['user_id'] == currentUserId)
-            : false;
-
-        return PostData(
-          id: post['id'],
-          userId: post['user_id'],
-          username: user['username'],
-          profileImageUrl: user['profile_image_url'],
-          imageUrl: post['image_url'],
-          caption: post['caption'],
-          location: post['location'],
-          createdAt: DateTime.parse(post['created_at']),
-          likeCount: likes.length,
-          commentCount: comments.length,
-          isLiked: isLiked,
-          isSaved: savedPostIds.contains(postId),
-          disableComments: post['disable_comments'] ?? false,
-          use_original_ratio: post['use_original_ratio'],
-          image_transformation: post['image_transformation'],
-          original_aspect_ratio: (post['original_aspect_ratio'] as num?)?.toDouble() ?? 1.0,
-        );
-      }).toList();
-
-      try {
-        // 1. Get the list of users blocked by the current user.
-        final blockedService = BlockedUsersService();
-        final blockedUsers = await blockedService.getBlockedUsers();
-        final blockedIds = blockedUsers.map((u) => u['id'].toString()).toList();
-
-        // 2. Call the RPC function to get the correctly filtered counts.
-        final countsRes = await supabase.rpc(
-          'get_follow_counts',
-          params: {
-            'user_id_input': widget.userId,
-            'blocked_ids': blockedIds,
-          },
-        );
-
-        // 3. Use the new RPC function to reliably check the follow status.
-        final dynamic isFollowingCheck = await supabase.rpc(
-          'is_user_following',
-          params: {
-            'follower_id_input': currentUserId,
-            'following_id_input': widget.userId,
-          },
-        );
-
-        // 4. Update the state with the new data
-        setState(() {
-          profile = profileRes;
-          posts = fetchedPosts;
-
-          // Get counts directly from the RPC response
-          followersCount = countsRes['followers'] ?? 0;
-          followingCount = countsRes['following'] ?? 0;
-
-          postsCount = fetchedPosts.length;
-
-          // The follow status is now determined by our new, reliable RPC call
-          isFollowing = isFollowingCheck as bool;
-
-          isLoading = false;
-        });
-
-      } catch (e) {
-        setState(() {
-          isLoading = false;
-        });
-        print('Error loading other user profile: $e');
-      }
-
-
-
-      // // NEW CODE - Replace the above section with this:
-      // setState(() {
-      //   profile = profileRes;
-      //   posts = fetchedPosts; // Assign the mapped PostData list
-      //   followersCount = filteredFollowers.length;
-      //   followingCount = filteredFollowing.length;
-      //   postsCount = fetchedPosts.length; // Use fetchedPosts.length
-      //   isFollowing = followingCheck != null; // Set the follow status
-      //   isLoading = false;
-      // });
-    } catch (e) {
       setState(() {
+        profile = profileRes;
+        posts = postsRes;
+        followersCount = countsRes['followers'] ?? 0;
+        followingCount = countsRes['following'] ?? 0;
+        postsCount = posts.length;
+        isFollowing = isFollowingCheck;
         isLoading = false;
       });
-      print('Error loading profile: $e');
+
+    } catch (e) {
+      setState(() => isLoading = false);
+      print('Error loading other user profile: $e');
     }
   }
 
@@ -281,33 +178,31 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   Future<void> _toggleFollow() async {
     final currentUserId = supabase.auth.currentUser!.id;
 
+    final originalFollowState = isFollowing;
+    final originalFollowersCount = followersCount;
+
     setState(() {
-      // Optimistic UI update
       isFollowing = !isFollowing;
-      // Note: followersCount update here is just for optimistic UI.
-      // Real counts should ideally be updated via Supabase functions or a re-fetch.
-      followersCount = isFollowing ? followersCount + 1 : followersCount - 1;
+      followersCount += isFollowing ? 1 : -1;
     });
 
     try {
       if (!isFollowing) {
-        // If we just unfollowed (state already toggled above)
         await supabase.from('followers').delete().match(
             {'follower_id': currentUserId, 'following_id': widget.userId});
       } else {
-        // If we just followed (state already toggled above)
         await supabase.from('followers').insert({
           'follower_id': currentUserId,
           'following_id': widget.userId,
         });
       }
-      // Re-fetch counts after actual DB operation to ensure accuracy
+      // Optional: A light re-fetch to ensure counts are perfectly in sync
       await _loadOtherProfile();
     } catch (e) {
       // Revert optimistic update on error
       setState(() {
-        isFollowing = !isFollowing;
-        followersCount = isFollowing ? followersCount + 1 : followersCount - 1;
+        isFollowing = originalFollowState;
+        followersCount = originalFollowersCount;
       });
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error updating follow status: $e')));
@@ -317,6 +212,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
+    // First, handle the loading state.
     if (isLoading) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -330,6 +226,23 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen>
         ),
         body: const Center(
           child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+    // Second, handle the error/null state after loading is complete.
+    if (profile == null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: const Text('Error', style: TextStyle(color: Colors.white)),
+        ),
+        body: const Center(
+          child: Text('Could not load user profile.', style: TextStyle(color: Colors.white)),
         ),
       );
     }

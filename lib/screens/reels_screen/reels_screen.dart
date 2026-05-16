@@ -24,10 +24,14 @@ class _ReelsScreenState extends State<ReelsScreen>
   int _currentPage = 0;
   bool _isInitialized = false;
 
+  late ReelProvider _reelProvider;
+
   @override
   void initState() {
     super.initState();
 
+    // We get the provider once and store it. listen: false is crucial.
+    _reelProvider = Provider.of<ReelProvider>(context, listen: false);
     _appBarController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -47,13 +51,12 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Future<void> _initializeReels() async {
     try {
-      final reelProvider = Provider.of<ReelProvider>(context, listen: false);
 
-      await reelProvider.fetchReels();
+      await _reelProvider.fetchReels();
 
       int initialIndex = 0; // Default to the first reel
-      if (widget.initialReelId != null && reelProvider.reels.isNotEmpty) {
-        final foundIndex = reelProvider.reels
+      if (widget.initialReelId != null && _reelProvider.reels.isNotEmpty) {
+        final foundIndex = _reelProvider.reels
             .indexWhere((reel) => reel.id == widget.initialReelId);
         if (foundIndex != -1) {
           initialIndex = foundIndex; // Set the correct starting index
@@ -75,19 +78,19 @@ class _ReelsScreenState extends State<ReelsScreen>
       });
 
       // Preload reels around the determined starting reel
-      reelProvider.preloadAdjacentReels(initialIndex);
+      _reelProvider.preloadAdjacentReels(initialIndex);
 
 
       // The rest of your method can stay largely the same...
-      if (reelProvider.reels.isNotEmpty) {
+      if (_reelProvider.reels.isNotEmpty) {
         int attempts = 0;
         // IMPORTANT: Check the readiness of the correct initial reel, not always the first one.
-        while (!reelProvider.isControllerReady(reelProvider.reels[initialIndex].id) && attempts < 20) {
+        while (!_reelProvider.isControllerReady(_reelProvider.reels[initialIndex].id) && attempts < 20) {
           await Future.delayed(const Duration(milliseconds: 100));
           attempts++;
         }
 
-        if (reelProvider.isControllerReady(reelProvider.reels[initialIndex].id)) {
+        if (_reelProvider.isControllerReady(_reelProvider.reels[initialIndex].id)) {
           print('✅ Initial reel controller ($initialIndex) is ready');
         } else {
           print('⚠️ Initial reel controller not ready after timeout, but continuing...');
@@ -113,6 +116,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   @override
   void dispose() {
+    _reelProvider.clearAllControllers(notify: false);
     _pageController.dispose();
     _appBarController?.dispose();
     super.dispose();
@@ -122,7 +126,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   Widget build(BuildContext context) {
     return Consumer<ReelProvider>(
       builder: (context, reelsProvider, child) {
-        if (reelsProvider.isLoading || !_isInitialized) {
+        if (reelsProvider.isLoadingMore || !_isInitialized) {
           return const Scaffold(
             backgroundColor: Colors.black,
             body: Center(

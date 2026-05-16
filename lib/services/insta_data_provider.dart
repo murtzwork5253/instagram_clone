@@ -7,19 +7,23 @@ import '../screens/notificationscreen/service/notification_service.dart';
 import '../services/supabase_service.dart';
 
 class InstaDataProvider extends ChangeNotifier {
+  List<PostData> _posts = [];
+  int _postsPage = 0;
+  final int _postsPerPage = 5; // Fetch 5 posts at a time
+  bool _hasMorePosts = true;
+  bool _isLoadingPosts = false;
   bool _isLoading = false;
   UserData? _currentUser;
-  List<PostData> _posts = [];
   List<StoryData> _stories = [];
   String? _error;
-  // NEW: Map to store all individual stories, grouped by user ID
-  // This will be used when navigating to StoryViewScreen
   Map<String, List<StoryData>> _allIndividualStoriesGrouped = {};
   List<PostData> _suggestedPosts = [];
   List<PostData> get suggestedPosts => _suggestedPosts;
 
   bool get isLoading => _isLoading;
 
+  bool get isLoadingPosts => _isLoadingPosts;
+  bool get hasMorePosts => _hasMorePosts;
   UserData? get currentUser => _currentUser;
 
   List<PostData> get posts => _posts;
@@ -37,6 +41,9 @@ class InstaDataProvider extends ChangeNotifier {
     _posts = [];
     _stories = [];
     _error = null;
+    _postsPage = 0;
+    _hasMorePosts = true;
+    _isLoadingPosts = false;
     notifyListeners();
   }
 
@@ -54,13 +61,17 @@ class InstaDataProvider extends ChangeNotifier {
         return;
       }
 
+      _posts = [];
+      _postsPage = 0;
+      _hasMorePosts = true;
+      await _fetchPosts(); // Initial fetch
+
       // Load feed data in parallel
       await Future.wait([
-        _fetchPosts(),
         _fetchStories(),
+        fetchSuggestedPosts(),
       ]);
       shufflePosts();
-      await fetchSuggestedPosts();
     } catch (e) {
       _error = e.toString();
       print('Error loading data: $_error');
@@ -110,53 +121,39 @@ class InstaDataProvider extends ChangeNotifier {
     }
   }
 
+  // THIS METHOD IS REFACTORED for pagination
   Future<void> _fetchPosts() async {
+    // Prevent multiple simultaneous fetches
+    if (_isLoadingPosts || !_hasMorePosts) return;
+
+    _isLoadingPosts = true;
+    notifyListeners();
+
     try {
-      final posts = await SupabaseService.getFeedPosts();
+      // Use the new paginated service method
+      final newPosts = await SupabaseService.getFeedPosts(
+        page: _postsPage,
+        pageSize: _postsPerPage,
+      );
 
-      // Get current user ID
-      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-
-      if (currentUserId != null) {
-        // Get all saved post IDs for current user
-        final savedPostsResponse = await Supabase.instance.client
-            .from('saved_posts')
-            .select('post_id')
-            .eq('user_id', currentUserId);
-
-        final savedPostIds = savedPostsResponse
-            .map((item) => item['post_id'] as String)
-            .toSet();
-
-        // Update posts with saved status
-        _posts = posts.map((post) => PostData(
-          id: post.id,
-          userId: post.userId,
-          username: post.username,
-          profileImageUrl: post.profileImageUrl,
-          imageUrl: post.imageUrl,
-          caption: post.caption,
-          location: post.location,
-          createdAt: post.createdAt,
-          likeCount: post.likeCount,
-          commentCount: post.commentCount,
-          isLiked: post.isLiked,
-          isSaved: savedPostIds.contains(post.id),
-          disableComments: post.disableComments,
-          use_original_ratio: post.use_original_ratio,
-          image_transformation: post.image_transformation,
-          original_aspect_ratio: post.original_aspect_ratio,
-        )).toList();
-      } else {
-        _posts = posts;
+      if (newPosts.length < _postsPerPage) {
+        _hasMorePosts = false;
       }
 
-      notifyListeners();
+      _posts.addAll(newPosts);
+      _postsPage++;
+
     } catch (e) {
-      print('Error fetching posts: $e');
-      _error = 'Failed to load posts';
+      _error = 'Failed to load posts: $e';
+    } finally {
+      _isLoadingPosts = false;
       notifyListeners();
     }
+  }
+
+  // --- NEW public method to be called from the UI scroll listener ---
+  Future<void> fetchMorePosts() async {
+    await _fetchPosts();
   }
 
   // Method to fetch suggested posts
@@ -489,103 +486,38 @@ class InstaDataProvider extends ChangeNotifier {
   }
 
   Future<void> likePost(String postId) async {
+    // Find the post in either the main list or suggested list
+    int postIndex = _posts.indexWhere((p) => p.id == postId);
+    List<PostData> sourceList = _posts;
+
+    if (postIndex == -1) {
+      postIndex = _suggestedPosts.indexWhere((p) => p.id == postId);
+      sourceList = _suggestedPosts;
+    }
+
+    if (postIndex == -1) return; // Post not found
+
+    final post = sourceList[postIndex];
+    final isCurrentlyLiked = post.isLiked;
+    final newLikeCount = isCurrentlyLiked ? post.likeCount - 1 : post.likeCount + 1;
+
+    // Optimistic UI update: modify the post in-place
+    sourceList[postIndex] = post.copyWith(
+      isLiked: !isCurrentlyLiked,
+      likeCount: newLikeCount,
+    );
+    notifyListeners();
+
     try {
-      // Check if it's a regular post first
-      final index = _posts.indexWhere((post) => post.id == postId);
-      // Check if it's a suggested post
-      final suggestedIndex = _suggestedPosts.indexWhere((post) => post.id == postId);
-
-      PostData? targetPost;
-      bool isRegularPost = index != -1;
-      bool isSuggestedPost = suggestedIndex != -1;
-
-      // Optimistic update for regular posts
-      if (isRegularPost) {
-        targetPost = _posts[index];
-        final newPosts = List<PostData>.from(_posts);
-        newPosts[index] = _createUpdatedPost(targetPost, !targetPost.isLiked);
-        _posts = newPosts;
-        notifyListeners();
-      }
-
-      // Optimistic update for suggested posts
-      if (isSuggestedPost) {
-        targetPost = _suggestedPosts[suggestedIndex];
-        final newSuggestedPosts = List<PostData>.from(_suggestedPosts);
-        newSuggestedPosts[suggestedIndex] = _createUpdatedPost(targetPost, !targetPost.isLiked);
-        _suggestedPosts = newSuggestedPosts;
-        notifyListeners();
-      }
-
-      // If post not found in either list, return early
-      if (!isRegularPost && !isSuggestedPost) {
-        print("Post not found in either regular or suggested posts");
-        return;
-      }
-
       // Actual API call
-      final isLiked = await SupabaseService.toggleLike(postId);
-
-      // Update regular posts with actual state if needed
-      if (isRegularPost) {
-        final updatedIndex = _posts.indexWhere((post) => post.id == postId);
-        if (updatedIndex != -1) {
-          final post = _posts[updatedIndex];
-          if (post.isLiked != isLiked) {
-            final newPosts = List<PostData>.from(_posts);
-            newPosts[updatedIndex] = _createUpdatedPost(post, isLiked);
-            _posts = newPosts;
-            notifyListeners();
-          }
-        }
-      }
-
-      // Update suggested posts with actual state if needed
-      if (isSuggestedPost) {
-        final updatedSuggestedIndex = _suggestedPosts.indexWhere((post) => post.id == postId);
-        if (updatedSuggestedIndex != -1) {
-          final post = _suggestedPosts[updatedSuggestedIndex];
-          if (post.isLiked != isLiked) {
-            final newSuggestedPosts = List<PostData>.from(_suggestedPosts);
-            newSuggestedPosts[updatedSuggestedIndex] = _createUpdatedPost(post, isLiked);
-            _suggestedPosts = newSuggestedPosts;
-            notifyListeners();
-          }
-        }
-      }
+      await SupabaseService.toggleLike(postId);
     } catch (e) {
-      print("Error in likePost: $e");
-      Fluttertoast.showToast(msg: "Error toggling like");
-      // Refresh feed to get correct state
-      refreshFeed();
+      // Revert on error
+      sourceList[postIndex] = post;
+      notifyListeners();
+      Fluttertoast.showToast(msg: "Error: Could not update like");
     }
   }
-
-  // Helper method to create updated post (add this method to your provider)
-  PostData _createUpdatedPost(PostData originalPost, bool isLiked) {
-    return PostData(
-      id: originalPost.id,
-      userId: originalPost.userId,
-      username: originalPost.username,
-      profileImageUrl: originalPost.profileImageUrl,
-      imageUrl: originalPost.imageUrl,
-      caption: originalPost.caption,
-      location: originalPost.location,
-      createdAt: originalPost.createdAt,
-      likeCount: isLiked
-          ? (originalPost.isLiked ? originalPost.likeCount : originalPost.likeCount + 1)
-          : (originalPost.isLiked ? originalPost.likeCount - 1 : originalPost.likeCount),
-      commentCount: originalPost.commentCount,
-      isLiked: isLiked,
-      isSaved: originalPost.isSaved,
-      disableComments: originalPost.disableComments,
-      use_original_ratio: originalPost.use_original_ratio,
-      image_transformation: originalPost.image_transformation,
-      original_aspect_ratio: originalPost.original_aspect_ratio,
-    );
-  }
-
-  // Add these methods to your InstaDataProvider class
 
 // Method to check if a post is saved by current user
   Future<bool> isPostSaved(String postId) async {

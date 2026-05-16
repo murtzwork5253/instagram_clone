@@ -62,11 +62,7 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
   final double _openCameraThreshold = 0.3; // Threshold for opening camera
 
   // --- ADDED: Cache for isFollowingUser futures per postId ---
-  final Map<String, Future<bool>> _isFollowingFutures = {};
   final ScrollController _scrollController = ScrollController();
-  int _postsPerPage = 10;
-  int _currentMax = 10;
-  bool _isLoadingMore = false;
 
   // Replace the existing initState method with this:
   @override
@@ -618,52 +614,37 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
                               ),
                             ),
                           ),
-                          // Posts section
+                          // Paginated Posts from people you follow
                           SliverList(
                             delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final posts = provider.posts;
-                                final suggestedPosts = provider.suggestedPosts;
-                                final followingUserIds =
-                                    posts.map((post) => post.userId).toSet();
-                                final filteredSuggestedPosts = suggestedPosts
-                                    .where((post) =>
-                                        !followingUserIds.contains(post.userId))
-                                    .toList();
-
-                                if (index < posts.length) {
-                                  return _buildPost(posts[index],
-                                      isFollowing: true);
-                                } else {
-                                  final suggestedIndex = index - posts.length;
-                                  if (suggestedIndex <
-                                      filteredSuggestedPosts.length) {
-                                    return Column(
-                                      children: [
-                                        if (suggestedIndex == 0)
-                                          _buildSuggestedPostsHeader(),
-                                        _buildPost(
-                                            filteredSuggestedPosts[suggestedIndex],
-                                            isFollowing: false),
-                                      ],
-                                    );
-                                  }
-                                }
-                                return SizedBox.shrink();
+                                  (context, index) {
+                                return _buildPost(provider.posts[index], isFollowing: true);
                               },
-                              childCount: () {
-                                final posts = provider.posts;
-                                final suggestedPosts = provider.suggestedPosts;
-                                final followingUserIds =
-                                    posts.map((post) => post.userId).toSet();
-                                final filteredSuggestedPosts = suggestedPosts
-                                    .where((post) =>
-                                        !followingUserIds.contains(post.userId))
-                                    .toList();
-                                return posts.length + filteredSuggestedPosts.length;
-                              }(),
+                              childCount: provider.posts.length,
                             ),
                           ),
+
+                          // Loading indicator for pagination
+                          if (provider.isLoadingPosts)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 32.0),
+                                child: Center(child: CircularProgressIndicator()),
+                              ),
+                            ),
+
+                          // --- RE-INTEGRATED SUGGESTED POSTS SECTION ---
+                          if (!provider.hasMorePosts && provider.suggestedPosts.isNotEmpty) ...[
+                            SliverToBoxAdapter(child: _buildSuggestedPostsHeader()),
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  return _buildPost(provider.suggestedPosts[index], isFollowing: false);
+                                },
+                                childCount: provider.suggestedPosts.length,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                   );
@@ -946,10 +927,10 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
 
     // --- ADDED: Cache the isFollowingUser future for this post if not already cached ---
     final currentUser = AuthService.client().auth.currentUser;
-    if (!isFollowing && currentUser != null && !_isFollowingFutures.containsKey(post.id)) {
-      _isFollowingFutures[post.id] = Provider.of<InstaDataProvider>(context, listen: false)
-          .isFollowingUser(currentUser.id, post.userId);
-    }
+    // if (!isFollowing && currentUser != null && !_isFollowingFutures.containsKey(post.id)) {
+    //   _isFollowingFutures[post.id] = Provider.of<InstaDataProvider>(context, listen: false)
+    //       .isFollowingUser(currentUser.id, post.userId);
+    // }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -997,95 +978,39 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Show follow/unfollow button for suggested posts
-                if (!isFollowing) ...[
-                  currentUser == null
-                      ? TextButton(
-                          onPressed: null,
-                          child: Text('Login to follow', style: TextStyle(color: Colors.white)),
-                        )
-                      : FutureBuilder<bool>(
-                          future: _isFollowingFutures[post.id],
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.blue,
-                                ),
-                              );
-                            }
-
-                            if (snapshot.hasError) {
-                              return Text('Error', style: TextStyle(color: Colors.red));
-                            }
-
-                            final bool isCurrentlyFollowing = snapshot.data ?? false;
-
-                            return TextButton(
-                              onPressed: () async {
-                                try {
-                                  final provider = Provider.of<InstaDataProvider>(context,
-                                      listen: false);
-                                  final currentUserId = currentUser.id;
-
-                                  if (isCurrentlyFollowing) {
-                                    await provider.unfollowUser(
-                                        currentUserId, post.userId);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content:
-                                              Text('Unfollowed ${post.username}')),
-                                    );
-                                  } else {
-                                    await provider.followUser(
-                                        currentUserId, post.userId);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content:
-                                              Text('Following ${post.username}')),
-                                    );
-                                  }
-                                  // Refresh the cached future for this post
-                                  setState(() {
-                                    _isFollowingFutures[post.id] = provider.isFollowingUser(currentUserId, post.userId);
-                                  });
-                                } catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                        content: Text(
-                                            'Failed to ${isCurrentlyFollowing ? 'unfollow' : 'follow'} user')),
-                                  );
-                                }
-                              },
-                              style: TextButton.styleFrom(
-                                backgroundColor: isCurrentlyFollowing
-                                    ? Colors.grey[800]
-                                    : Colors.blue,
-                                padding:
-                                    EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                minimumSize: Size(0, 0),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                              ),
-                              child: Text(
-                                isCurrentlyFollowing ? 'Following' : 'Follow',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                  SizedBox(width: 2),
-                ],
+                // --- THIS IS THE FIXED FOLLOW BUTTON LOGIC ---
+                if (!isFollowing)
+                  TextButton(
+                    onPressed: () {
+                      final provider = Provider.of<InstaDataProvider>(context, listen: false);
+                      // The provider's `suggestedPosts` list already contains the `isFollowing` status.
+                      // We can directly use it to decide which function to call.
+                      if (post.isFollowing) {
+                        provider.unfollowUser1(post.userId);
+                      } else {
+                        provider.followUser1(post.userId);
+                      }
+                    },
+                    style: TextButton.styleFrom(
+                      backgroundColor: post.isFollowing ? Colors.grey[800] : Colors.blue,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      minimumSize: const Size(0, 0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    child: Text(
+                      post.isFollowing ? 'Following' : 'Follow',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                if (!isFollowing) const SizedBox(width: 2),
                 IconButton(
-                  icon: Icon(Icons.more_vert, color: Colors.white),
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
                   onPressed: () {
                     _showPostOptions(post);
                   },
@@ -1698,20 +1623,13 @@ class _InstagramHomeScreenState extends State<InstagramHomeScreen>
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 && !_isLoadingMore) {
-      _loadMorePosts();
-    }
-  }
+    // Get the provider, but don't listen for changes here.
+    final provider = Provider.of<InstaDataProvider>(context, listen: false);
 
-  void _loadMorePosts() {
-    setState(() {
-      _isLoadingMore = true;
-      _currentMax += _postsPerPage;
-    });
-    Future.delayed(const Duration(milliseconds: 500), () {
-      setState(() {
-        _isLoadingMore = false;
-      });
-    });
+    // Check if we are near the bottom and not already loading more posts.
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300 &&
+        !provider.isLoadingPosts) {
+      provider.fetchMorePosts(); // Call the provider to fetch the next page.
+    }
   }
 }
